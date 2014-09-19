@@ -4,9 +4,7 @@ module fsmacros
 // 
 // compilation : fsc --out:fsmacros.dll --reference:envdte.dll --reference:System.Management.dll --reference:vslangproj.dll --target:library vsfsmacros.fs
 // usage: 
-//  #r "envdte";;
-//  #r "c:\projects\fsi\fsmacros.dll";;
-//  let dte = vsfsmacros.getDte();;
+// #r @"C:\projects\fsi\fsmacros.dll";#r "EnvDTE"; open fsmacros;; let dte=getDte();;
 
 // http://naveensrinivasan.com/2010/05/16/visual-studio-keymaps-using-f/
 // get commands would be: dte.Commands |> Seq.cast<EnvDTE.Command> |> Seq.map(fun c->c.Name,c.Bindings) |>  Array.ofSeq;;
@@ -59,8 +57,8 @@ module fsmacros
            if prot <> null then Marshal.ReleaseComObject(prot) |> ignore 
            if pmonkenum <> null then Marshal.ReleaseComObject(pmonkenum) |> ignore 
        let dte = (ret :?> EnvDTE.DTE) 
-       if dte<>null then 
-        printfn "#load" // load up the solution.fs file
+       if dte<>null && System.IO.File.Exists <| dte.Solution.FullName+".fs" then 
+        printfn "%s \"%s\"" "#load" <| dte.Solution.FullName+".fs" // load up the solution.fs file
        dte
         
     
@@ -73,7 +71,15 @@ module fsmacros
         let proj = getSolutionProjects sol
         (sol,proj)
     let getDteCommands (dte:EnvDTE.DTE) = dte.Commands.Cast<EnvDTE.Command>()
+    let getDteCommandsByName (dte:EnvDTE.DTE) search = getDteCommands dte |> Seq.filter(fun f -> f.Name.Contains(search)) |> Seq.map(fun f-> f.Name) |> Array.ofSeq
+    let getDteCommandsByBinding (dte:EnvDTE.DTE) (binding:string) = 
+      let convert (c:EnvDTE.Command) = ((c.Bindings) :?> System.Object[] |> Seq.cast<string>)
+      getDteCommands dte 
+      |> Seq.filter(fun f-> convert f |> Seq.exists(fun (b:string) -> b.Contains(binding)))
+      |> Seq.map(fun f-> f.Name,f.Bindings)
+      |> Array.ofSeq
     let getTextSelection (dte:EnvDTE.DTE) = dte.ActiveDocument.Selection
+
     let SolutionExplorerWindow = "{3AE79031-E1BC-11D0-8F78-00A0C9110057}"
     let SolutionFolder = "{66A26720-8FB5-11D2-AA7E-00C04F688DDE}"
     let getProjectsByRegex regex (pl:EnvDTE.Project list) =
@@ -88,5 +94,9 @@ module fsmacros
         ()
     let getStartupProject (dte:EnvDTE.DTE) = dte.Solution.Properties.Item("StartupProject").Value
     let setStartupProject (dte:EnvDTE.DTE) name = dte.Solution.Properties.Item("StartupProject").Value <- name
+    let gotoLine (dte:EnvDTE.DTE) line = dte.ActiveDocument.Activate();dte.ExecuteCommand("Edit.GoTo",line.ToString());;
 (* SVsTextManager section *)
     // let getSVsTextManager () = (IVsTextManager) (ServiceProvider.GetService(typeof<SVsTextManager>))
+
+// more helpful resources:
+// http://www.viva64.com/en/b/0169/
