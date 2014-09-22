@@ -1,4 +1,9 @@
 namespace wpf
+
+// usage: 
+//  #r "tfsmacros";open tfsmacros;let tfs=getTfs();;#r "wpfmacros";;
+//  getTfsChangesByUserAndFile tfs None "$/Development/" |> wpf.wpfmacros.display;;
+
 // http://stackoverflow.com/questions/5723823/fsi-wpf-event-loop
 module WpfEventLoop = 
   open System    
@@ -80,37 +85,27 @@ module wpfmacros =
   let createTemplate name = // http://stackoverflow.com/questions/8779893/create-datagridtemplatecolumn-through-c-sharp-code
     let binding = Binding(name, Mode=BindingMode.OneWay)
     // let textFactory = new FrameworkElementFactory(typeof<TextBlock>)
-    let listFactory = new FrameworkElementFactory(typeof<ListView>)
-    listFactory.SetBinding(ListView.ItemsSourceProperty,binding)
+    let listFactory = new FrameworkElementFactory(typeof<ItemsControl>)
+
+    listFactory.SetBinding(ItemsControl.ItemsSourceProperty,binding)
     // panelFactory.AppendChild(textFactory)
     let textTemplate = DataTemplate(VisualTree=listFactory)
     textTemplate
   let createDataColumn name header =
     let col = DataGridTemplateColumn(Header=header)
     let template = createTemplate name
-    printfn "about to set dataDataGridTemplateColumn's cell template %A" template
+    // printfn "about to set dataDataGridTemplateColumn's cell template %A" template
     col.CellTemplate <- template
     col
-  let display<'a> (source:'a seq) =
-    let window = new Window(Title="Data display", Width = 800., Height = 600.)
+  let display<'a> title (source:'a seq) =
+    let window = new Window(Title = title, Width = 800., Height = 600.)
     let grid = new DataGrid()
     // interesting: (DataTemplate)System.Windows.Markup.XamlReader.Parse(dt);
-    let changesColumn = 
-      let col = DataGridTemplateColumn()
-      col.Header<-"File Changes"
-      let template = 
-        // createTemplate typeof<string> typeof<TextBlock>
-        createTemplate "Changes"
-      // template.DataType <- typeof<DataGridTemplateColumn>
-      printfn "about to set dataDataGridTemplateColumn's cell template %A" template
-      col.CellTemplate <- template
-      col
     // http://msdn.microsoft.com/en-us/library/cc903950(v=vs.95).aspx
 
     grid.AutoGeneratingColumn.Add (fun e-> 
-      if e.PropertyName ="Changes" then e.Column <- changesColumn
-      elif e.PropertyType <> typeof<String> && typeof<System.Collections.IEnumerable>.IsAssignableFrom(e.PropertyType) then 
-        e.Column <- createDataColumn e.PropertyName "Special Delivery"
+      if e.PropertyType <> typeof<String> && typeof<System.Collections.IEnumerable>.IsAssignableFrom(e.PropertyType) then 
+        e.Column <- createDataColumn e.PropertyName (e.PropertyName + "(g)")
       )
     grid.ItemsSource <- source
     window.Content <- grid 
