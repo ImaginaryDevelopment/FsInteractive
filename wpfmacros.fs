@@ -100,8 +100,8 @@ module wpfmacros =
       printfn "about to set dataDataGridTemplateColumn's cell template %A" template
       col.CellTemplate <- template
       col
-    grid.Columns.Add(changesColumn)
-    grid.AutoGeneratingColumn.Add (fun e-> if e.PropertyName ="Changes" then e.Cancel <- true)
+    // http://msdn.microsoft.com/en-us/library/cc903950(v=vs.95).aspx
+    grid.AutoGeneratingColumn.Add (fun e-> if e.PropertyName ="Changes" then e.Column <- changesColumn)
     grid.ItemsSource <- source
     window.Content <- grid 
     window.Show()
