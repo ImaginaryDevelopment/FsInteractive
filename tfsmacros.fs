@@ -7,28 +7,41 @@ open Microsoft.TeamFoundation.VersionControl.Client
 //  #r "tfsmacros";open tfsmacros;let tfs=getTfs();;
 //  getTfsChangesByUserAndFile tfs None "$/Development/";;
 
-type UserChangeHistory = {ChangesetId:int;CreationDate:DateTime;AssociatedWorkItems:(int*string*string)[];Changes:string[]}
+
 type ChangeHistory = {ChangesetId:int;Owner:string;CreationDate:DateTime;AssociatedWorkItems:(int*string*string)[];Changes:string[]}
+
 let tfsServer = 
   System.Environment.GetEnvironmentVariable("servers").Split([|";"|],StringSplitOptions.None)
   |> Seq.filter (fun s -> s.Contains("tfs"))
   |> Seq.head
+
+
+type UserChangeHistory = {ChangesetId:int;CreationDate:DateTime;AssociatedWorkItems:(int*string*string)[];Changes:string[]}
+
 let tfsUri = 
   sprintf "https://%s" tfsServer
 let webPort = 8080
 let teamProject = "Development"
+
+let private webLinkBase  = sprintf "http://%s:%i/DefaultCollection/%s" tfsServer webPort teamProject
+let getChangesetLink changeset = sprintf "%s/_versionControl/changeset/%i" webLinkBase changeset
+let getItemLink changeset path = sprintf "%s#path=%s&_a=compare" <| getChangesetLink changeset |> path
+let getWorkItemLink = sprintf "%s/_workitems/edit/%i" webLinkBase
+
 let getTfs() = new TfsTeamProjectCollection(new Uri(tfsUri))
 let getVcs (tfs:TfsTeamProjectCollection) = tfs.GetService<VersionControlServer>()
-let getTfsChangesByPath (tfs:TfsTeamProjectCollection) queryPath (user:string option) includeDetails = 
+let getTfsChangesByPath (tfs:TfsTeamProjectCollection) queryPath (user:string option) queryLimit includeDetails = 
   let vcs = getVcs tfs
+  let limitArg = match queryLimit with |None -> Int32.MaxValue | Some x -> x
   let userArg = match user with |None -> null |Some x -> x
-  vcs.QueryHistory (queryPath, VersionSpec.Latest, 0, RecursionType.Full, userArg, null, null, Int32.MaxValue, includeDetails,false)
+  vcs.QueryHistory (queryPath, VersionSpec.Latest, 0, RecursionType.Full, userArg, null, null, limitArg, includeDetails,false)
   |> Seq.cast<Changeset>
   |> Seq.filter (fun cs -> cs.Changes |> Seq.exists (fun change -> change.Item.ServerItem.Contains("/Playground/"))=false )
 
-let getTfsChangesByUserAndFile (tfs:TfsTeamProjectCollection) (user:string option) querypath =
+let getTfsChangesByUserAndFile (tfs:TfsTeamProjectCollection) (user:string option) querypath (resultLimit:int option) =
   let userArg = match user with |None -> Some Environment.UserName | f -> f
-  getTfsChangesByPath tfs querypath userArg true
+  getTfsChangesByPath tfs querypath userArg None true
+  |> fun items-> if resultLimit.IsSome then Seq.take(resultLimit.Value) items else items
   |> Seq.map (fun cs -> {
                             UserChangeHistory.ChangesetId=cs.ChangesetId;
                             CreationDate=cs.CreationDate;
@@ -37,9 +50,10 @@ let getTfsChangesByUserAndFile (tfs:TfsTeamProjectCollection) (user:string optio
   )
   |> fun i -> userArg,i
 
-let getTfsChangesWithoutWorkItems (tfs:TfsTeamProjectCollection) (user:string option) querypath = 
-  getTfsChangesByPath tfs querypath user true
+let getTfsChangesWithoutWorkItems (tfs:TfsTeamProjectCollection) (user:string option) querypath (resultLimit:int option) = 
+  getTfsChangesByPath tfs querypath user None true
   |> Seq.filter (fun cs->cs.AssociatedWorkItems.Length = 0)
+  |> fun items-> if resultLimit.IsSome then Seq.take(resultLimit.Value) items else items
   |> Seq.map (fun cs -> {ChangesetId=cs.ChangesetId;
                       Owner=cs.Owner;
                       CreationDate=cs.CreationDate;

@@ -2,7 +2,7 @@ namespace wpf
 
 // usage: 
 //  #r "tfsmacros";open tfsmacros;let tfs=getTfs();;#r "wpfmacros";;
-//  getTfsChangesByUserAndFile tfs None "$/Development/" |> wpf.wpfmacros.display;;
+//  getTfsChangesByUserAndFile tfs None "$/Development/" |> fun (name,items) -> wpf.wpfmacros.display ("tfs changes" + (match name with |None -> "" | Some x -> sprintf " for user %s" x) ) items;;
 
 // http://stackoverflow.com/questions/5723823/fsi-wpf-event-loop
 module WpfEventLoop = 
