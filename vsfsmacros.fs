@@ -1,16 +1,23 @@
 module fsmacros
+
+// sources:
 // http://eduardoclaudio.wordpress.com/2011/07/04/creating-visual-studio-macros-in-f
 // http://fortysix-and-two.blogspot.com/2010/05/accessing-visual-studios-automation-api.html
 // 
-// compilation : fsc --out:fsmacros.dll --reference:envdte.dll --reference:System.Management.dll --reference:vslangproj.dll --target:library vsfsmacros.fs
+// compilation : 
+//  fsc --out:fsmacros.dll --reference:envdte.dll --reference:System.Management.dll --reference:vslangproj.dll --target:library vsfsmacros.fs
 // usage: 
-// #r @"C:\projects\fsi\fsmacros.dll";#r "EnvDTE"; open fsmacros;; let dte=getDte();;
+//  #r @"C:\projects\fsi\fsmacros.dll";#r "EnvDTE"; open fsmacros;; let dte=getDte();;
+// alternate usage if installed to public assemblies:
+//  #r "fsmacros.dll";#r "EnvDTE"; open fsmacros; let dte=getDte();;
 
-// http://naveensrinivasan.com/2010/05/16/visual-studio-keymaps-using-f/
+// sources:
+//  http://naveensrinivasan.com/2010/05/16/visual-studio-keymaps-using-f/
 // get commands would be: dte.Commands |> Seq.cast<EnvDTE.Command> |> Seq.map(fun c->c.Name,c.Bindings) |>  Array.ofSeq;;
 
   open EnvDTE
   open VSLangProj
+  open System
   open System.Runtime.InteropServices 
   open System.Runtime.InteropServices.ComTypes
   open System.Diagnostics
@@ -97,14 +104,6 @@ module fsmacros
   let gotoLine (dte:EnvDTE.DTE) line = dte.ActiveDocument.Activate();dte.ExecuteCommand("Edit.GoTo",line.ToString());;
 (* SVsTextManager section *)
     // let getSVsTextManager () = (IVsTextManager) (ServiceProvider.GetService(typeof<SVsTextManager>))
-(* Tfs section *)
-// module tfsfsmacros =
-  let tfPath = 
-    System.Environment.GetEnvironmentVariable("VS120COMNTOOLS")
-    |> System.IO.Path.GetDirectoryName
-    |> System.IO.Path.GetDirectoryName
-    |> fun d -> System.IO.Path.Combine(d,"IDE","tf.exe")
-
 
 // more helpful resources:
 // http://www.viva64.com/en/b/0169/
