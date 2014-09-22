@@ -1,15 +1,15 @@
-module fsmacros
+module vsmacros
 
 // sources:
 // http://eduardoclaudio.wordpress.com/2011/07/04/creating-visual-studio-macros-in-f
 // http://fortysix-and-two.blogspot.com/2010/05/accessing-visual-studios-automation-api.html
 // 
 // compilation : 
-//  fsc --out:fsmacros.dll --reference:envdte.dll --reference:System.Management.dll --reference:vslangproj.dll --target:library vsfsmacros.fs
+//  fsc --out:vsmacros.dll --reference:envdte.dll --reference:System.Management.dll --reference:vslangproj.dll --target:library vsfsmacros.fs
 // usage: 
-//  #r @"C:\projects\fsi\fsmacros.dll";#r "EnvDTE"; open fsmacros;; let dte=getDte();;
+//  #r @"C:\projects\fsi\vsmacros.dll";#r "EnvDTE"; open vsmacros;; let dte=getDte();;
 // alternate usage if installed to public assemblies:
-//  #r "fsmacros.dll";#r "EnvDTE"; open fsmacros; let dte=getDte();;
+//  #r "vsmacros.dll";#r "EnvDTE"; open vsmacros; let dte=getDte();;
 
 // sources:
 //  http://naveensrinivasan.com/2010/05/16/visual-studio-keymaps-using-f/
