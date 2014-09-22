@@ -25,8 +25,8 @@ let teamProject = "Development"
 
 let private webLinkBase  = sprintf "http://%s:%i/DefaultCollection/%s" tfsServer webPort teamProject
 let getChangesetLink changeset = sprintf "%s/_versionControl/changeset/%i" webLinkBase changeset
-let getItemLink changeset path = sprintf "%s#path=%s&_a=compare" <| getChangesetLink changeset |> path
-let getWorkItemLink = sprintf "%s/_workitems/edit/%i" webLinkBase
+let getItemLink(changeset,path) = sprintf "%s#path=%s&_a=compare" (getChangesetLink changeset) path
+let getWorkItemLink workItem = sprintf "%s/_workitems/edit/%i" webLinkBase workItem
 
 let getTfs() = new TfsTeamProjectCollection(new Uri(tfsUri))
 let getVcs (tfs:TfsTeamProjectCollection) = tfs.GetService<VersionControlServer>()
@@ -59,3 +59,17 @@ let getTfsChangesWithoutWorkItems (tfs:TfsTeamProjectCollection) (user:string op
                       CreationDate=cs.CreationDate;
                       AssociatedWorkItems=(cs.AssociatedWorkItems |> Seq.map (fun wi -> wi.Id,wi.Title,wi.WorkItemType) |> Array.ofSeq);
                       Changes=(cs.Changes |> Seq.map( fun change-> change.Item.ServerItem) |> Array.ofSeq)})
+
+
+module CSharp = 
+  let private NullToNone t = if t<>null then Some t else None
+  let private NoneToNull (t:string option) = if t.IsSome then t.Value else null
+  let private DefaultToNone t = if t=0 then None else Some t
+
+  let getTfsChangesCByUserAndFile (tfs:TfsTeamProjectCollection) (user:string) querypath (resultLimit:int) =
+    // if user<>null then Some user else None
+    let user,items = getTfsChangesByUserAndFile tfs (NullToNone user) querypath (DefaultToNone resultLimit)
+    NoneToNull user,items
+
+  let getTfsChangesCWithoutWorkItems (tfs:TfsTeamProjectCollection) (user:string) querypath (resultLimit:int) = 
+    getTfsChangesWithoutWorkItems tfs (NullToNone user) querypath (DefaultToNone resultLimit)
