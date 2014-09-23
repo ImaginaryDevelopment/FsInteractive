@@ -1,4 +1,4 @@
-module tfsmacros
+module tfsMacros
 open System
 open Microsoft.TeamFoundation.Client
 open Microsoft.TeamFoundation.VersionControl.Client
@@ -38,6 +38,11 @@ let getTfsChangesByPath (tfs:TfsTeamProjectCollection) queryPath (user:string op
   |> Seq.cast<Changeset>
   |> Seq.filter (fun cs -> cs.Changes |> Seq.exists (fun change -> change.Item.ServerItem.Contains("/Playground/"))=false )
 
+/// For example: "$/Development/**.user"
+let getTfsItemsByWildcard (tfs:TfsTeamProjectCollection) wildcard = 
+  let vcs = getVcs tfs
+  vcs.GetItems(wildcard, RecursionType.Full)
+
 let getTfsChangesByUserAndFile (tfs:TfsTeamProjectCollection) (user:string option) querypath (resultLimit:int option) =
   let userArg = match user with |None -> Some Environment.UserName | f -> f
   getTfsChangesByPath tfs querypath userArg None true
@@ -59,17 +64,28 @@ let getTfsChangesWithoutWorkItems (tfs:TfsTeamProjectCollection) (user:string op
                       CreationDate=cs.CreationDate;
                       AssociatedWorkItems=(cs.AssociatedWorkItems |> Seq.map (fun wi -> wi.Id,wi.Title,wi.WorkItemType) |> Array.ofSeq);
                       Changes=(cs.Changes |> Seq.map( fun change-> change.Item.ServerItem) |> Array.ofSeq)})
+module Build = 
 
+  open Microsoft.TeamFoundation.Build.Client
+  let getBuildServer (tfs:TfsTeamProjectCollection) = tfs.GetService<IBuildServer>()
+  let getBuildDefinitions (tfs:TfsTeamProjectCollection) (teamProjectName:string) =
+    let tfsBuild = getBuildServer tfs
+    tfsBuild.QueryBuildDefinitions(teamProjectName)
+
+  let getBuildDefinition (tfs:TfsTeamProjectCollection) (teamProjectName:string) buildName =
+    let tfsBuild = getBuildServer tfs
+    tfsBuild.GetBuildDefinition(teamProjectName,buildName)
+  // let asSerializable (build:IBuildDefinition) = easier in C#? or difficult to determine what code would produce consistent results
 
 module CSharp = 
   let private NullToNone t = if t<>null then Some t else None
   let private NoneToNull (t:string option) = if t.IsSome then t.Value else null
   let private DefaultToNone t = if t=0 then None else Some t
 
-  let getTfsChangesCByUserAndFile (tfs:TfsTeamProjectCollection) (user:string) querypath (resultLimit:int) =
+  let getTfsChangesByUserAndFile (tfs:TfsTeamProjectCollection) (user:string) querypath (resultLimit:int) =
     // if user<>null then Some user else None
     let user,items = getTfsChangesByUserAndFile tfs (NullToNone user) querypath (DefaultToNone resultLimit)
     NoneToNull user,items
 
-  let getTfsChangesCWithoutWorkItems (tfs:TfsTeamProjectCollection) (user:string) querypath (resultLimit:int) = 
+  let getTfsChangesWithoutWorkItems (tfs:TfsTeamProjectCollection) (user:string) querypath (resultLimit:int) = 
     getTfsChangesWithoutWorkItems tfs (NullToNone user) querypath (DefaultToNone resultLimit)

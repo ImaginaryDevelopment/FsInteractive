@@ -44,7 +44,7 @@ module WpfEventLoop =
   let Install() = fsi.EventLoop <-  Create()
 
 [<AutoOpen>]
-module wpfmacros =
+module wpfMacros =
   open System
   open System.IO
   open System.Linq

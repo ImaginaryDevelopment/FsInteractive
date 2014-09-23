@@ -1,5 +1,5 @@
 [<AutoOpen>]
-module winformsmacros
+module winformsMacros
 // winformfsmacros.fs
 open System.Windows.Forms
 
