@@ -1,1 +1,3 @@
 *.dll
+MacroRunner/MacroRunner/bin/*
+MacroRunner/MacroRunner/obj/*
