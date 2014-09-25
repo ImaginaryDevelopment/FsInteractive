@@ -10,7 +10,8 @@ open Microsoft.TeamFoundation.VersionControl.Client
 //  getTfsChangesByUserAndFile tfs None "$/Development/";;
 
 
-type ChangeHistory = {ChangesetId:int;Owner:string;CreationDate:DateTime;AssociatedWorkItems:(int*string*string)[];Changes:string[]}
+type ChangeHistory = {ChangesetId:int;Owner:string;CreationDate:DateTime;Changes:string[]}
+type ChangeHistoryWithWorkItems = {ChangesetId:int;Owner:string;CreationDate:DateTime;AssociatedWorkItems:(int*string*string)[];Changes:string[]}
 type UserChangeHistory = {ChangesetId:int;CreationDate:DateTime;AssociatedWorkItems:(int*string*string)[];Changes:string[]}
 
 // F# module for F# consumption
@@ -42,9 +43,11 @@ module Tfs =
       |> Seq.filter (fun cs -> cs.Changes |> Seq.exists (fun change -> change.Item.ServerItem.Contains("/Playground/"))=false )
 
     /// For example: "$/Development/**.user"
-    let GetTfsItemsByWildcard (tfs:TfsTeamProjectCollection) wildcard = 
-      let vcs = GetVcs tfs
-      vcs.GetItems(wildcard, RecursionType.Full)
+    let GetVcsItemsByWildcard (vcs:VersionControlServer) wildcard = 
+        vcs.GetItems(wildcard,RecursionType.Full)
+
+    
+
 
     let GetTfsChangesByUserAndFile (tfs:TfsTeamProjectCollection) (user:string option) querypath (resultLimit:int option) =
       let userArg = match user with |None -> Some Environment.UserName | f -> f
@@ -62,22 +65,33 @@ module Tfs =
       GetTfsChangesByPath tfs querypath user None true
       |> Seq.filter (fun cs -> cs.AssociatedWorkItems.Length = 0)
       |> fun items -> if resultLimit.IsSome then Seq.take(resultLimit.Value) items else items
-      |> Seq.map (fun cs -> {ChangesetId=cs.ChangesetId;
+      |> Seq.map (fun cs -> {ChangeHistory.ChangesetId=cs.ChangesetId;
                           Owner=cs.Owner;
                           CreationDate=cs.CreationDate;
-                          AssociatedWorkItems=(cs.AssociatedWorkItems |> Seq.map (fun wi -> wi.Id,wi.Title,wi.WorkItemType) |> Array.ofSeq);
                           Changes=(cs.Changes |> Seq.map( fun change-> change.Item.ServerItem) |> Array.ofSeq)})
 
-type TFS (serverName, webPort:int, teamProjectName:string, tfs:TfsTeamProjectCollection) = 
-
+type TFS (serverName, teamProjectName:string, tfs:TfsTeamProjectCollection, ?webPort) = 
+    let webPort = defaultArg webPort 8080
     let nullToNone t = if t<>null then Some t else None
     let noneToNull (t:string option) = if t.IsSome then t.Value else null
     let defaultToNone t = if t = 0 then None else Some t
     let webLinkBase = Tfs.GetWebLinkBase serverName webPort teamProjectName
+    static member GetTfs() = Tfs.GetTfs <| Uri(Tfs.GetTfsUri <| Tfs.GetTfsServerFromEnvironment())
     member x.Tfs = tfs
-    new(serverName,webPort, teamProjectName) = new TFS(serverName, webPort, teamProjectName, Tfs.GetTfs(Uri(Tfs.GetTfsUri(serverName))))
+    // C# compat optional parameter imitation
+    new(serverName,teamProjectName, webport:Nullable<int>) = 
+        let optionOfNullable (a : System.Nullable<'T>) = 
+            if a.HasValue then
+                Some a.Value
+            else
+            None
+        new TFS(serverName, teamProjectName, Tfs.GetTfs(Uri(Tfs.GetTfsUri(serverName))), ?webPort=optionOfNullable webport)
 
+    new() = new TFS(Tfs.GetTfsServerFromEnvironment(),Tfs.teamProject,webport = Nullable(Tfs.webPort))
+
+    member x.GetWorkItemLink(workItem) = Tfs.GetWorkItemLink webLinkBase workItem
     member x.GetChangesetLink(changeset) = Tfs.GetChangesetLink webLinkBase changeset
+    member x.GetItemLink(changeset,path) = Tfs.GetItemLink <| x.GetChangesetLink(changeset) <| path
     member x.GetChangesByUserAndFile (user:string) querypath (resultLimit:int) =
         // if user<>null then Some user else None
         let user,items = Tfs.GetTfsChangesByUserAndFile tfs (nullToNone user) querypath (defaultToNone resultLimit)
@@ -85,7 +99,7 @@ type TFS (serverName, webPort:int, teamProjectName:string, tfs:TfsTeamProjectCol
 
     member x.GetChangesWithoutWorkItems (user:string) querypath (resultLimit:int) = 
         Tfs.GetTfsChangesWithoutWorkItems tfs (nullToNone user) querypath (defaultToNone resultLimit)
-    member x.GetItemsByWildcard(wildcard) = Tfs.GetTfsItemsByWildcard tfs wildcard
+    member x.GetItemsByWildcard(wildcard) = Tfs.GetVcsItemsByWildcard (tfs|> Tfs.GetVcs) wildcard
 
     interface IDisposable with
         member x.Dispose() = tfs.Dispose()
@@ -104,5 +118,9 @@ module Build =
 
 type TfsBuild(buildServer) =
     new(tfs) = TfsBuild(Build.GetBuildServer tfs)
-    member x.GetBuildDefinitions(teamProjectName) = Build.GetBuildDefinitions(buildServer)
+    member x.GetBuildDefinitions(teamProjectName) = Build.GetBuildDefinitions buildServer teamProjectName
     member x.GetBuildDefinition(teamProjectName, buildName) = Build.GetBuildDefinition buildServer teamProjectName buildName
+
+module tf_exe = 
+    // for example: tf undo "$/Development" /WORKSPACE:FOOComputerName;domainname\user.name /recursive /server:https://tfs.foo.com
+    let baseUndo serverItemPath workspaceName user tfsUri : string = sprintf "tf undo \"%s\" /WORKSPACE:%s;%s /recursive /server:%s" serverItemPath workspaceName user tfsUri
