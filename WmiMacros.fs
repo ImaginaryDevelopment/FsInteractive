@@ -72,6 +72,9 @@ module WmiMacros =
                         InstallDate:string
                         } 
         with static member FromWin32Process (p:Win32_Process) = 
+                // "C:\Windows\SysWOW64\inetsrv\w3wp.exe -ap "MarketOnce.WebApi" -v "v4.0" -l "webengine4.dll" -a \\.\pipe\iisipm31653017-1eb6-4324-8724-afdc023ff248 -h "C:\inetpub\temp\apppools\MarketOnce.WebApi\MarketOnce.WebApi.config" -w "" -m 0";
+                printfn "cmd: %s" p.CommandLine
+                let appPool = if p.CommandLine.Contains("-ap ") then p.CommandLine.After("-ap \"").Before("\"") else String.Empty
                 let cleanCommandLine (i:string) = i.After("-h").After("\"").Before("\"")
                 let memoryToUi32 (n:UInt32) = 
                     if n> 2048u then n.ToString("n0")
@@ -84,8 +87,8 @@ module WmiMacros =
                 { 
                     ProcessDisplay.ProcessId = p.ProcessId
                     ThreadCount = p.ThreadCount
-                    Name = cleaned.AfterLast("\\")
-                    Config = cleaned
+                    Name = cleaned.Before(".config").AfterLast("\\")
+                    Config = p.CommandLine
                     CreationDate = p.CreationDate.ToString()
                     PageFileUsage = memoryToUi32 p.PageFileUsage
                     PeakPageFileUsage = memoryToUi32 p.PeakPageFileUsage
@@ -93,7 +96,7 @@ module WmiMacros =
                     PeakVirtualSize = memoryToUi64 p.PeakVirtualSize
                     PeakWorkingSetSize = memoryToUi32 p.PeakWorkingSetSize
                     PrivatePageCount = memoryToUi64 p.PrivatePageCount
-                    InstallDate = p.InstallDate.ToString()
+                    InstallDate = if p.InstallDate < DateTime.Now.AddYears(-50) then String.Empty else p.InstallDate.ToString()
                 }
 
     let private createScope machineName = 
@@ -121,7 +124,7 @@ module WmiMacros =
         try
             if value = null then null else 
                 match name with 
-                | "CreationDate" ->
+                | "CreationDate" | "InstallDate" ->
                     // printfn "doing %s of type %A with inputType %A" name t (value.GetType())
                     upcast ManagementDateTimeConverter.ToDateTime(value :?> String)
                 | _ -> value

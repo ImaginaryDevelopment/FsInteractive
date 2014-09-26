@@ -66,8 +66,12 @@
     <Compile Include="..\..\pathmacros.fs">
       <Link>pathmacros.fs</Link>
     </Compile>
-    <Compile Include="ComMacros.fs" />
-    <Compile Include="WmiMacros.fs" />
+    <Compile Include="..\..\WmiMacros.fs">
+      <Link>WmiMacros.fs</Link>
+    </Compile>
+    <Compile Include="..\..\ComMacros.fs">
+      <Link>ComMacros.fs</Link>
+    </Compile>
     <Compile Include="..\..\..\..\Development\Products\CVS\Cvs.sln.fs">
       <Link>Cvs.sln.fs</Link>
     </Compile>
