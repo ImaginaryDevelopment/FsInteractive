@@ -8,7 +8,7 @@ fsc --out:dtemacros.dll --reference:envdte.dll --reference:System.Management.dll
 fsc --out:winformsmacros.dll --reference:System.Windows.Forms.dll --reference:vslangproj.dll --target:library winformsmacros.fs
 fsc --out:wpfmacros.dll -r:FSharp.Compiler.Interactive.Settings.dll -r:PresentationCore.dll -r:PresentationFramework.dll -r:WindowsBase.dll --target:library wpfmacros.fs
 fsc --out:lambdaOps.dll -r:FSharp.Compiler.Interactive.Settings.dll --target:library LambdaOps.fs
-
+fsc --out:LdapMacros.dll -r:System.DirectoryServices -r:FSharp.Compiler.Interactive.Settings.dll --target:library LdapMacros.fs
 set vsIde=C:\Program Files (x86)\Microsoft Visual Studio 12.0\Common7\IDE\
 set refAssemblies=%vsIde%ReferenceAssemblies\v2.0\
 
