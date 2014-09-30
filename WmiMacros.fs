@@ -5,6 +5,7 @@ open System.Management
 open Microsoft.FSharp.Reflection
 
 // http://www.iislogs.com/articles/12/
+// usage: http://stackoverflow.com/a/26111634/57883
 
 module WmiMacros =
 
@@ -56,7 +57,9 @@ module WmiMacros =
         WriteOperationCount:UInt64
         WriteTransferCount:UInt64
     }  
-
+    type ScopeItem = 
+        | Scope of ManagementScope
+        | Creation of string*bool*bool
     type ProcessDisplay = { 
                         ProcessId: UInt32
                         ThreadCount: UInt32
@@ -101,20 +104,23 @@ module WmiMacros =
                     InstallDate = if p.InstallDate < DateTime.Now.AddYears(-50) then String.Empty else p.InstallDate.ToString()
                 }
 
-    let private createNamedScope ``namespace`` machineName requiresSecurity =
-        let path = sprintf "\\\\%s\\%s" machineName ``namespace``
-        printfn "using path %s" path
-        // scope.Options.EnablePrivileges <- true
-        // scope.Options.Impersonation <- ImpersonationLevel.Impersonate
+    let private createAdvancedScope (path:string) requiresDomainSecurity requiresPacketSecurity = 
         let scope = 
-            if machineName <> "localhost" then  
+            if requiresDomainSecurity then  
                 let conn = ConnectionOptions(Authority=sprintf "ntlmdomain:%s" Environment.UserDomainName)
                 ManagementScope(path, conn)
             else 
             ManagementScope(path, null)
-        if requiresSecurity then scope.Options.Authentication <- AuthenticationLevel.PacketPrivacy
+        if requiresPacketSecurity then scope.Options.Authentication <- AuthenticationLevel.PacketPrivacy
         scope.Connect()
         scope
+
+    let private createNamedScope ``namespace`` machineName requiresSecurity =
+        let path = sprintf "\\\\%s\\%s" machineName ``namespace``
+        printfn "using path %s" path
+        createAdvancedScope path (machineName <> "localhost") requiresSecurity
+        // scope.Options.EnablePrivileges <- true
+        // scope.Options.Impersonation <- ImpersonationLevel.Impersonate
 
     let private createScope machineName = 
         createNamedScope "root\\CIMV2" machineName false
@@ -159,6 +165,26 @@ module WmiMacros =
         for wmiObj in searcher.Get() do 
             printfn "%A" wmiObj.["FileName"]
 
+    /// Sample Usage: Macros.WmiMacros.QueryWmiAdvanced  (Macros.WmiMacros.ScopeItem.Creation("\\\\servername\\root\\MicrosoftIISv2", true,true)) "SELECT Name,ServerComment FROM IIsWebServerSetting" 
+    /// |> Seq.map (fun e -> e.Properties.["Name"].Value,e.Properties.["ServerComment"].Value)
+    let QueryWmiAdvanced (scopeInput: ScopeItem) query = 
+        let scope = 
+            match scopeInput with
+            | Scope s -> s
+            | Creation (path, requiresDomainSecurity, requiresPacketSecurity) -> createAdvancedScope path requiresDomainSecurity requiresPacketSecurity
+            // createAdvancedScope path requiresDomainSecurity requiresPacketSecurity
+        let query = new ObjectQuery(query)
+        use searcher = new ManagementObjectSearcher(scope, query)
+        use results = searcher.Get()
+        results |> Seq.cast<ManagementObject>  |> Array.ofSeq
+
+    let QueryWmi machineName ``namespace`` query requireSecurity = 
+        let scope = createNamedScope ``namespace`` machineName requireSecurity // requiresSecurity
+        let query = new ObjectQuery(query)
+        use searcher = new ManagementObjectSearcher(scope, query)
+        use results = searcher.Get()
+        results |> Seq.cast<ManagementObject>  |> Array.ofSeq
+
     let QueryIis machineName = 
         let scope = createScope machineName
         let query = new SelectQuery( sprintf "select * FROM Win32_Process WHERE name='w3wp.exe'")
@@ -172,13 +198,31 @@ module WmiMacros =
 
     let QueryIisV2 machineName = 
         let scope = createNamedScope "root\\MicrosoftIISv2" machineName true // requiresSecurity
+        let queryText = sprintf "SELECT * FROM IIsWebVirtualDir"
+        printfn "Query = %s" queryText
+        let query = new SelectQuery(queryText)
+        use searcher = new ManagementObjectSearcher(scope,query)
+        use results = searcher.Get()
+        let allResults = 
+            results 
+            |> Seq.cast<ManagementObject> 
+            //|> Seq.map(fun mo -> mo.Properties)
+            |> Array.ofSeq
+        printfn "length: %i" allResults.Length
+        allResults
+
+    let QueryIisV2Virtuals machineName = 
+        let scope = createNamedScope "root\\MicrosoftIISv2" machineName true // requiresSecurity
         let query = new SelectQuery (sprintf "SELECT * FROM IIsWebVirtualDir_IIsWebVirtualDir")
         use searcher = new ManagementObjectSearcher(scope,query)
         use results = searcher.Get()
-        results 
-        |> Seq.cast<ManagementObject> 
-        //|> Seq.map(fun mo -> mo.Properties)
-        |> Array.ofSeq
+        let allResults = 
+            results 
+            |> Seq.cast<ManagementObject> 
+            //|> Seq.map(fun mo -> mo.Properties)
+            |> Array.ofSeq
+        printfn "length: %i" allResults.Length
+        allResults
 
     let QueryProcesses machineName = 
         let scope = createScope machineName
