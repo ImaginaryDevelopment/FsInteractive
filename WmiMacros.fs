@@ -60,6 +60,7 @@ module WmiMacros =
     type ProcessDisplay = { 
                         ProcessId: UInt32
                         ThreadCount: UInt32
+                        AppPool:string
                         Name:string
                         Config:string
                         CreationDate:string
@@ -85,6 +86,7 @@ module WmiMacros =
                     else (kb/1024UL).ToString("n0") + "Mb"
                 let cleaned = cleanCommandLine p.CommandLine
                 { 
+                    AppPool = appPool
                     ProcessDisplay.ProcessId = p.ProcessId
                     ThreadCount = p.ThreadCount
                     Name = cleaned.Before(".config").AfterLast("\\")
@@ -99,16 +101,23 @@ module WmiMacros =
                     InstallDate = if p.InstallDate < DateTime.Now.AddYears(-50) then String.Empty else p.InstallDate.ToString()
                 }
 
-    let private createScope machineName = 
-        let path = sprintf "\\\\%s\\root\\CIMV2" machineName
+    let private createNamedScope ``namespace`` machineName requiresSecurity =
+        let path = sprintf "\\\\%s\\%s" machineName ``namespace``
+        printfn "using path %s" path
+        // scope.Options.EnablePrivileges <- true
+        // scope.Options.Impersonation <- ImpersonationLevel.Impersonate
         let scope = 
             if machineName <> "localhost" then  
                 let conn = ConnectionOptions(Authority=sprintf "ntlmdomain:%s" Environment.UserDomainName)
                 ManagementScope(path, conn)
             else 
             ManagementScope(path, null)
+        if requiresSecurity then scope.Options.Authentication <- AuthenticationLevel.PacketPrivacy
         scope.Connect()
         scope
+
+    let private createScope machineName = 
+        createNamedScope "root\\CIMV2" machineName false
 
     let private GetPropertyNames (pds:PropertyData seq) = 
         pds                
@@ -161,12 +170,18 @@ module WmiMacros =
         |> Seq.map ProcessDisplay.FromWin32Process
         |> Array.ofSeq
 
+    let QueryIisV2 machineName = 
+        let scope = createNamedScope "root\\MicrosoftIISv2" machineName true // requiresSecurity
+        let query = new SelectQuery (sprintf "SELECT * FROM IIsWebVirtualDir_IIsWebVirtualDir")
+        use searcher = new ManagementObjectSearcher(scope,query)
+        use results = searcher.Get()
+        results 
+        |> Seq.cast<ManagementObject> 
+        //|> Seq.map(fun mo -> mo.Properties)
+        |> Array.ofSeq
 
     let QueryProcesses machineName = 
-        let path = sprintf "\\\\%s\\root\\CIMV2" machineName
         let scope = createScope machineName
-        // scope.Options.EnablePrivileges <- true
-        // scope.Options.Impersonation <- ImpersonationLevel.Impersonate
         // let query = new ObjectQuery(sprintf "SELECT CommandLine FROM Win32_Process WHERE Name LIKE '%s%%'" "explorer") //" AND Name LIKE '%%%s'"
         let query = new ObjectQuery(sprintf "SELECT * FROM Win32_Process") //" AND Name LIKE '%%%s'"
         let fields = typeof<Win32_Process>.GetProperties() |> Seq.map (fun p -> p.Name,p.PropertyType)
