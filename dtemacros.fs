@@ -16,6 +16,7 @@ module vsmacros
 // get commands would be: dte.Commands |> Seq.cast<EnvDTE.Command> |> Seq.map(fun c->c.Name,c.Bindings) |>  Array.ofSeq;;
 
   open EnvDTE
+ 
   open VSLangProj
   open System
   open System.Runtime.InteropServices 
@@ -68,23 +69,51 @@ module vsmacros
       printfn "%s \"%s\"" "#load" <| dte.Solution.FullName+".fs" // load up the solution.fs file
      dte
         
-    
+  let rec getSolutionFolderProjects(solutionFolder:EnvDTE.Project) : EnvDTE.Project list = 
+
+      [
+          for i in 1..solutionFolder.ProjectItems.Count do
+              let subProject = solutionFolder.ProjectItems.Item(i).SubProject
+              if subProject <> null then 
+                match subProject.Kind with
+                |EnvDTE.Constants.vsProjectKindSolutionItems  -> printfn "yay a solution Folder! %s" subProject.Name ; yield! getSolutionFolderProjects subProject
+                |EnvDTE.Constants.vsProjectItemKindMisc -> printfn "found kindmisc %A %s" subProject.Kind subProject.Name
+                | _ -> printfn "found wildcard %A %s" subProject.Kind subProject.Name; yield subProject
+      ]
+
   let getSolutionProjects (sol:EnvDTE.Solution) =
       let en = sol.Projects.GetEnumerator()
-      [while en.MoveNext() do yield en.Current :?> EnvDTE.Project] |> List.map (fun p -> (p.Name, p, p.Object :?> VSLangProj.VSProject))
+      [while en.MoveNext() do
+          let project = en.Current :?> EnvDTE.Project
+          match project with
+          | null -> ()
+          | p when 
+            p.Kind= EnvDTE.Constants.vsProjectItemKindMisc ||
+            p.Kind= EnvDTE.Constants.vsProjectKindSolutionItems ||
+            p.Kind= EnvDTE.Constants.vsProjectKindMisc -> 
+                printfn "found container kind %A %s" p.Kind p.Name
+                yield! getSolutionFolderProjects p
+          | _ -> 
+            printfn "found a solution project %s %A" project.Name project.Kind
+            yield project
+          ] |> List.map (fun p -> (p.Name, p)) (* ,p.Object :?> VSLangProj.VSProject *)
 
   let getSP (dte:EnvDTE.DTE) =
       let sol = dte.Solution
       let proj = getSolutionProjects sol
       (sol,proj)
+
   let getDteCommands (dte:EnvDTE.DTE) = dte.Commands.Cast<EnvDTE.Command>()
+
   let getDteCommandsByName (dte:EnvDTE.DTE) search = getDteCommands dte |> Seq.filter(fun f -> f.Name.Contains(search)) |> Seq.map(fun f-> f.Name) |> Array.ofSeq
+
   let getDteCommandsByBinding (dte:EnvDTE.DTE) (binding:string) = 
     let convert (c:EnvDTE.Command) = ((c.Bindings) :?> System.Object[] |> Seq.cast<string>)
     getDteCommands dte 
     |> Seq.filter(fun f-> convert f |> Seq.exists(fun (b:string) -> b.Contains(binding)))
     |> Seq.map(fun f-> f.Name,f.Bindings)
     |> Array.ofSeq
+
   let getTextSelection (dte:EnvDTE.DTE) = dte.ActiveDocument.Selection
 
   let SolutionExplorerWindow = "{3AE79031-E1BC-11D0-8F78-00A0C9110057}"
