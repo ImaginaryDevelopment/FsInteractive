@@ -1,4 +1,7 @@
-module vsmacros
+namespace Macros
+open EnvDTE
+open EnvDTE80
+module VsMacros =
 
 // sources:
 // http://eduardoclaudio.wordpress.com/2011/07/04/creating-visual-studio-macros-in-f
@@ -15,8 +18,6 @@ module vsmacros
 //  http://naveensrinivasan.com/2010/05/16/visual-studio-keymaps-using-f/
 // get commands would be: dte.Commands |> Seq.cast<EnvDTE.Command> |> Seq.map(fun c->c.Name,c.Bindings) |>  Array.ofSeq;;
 
-  open EnvDTE
- 
   open VSLangProj
   open System
   open System.Runtime.InteropServices 
@@ -116,6 +117,8 @@ module vsmacros
 
   let getTextSelection (dte:EnvDTE.DTE) = dte.ActiveDocument.Selection
 
+
+  
   let SolutionExplorerWindow = "{3AE79031-E1BC-11D0-8F78-00A0C9110057}"
   let SolutionFolder = "{66A26720-8FB5-11D2-AA7E-00C04F688DDE}"
   let getProjectsByRegex regex (pl:EnvDTE.Project list) =
@@ -128,9 +131,28 @@ module vsmacros
   let addProjectToSolution (sol:EnvDTE.Solution) (path:string) (suffix:string) (project:string) =
       sol.AddFromFile((path + "\\" + project + "."+ suffix), false) |> ignore
       ()
+  let getDebugOutput (dte2:EnvDTE80.DTE2) = // http://stackoverflow.com/questions/25097387/send-the-entire-debug-console-output-to-clipboard
+    let sel = dte2.ToolWindows.OutputWindow.OutputWindowPanes.Item("Debug").TextDocument.Selection
+    sel.StartOfDocument(false)
+    sel.EndOfDocument(true)
+    sel.Text
   let getStartupProject (dte:EnvDTE.DTE) = dte.Solution.Properties.Item("StartupProject").Value
   let setStartupProject (dte:EnvDTE.DTE) name = dte.Solution.Properties.Item("StartupProject").Value <- name
   let gotoLine (dte:EnvDTE.DTE) line = dte.ActiveDocument.Activate();dte.ExecuteCommand("Edit.GoTo",line.ToString());;
+
+module CodeModel =  // mostly from EnvDteHelper.ttinclude
+    let rec FindCodeModelInterfaces (ces: CodeElement seq) = 
+      [
+        for ce in ces do
+            match ce.Kind with
+            | vsCMElement.vsCMElementInterface -> yield ce :?> CodeInterface
+            | vsCMElement.vsCMElementNamespace -> yield! FindCodeModelInterfaces((ce :?> CodeNamespace).Members |> Seq.cast<CodeElement>)
+            | _ -> printfn "Kind not covered %s %A" ce.Name ce.Kind
+      ]
+
+    let FindCodeModelProperties (ci:CodeInterface) = 
+        [ for cp in ci.Members |> Seq.cast<CodeElement> |> Seq.filter (fun e -> e :?> CodeProperty <> null) do
+            yield cp :?> CodeProperty]
 (* SVsTextManager section *)
     // let getSVsTextManager () = (IVsTextManager) (ServiceProvider.GetService(typeof<SVsTextManager>))
 
