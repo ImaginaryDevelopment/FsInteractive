@@ -153,6 +153,13 @@ module CodeModel =  // mostly from EnvDteHelper.ttinclude
     let FindCodeModelProperties (ci:CodeInterface) = 
         [ for cp in ci.Members |> Seq.cast<CodeElement> |> Seq.filter (fun e -> e :?> CodeProperty <> null) do
             yield cp :?> CodeProperty]
+    let rec FindCodeModelImplementedInterfaceProperties (ci:CodeInterface) =
+        if ci.Bases = null then List.empty else
+            [
+                for ii in ci.Bases |> Seq.cast<CodeInterface> do
+                    yield! FindCodeModelProperties ii
+                    yield! FindCodeModelImplementedInterfaceProperties ii
+            ]
 (* SVsTextManager section *)
     // let getSVsTextManager () = (IVsTextManager) (ServiceProvider.GetService(typeof<SVsTextManager>))
 
