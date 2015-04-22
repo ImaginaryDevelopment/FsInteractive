@@ -23,10 +23,17 @@ module Tfs =
       |> Seq.filter (fun s -> s.Contains("tfs"))
       |> Seq.head
 
-    let GetTfsUri serverName = sprintf "https://%s" serverName
+    let protocol = "https"
+    let GetTfsUri protocol serverName port path =
+      sprintf "%s://%s%s%s" protocol serverName 
+      <| match port with |Some p -> sprintf ":%i" p |_ -> String.Empty
+      <| match path with |Some p -> sprintf "/%s" p | _ -> String.Empty
     let webPort = 8080
     let teamProject = "Development"
-    let GetWebLinkBase serverName webPort teamProject = sprintf "http://%s:%i/DefaultCollection/%s" serverName webPort teamProject
+    let GetWebLinkBase protocol serverName webPort teamProject = sprintf "%s://%s:%i/DefaultCollection/%s" protocol serverName webPort teamProject
+      //match tfsVersion with
+      //| "tfs2010" -> sprintf "%s://%s:%i/tfs/web/%s" protocol serverName webPort teamProject
+      //| _ -> sprintf "%s://%s:%i/DefaultCollection/%s" protocol serverName webPort teamProject
 
     let GetChangesetLink webLinkBase changeset = sprintf "%s/_versionControl/changeset/%i" webLinkBase changeset
     let GetItemLink changesetLink path = sprintf "%s#path=%s&_a=compare" changesetLink path
@@ -70,24 +77,33 @@ module Tfs =
                           CreationDate=cs.CreationDate;
                           Changes=(cs.Changes |> Seq.map( fun change-> change.Item.ServerItem) |> Array.ofSeq)})
 
-type TFS (serverName, teamProjectName:string, tfs:TfsTeamProjectCollection, ?webPort) = 
-    let webPort = defaultArg webPort 8080
-    let nullToNone t = if t<>null then Some t else None
-    let noneToNull (t:string option) = if t.IsSome then t.Value else null
-    let defaultToNone t = if t = 0 then None else Some t
-    let webLinkBase = Tfs.GetWebLinkBase serverName webPort teamProjectName
-    static member GetTfs() = Tfs.GetTfs <| Uri(Tfs.GetTfsUri <| Tfs.GetTfsServerFromEnvironment())
-    member x.Tfs = tfs
-    // C# compat optional parameter imitation
-    new(serverName,teamProjectName, webport:Nullable<int>) = 
-        let optionOfNullable (a : System.Nullable<'T>) = 
-            if a.HasValue then
-                Some a.Value
-            else
-            None
-        new TFS(serverName, teamProjectName, Tfs.GetTfs(Uri(Tfs.GetTfsUri(serverName))), ?webPort=optionOfNullable webport)
+open System.Runtime.InteropServices
 
-    new() = new TFS(Tfs.GetTfsServerFromEnvironment(),Tfs.teamProject,webport = Nullable(Tfs.webPort))
+type TFS (serverName, teamProjectName:string, tfs:TfsTeamProjectCollection, [<Optional;DefaultParameterValue(8080)>] ?webPort,[<Optional;DefaultParameterValue("https")>] ?protocol) = 
+    let webPort = defaultArg webPort 8080
+    let protocol = defaultArg protocol "https"
+    let webLinkBase = Tfs.GetWebLinkBase protocol serverName webPort teamProjectName
+
+    static let nullToNone t = if t<>null then Some t else None
+    static let noneToNull (t:string option) = if t.IsSome then t.Value else null
+    static let defaultToNone t = if t = 0 then None else Some t
+    static let optionOfNullable (a : System.Nullable<'T>) = if a.HasValue then Some a.Value else None
+
+    static member GetTfs() = Tfs.GetTfs <| Uri(Tfs.GetTfsUri Tfs.protocol (Tfs.GetTfsServerFromEnvironment()) <| Some Tfs.webPort <| None)
+
+    member x.WebPort = webPort
+    member x.Protocol = protocol
+    member x.WebLinkBase = webLinkBase
+    member x.TfsPC = tfs
+
+    // C# compat optional parameter imitation
+    new(serverName,teamProjectName, webport:Nullable<int>, protocol:string, path) = 
+        let uri = Tfs.GetTfsUri protocol serverName <| optionOfNullable webport <| Some path
+        System.Diagnostics.Trace.WriteLine(sprintf "tfsUri:%A" uri)
+        System.Diagnostics.Debug.WriteLine(sprintf "tfsUri:%A" uri)
+        new TFS(serverName, teamProjectName, Tfs.GetTfs(Uri(uri)), ?webPort=optionOfNullable webport, ?protocol = nullToNone protocol)
+
+    new() = new TFS(Tfs.GetTfsServerFromEnvironment(),Tfs.teamProject, Nullable<int>(), null,null)
 
     member x.GetWorkItemLink(workItem) = Tfs.GetWorkItemLink webLinkBase workItem
     member x.GetChangesetLink(changeset) = Tfs.GetChangesetLink webLinkBase changeset
