@@ -1,6 +1,7 @@
 namespace Macros
 open EnvDTE
 open EnvDTE80
+open VSLangProj
 module VsMacros =
 
 // sources:
@@ -18,7 +19,6 @@ module VsMacros =
 //  http://naveensrinivasan.com/2010/05/16/visual-studio-keymaps-using-f/
 // get commands would be: dte.Commands |> Seq.cast<EnvDTE.Command> |> Seq.map(fun c->c.Name,c.Bindings) |>  Array.ofSeq;;
 
-  open VSLangProj
   open System
   open System.Runtime.InteropServices 
   open System.Runtime.InteropServices.ComTypes
@@ -92,22 +92,22 @@ module VsMacros =
             p.Kind= EnvDTE.Constants.vsProjectItemKindMisc ||
             p.Kind= EnvDTE.Constants.vsProjectKindSolutionItems ||
             p.Kind= EnvDTE.Constants.vsProjectKindMisc -> 
-                printfn "found container kind %A %s" p.Kind p.Name
+                //printfn "found container kind %A %s" p.Kind p.Name
                 yield! getSolutionFolderProjects p
           | _ -> 
-            printfn "found a solution project %s %A" project.Name project.Kind
+            //printfn "found a solution project %s %A" project.Name project.Kind
             yield project
           ] |> List.map (fun p -> (p.Name, p)) (* ,p.Object :?> VSLangProj.VSProject *)
 
-  let getSP (dte:EnvDTE.DTE) =
+  let getSP (dte:EnvDTE.DTE) = // get solution with projects
       let sol = dte.Solution
       let proj = getSolutionProjects sol
       (sol,proj)
 
-  type ProjReference = {Name:string;R:VSLangProj.Reference;Project:EnvDTE.Project option} with 
+  type ProjReference = {Name:string;R:VSLangProj.Reference;IsGac:bool;Project:EnvDTE.Project option} with 
     override this.ToString() = 
         let proj = match this.Project with | Some p -> sprintf """;Proj="%s""" p.Name + "\"" |None -> String.Empty
-        sprintf """{Name="%s"%s}""" this.Name proj
+        sprintf """{Name="%s";IsGac=%A;Path="%s"%s}""" this.Name this.IsGac this.R.Path proj
 
   type ReferencesByProj = { ProjectName:string; Refs:ProjReference seq; VsProj:VSLangProj.VSProject; EnvProj:EnvDTE.Project; } with
     override this.ToString() = sprintf """{ProjectName="%s";Refs=%A} """ this.ProjectName (this.Refs |> Seq.map  string)
@@ -115,10 +115,20 @@ module VsMacros =
   let mapReferences (vsProj:VSLangProj.VSProject): ProjReference seq = 
     vsProj.References 
     |> Seq.cast<VSLangProj.Reference> 
-    |> Seq.map(fun r -> {ProjReference.Name =r.Name;R=r;Project = if r.SourceProject  = null then None else Some r.SourceProject})
+    |> Seq.map(fun r -> 
+        {
+            ProjReference.Name =r.Name
+            R=r
+            Project = if r.SourceProject  = null then None else Some r.SourceProject
+            IsGac=r.Path.Contains("GAC")
+        }
+    )
 
-  let getReferences (projs : (string*EnvDTE.Project) seq) = 
-    projs |> Seq.map (fun (projName,p) -> projName,p,p.Object :?> VSLangProj.VSProject) |> Seq.map (fun (projName,p,vsProj) -> {ReferencesByProj.ProjectName=projName; Refs = mapReferences vsProj ; EnvProj=p;VsProj=vsProj} )
+  let getReferences (projs : (string*EnvDTE.Project) seq) =  // created with help from https://mhusseini.wordpress.com/2013/05/29/get-project-references-from-envdte-project/
+    projs |> Seq.map (fun (projName,p) -> projName,p,p.Object :?> VSLangProj.VSProject) |> Seq.map 
+        (fun (projName,p,vsProj) -> 
+            {ReferencesByProj.ProjectName=projName; Refs = mapReferences vsProj ; EnvProj=p;VsProj=vsProj} 
+        )
 
   let getDteCommands (dte:EnvDTE.DTE) = dte.Commands.Cast<EnvDTE.Command>()
 
@@ -176,6 +186,42 @@ module CodeModel =  // mostly from EnvDteHelper.ttinclude
                     yield! FindCodeModelProperties ii
                     yield! FindCodeModelImplementedInterfaceProperties ii
             ]
+module ProjFiles = 
+    module Seq = // static extensions on Seq
+            let mapCarry f = Seq.map (fun value -> (value,f value))
+            let mapCarrySnd f = Seq.map( fun (x,v) -> (x, v, f v))
+    type System.String with
+        member x.ContainsI(s:string) = x.IndexOf(s,System.StringComparison.InvariantCultureIgnoreCase) >= 0
+    type Project = EnvDTE.Project
+    open System.Xml.Linq
+
+    type ProjFileItem = {Name:string;FullPath:string}
+
+    //Filters on project name contains "test"
+    let getProjFiles (projs : EnvDTE.Project seq )= 
+        let projFileItemFromProj (p:EnvDTE.Project) = {ProjFileItem.Name = p.Name; FullPath= p.FullName}
+        projs 
+        |> Seq.map projFileItemFromProj
+        |> Seq.filter( fun fp -> fp.Name.ContainsI("test") = false)
+
+    let getDoc (pfi:ProjFileItem) = System.Xml.Linq.XDocument.Load(pfi.FullPath)
+    type ItemGroup = {Condition:string option;Items: XElement seq}
+    type Projfile = {ProjFileItem:ProjFileItem;Doc:XDocument;ItemGroups: ItemGroup seq}
+    let private getAttribValueOrNone  name (x:XElement) = 
+            let xa= x.Attribute(XNamespace.None + name)
+            if xa=null then None
+            else
+                if xa.Value = null then None
+                else Some xa.Value
+    let mapReferences (projFileItems:ProjFileItem seq) =
+        projFileItems
+        |> Seq.mapCarry getDoc
+        |> Seq.map (fun (pfi,doc) -> 
+            let rootns s = doc.Root.Name.Namespace + s
+            let projEl = doc.Element(rootns "Project")
+            let itemGroups = projEl.Elements(rootns "ItemGroup") |> Seq.cast<XElement>
+            let itemGroups = itemGroups |> Seq.map (fun ig -> {Condition =getAttribValueOrNone "Condition" ig;Items=ig.Elements() })
+            {ProjFileItem=pfi;Doc=doc; ItemGroups= itemGroups })  
 (* SVsTextManager section *)
     // let getSVsTextManager () = (IVsTextManager) (ServiceProvider.GetService(typeof<SVsTextManager>))
 
