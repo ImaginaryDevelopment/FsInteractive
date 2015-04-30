@@ -2,6 +2,10 @@ namespace Macros
 open EnvDTE
 open EnvDTE80
 open VSLangProj
+module Helpers =
+    type System.String with
+        member x.ContainsI(s:string) = if x = null then false else x.IndexOf(s,System.StringComparison.InvariantCultureIgnoreCase) >= 0
+open Helpers
 module VsMacros =
 
 // sources:
@@ -97,17 +101,18 @@ module VsMacros =
           | _ -> 
             //printfn "found a solution project %s %A" project.Name project.Kind
             yield project
-          ] |> List.map (fun p -> (p.Name, p)) (* ,p.Object :?> VSLangProj.VSProject *)
+          ] (* ,p.Object :?> VSLangProj.VSProject *)
 
   let getSP (dte:EnvDTE.DTE) = // get solution with projects
       let sol = dte.Solution
       let proj = getSolutionProjects sol
       (sol,proj)
-
-  type ProjReference = {Name:string;R:VSLangProj.Reference;IsGac:bool;Project:EnvDTE.Project option} with 
+  type ProjReference = {Name:string;R:VSLangProj.Reference;Project:EnvDTE.Project option} with 
+    member this.IsResolved = String.IsNullOrEmpty this.R.Path = false
+    member this.IsGac = this.IsResolved && this.R.Path.ContainsI "gac"
     override this.ToString() = 
         let proj = match this.Project with | Some p -> sprintf """;Proj="%s""" p.Name + "\"" |None -> String.Empty
-        sprintf """{Name="%s";IsGac=%A;Path="%s"%s}""" this.Name this.IsGac this.R.Path proj
+        sprintf """{Name="%s";IsResolved=%A;IsGac=%A;Path="%s"%s}""" this.Name this.IsResolved this.IsGac this.R.Path proj
 
   type ReferencesByProj = { ProjectName:string; Refs:ProjReference seq; VsProj:VSLangProj.VSProject; EnvProj:EnvDTE.Project; } with
     override this.ToString() = sprintf """{ProjectName="%s";Refs=%A} """ this.ProjectName (this.Refs |> Seq.map  string)
@@ -117,18 +122,15 @@ module VsMacros =
     |> Seq.cast<VSLangProj.Reference> 
     |> Seq.map(fun r -> 
         {
-            ProjReference.Name =r.Name
-            R=r
+            ProjReference.Name= r.Name
+            R= r
             Project = if r.SourceProject  = null then None else Some r.SourceProject
-            IsGac=r.Path.Contains("GAC")
         }
     )
-
-  let getReferences (projs : (string*EnvDTE.Project) seq) =  // created with help from https://mhusseini.wordpress.com/2013/05/29/get-project-references-from-envdte-project/
-    projs |> Seq.map (fun (projName,p) -> projName,p,p.Object :?> VSLangProj.VSProject) |> Seq.map 
-        (fun (projName,p,vsProj) -> 
-            {ReferencesByProj.ProjectName=projName; Refs = mapReferences vsProj ; EnvProj=p;VsProj=vsProj} 
-        )
+  let getReferences (proj : EnvDTE.Project) =  // created with help from https://mhusseini.wordpress.com/2013/05/29/get-project-references-from-envdte-project/
+    proj.FullName |> ignore
+    let vsProj = proj.Object :?> VSLangProj.VSProject
+    {ReferencesByProj.ProjectName = proj.Name; Refs = mapReferences vsProj; EnvProj = proj; VsProj=vsProj }
 
   let getDteCommands (dte:EnvDTE.DTE) = dte.Commands.Cast<EnvDTE.Command>()
 
@@ -142,11 +144,9 @@ module VsMacros =
     |> Array.ofSeq
 
   let getTextSelection (dte:EnvDTE.DTE) = dte.ActiveDocument.Selection
-
-
-  
   let SolutionExplorerWindow = "{3AE79031-E1BC-11D0-8F78-00A0C9110057}"
   let SolutionFolder = "{66A26720-8FB5-11D2-AA7E-00C04F688DDE}"
+
   let getProjectsByRegex regex (pl:EnvDTE.Project list) =
     let re = new Regex (regex, System.Text.RegularExpressions.RegexOptions.IgnoreCase)
     pl |> List.filter (fun p -> re.Match(p.Name).Success)
@@ -190,38 +190,59 @@ module ProjFiles =
     module Seq = // static extensions on Seq
             let mapCarry f = Seq.map (fun value -> (value,f value))
             let mapCarrySnd f = Seq.map( fun (x,v) -> (x, v, f v))
-    type System.String with
-        member x.ContainsI(s:string) = x.IndexOf(s,System.StringComparison.InvariantCultureIgnoreCase) >= 0
-    type Project = EnvDTE.Project
+            
     open System.Xml.Linq
 
     type ProjFileItem = {Name:string;FullPath:string}
 
     //Filters on project name contains "test"
-    let getProjFiles (projs : EnvDTE.Project seq )= 
-        let projFileItemFromProj (p:EnvDTE.Project) = {ProjFileItem.Name = p.Name; FullPath= p.FullName}
-        projs 
-        |> Seq.map projFileItemFromProj
-        |> Seq.filter( fun fp -> fp.Name.ContainsI("test") = false)
+    let getProjFile (proj : EnvDTE.Project)= 
+        {ProjFileItem.Name = proj.Name; FullPath= proj.FullName}
+
+    let getNonTestProjFiles projs = Seq.map getProjFile projs |> Seq.filter( fun fp -> fp.Name.ContainsI("test") = false)
 
     let getDoc (pfi:ProjFileItem) = System.Xml.Linq.XDocument.Load(pfi.FullPath)
-    type ItemGroup = {Condition:string option;Items: XElement seq}
-    type Projfile = {ProjFileItem:ProjFileItem;Doc:XDocument;ItemGroups: ItemGroup seq}
+    type ItemGroupItem = {Condition:string option; Include:string option; Raw: XElement}
+    type ItemGroup = {Condition:string option;Items: ItemGroupItem seq}
+    type Projfile = {Doc:XDocument;ItemGroups: ItemGroup seq}
     let private getAttribValueOrNone  name (x:XElement) = 
             let xa= x.Attribute(XNamespace.None + name)
             if xa=null then None
             else
                 if xa.Value = null then None
                 else Some xa.Value
-    let mapReferences (projFileItems:ProjFileItem seq) =
-        projFileItems
-        |> Seq.mapCarry getDoc
-        |> Seq.map (fun (pfi,doc) -> 
-            let rootns s = doc.Root.Name.Namespace + s
-            let projEl = doc.Element(rootns "Project")
-            let itemGroups = projEl.Elements(rootns "ItemGroup") |> Seq.cast<XElement>
-            let itemGroups = itemGroups |> Seq.map (fun ig -> {Condition =getAttribValueOrNone "Condition" ig;Items=ig.Elements() })
-            {ProjFileItem=pfi;Doc=doc; ItemGroups= itemGroups })  
+    let getReferences (projDoc:XDocument) =
+        let rootns s = projDoc.Root.Name.Namespace + s
+        let projEl = projDoc.Element(rootns "Project")
+        let itemGroupElements = projEl.Elements(rootns "ItemGroup") |> Seq.cast<XElement>
+        let itemGroups : ItemGroup seq = 
+            let igiFromXE xe = {ItemGroupItem.Condition = getAttribValueOrNone "Condition" xe; Include= getAttribValueOrNone "Include" xe; Raw=xe }
+            itemGroupElements
+            |> Seq.map (fun igElement -> {Condition =getAttribValueOrNone "Condition" igElement;Items=Seq.map igiFromXE <| igElement.Elements() })
+        itemGroups
+    
+    type ProjFileDteCollection = {MatchedRefs: VsMacros.ProjReference*XElement seq; ProjRefs: VsMacros.ProjReference seq; Refs: ItemGroup seq  }
+    type ProjFilesMated = {ProjectName:string;ProjFileDteItems:ProjFileDteCollection}
+//    let joinRefsToProject (proj:EnvDTE.Project) =
+//        let projRefs = VsMacros.getReferences proj
+//        let pfi = getProjFile proj 
+//        let doc = getDoc pfi
+//        let itemGroups = getReferences doc
+//        let flattenIG= Seq.map(fun ig -> ig.Items |> Seq.collect ( fun i-> (ig.Condition,i)))
+//        let igsWithCondition = itemGroups |> Seq.map flattenIG
+//
+//        let matches = 
+//            query{
+//                for ref in projRefs.Refs do
+//                join (groupCondition,igi) in igsWithCondition on (ref.Name = igi.Include )
+//                select (ref,item)
+//            }
+//        let unmatchedRefs =
+//            query{
+//                for ref in projRefs.Refs do
+//                where (items|> Seq.exists (fun item ->item= ref.Name) |> not)
+//            }
+//        {ProjFilesMated.ProjectName=proj.Name; ProjFileDteItems= {ProjFileDteCollection.MatchedRefs = matches;ProjRefs = projRefs.Refs; Refs = itemGroups}}
 (* SVsTextManager section *)
     // let getSVsTextManager () = (IVsTextManager) (ServiceProvider.GetService(typeof<SVsTextManager>))
 
