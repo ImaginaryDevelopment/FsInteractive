@@ -8,11 +8,11 @@ module VsMacros =
 // http://fortysix-and-two.blogspot.com/2010/05/accessing-visual-studios-automation-api.html
 // 
 // compilation : 
-//  fsc --out:vsmacros.dll --reference:envdte.dll --reference:System.Management.dll --reference:vslangproj.dll --target:library vsfsmacros.fs
+//  fsc --out:dtemacros.dll --reference:envdte.dll --reference:System.Management.dll --reference:vslangproj.dll --target:library vsfsmacros.fs
 // usage: 
-//  #r @"C:\projects\fsi\vsmacros.dll";#r "EnvDTE"; open vsmacros;; let dte=getDte();;
+//  #r @"C:\projects\fsi\dtemacros.dll";#r "EnvDTE"; open Macros.VsMacros;; let dte=getDte();;
 // alternate usage if installed to public assemblies:
-//  #r "vsmacros.dll";#r "EnvDTE"; open vsmacros; let dte=getDte();;
+//  #r "dtemacros.dll";#r "EnvDTE"; open Macros.VsMacros; let dte=getDte();;
 
 // sources:
 //  http://naveensrinivasan.com/2010/05/16/visual-studio-keymaps-using-f/
@@ -103,6 +103,22 @@ module VsMacros =
       let sol = dte.Solution
       let proj = getSolutionProjects sol
       (sol,proj)
+
+  type ProjReference = {Name:string;R:VSLangProj.Reference;Project:EnvDTE.Project option} with 
+    override this.ToString() = 
+        let proj = match this.Project with | Some p -> sprintf """;Proj="%s""" p.Name + "\"" |None -> String.Empty
+        sprintf """{Name="%s"%s}""" this.Name proj
+
+  type ReferencesByProj = { ProjectName:string; Refs:ProjReference seq; VsProj:VSLangProj.VSProject; EnvProj:EnvDTE.Project; } with
+    override this.ToString() = sprintf """{ProjectName="%s";Refs=%A} """ this.ProjectName (this.Refs |> Seq.map  string)
+
+  let mapReferences (vsProj:VSLangProj.VSProject): ProjReference seq = 
+    vsProj.References 
+    |> Seq.cast<VSLangProj.Reference> 
+    |> Seq.map(fun r -> {ProjReference.Name =r.Name;R=r;Project = if r.SourceProject  = null then None else Some r.SourceProject})
+
+  let getReferences (projs : (string*EnvDTE.Project) seq) = 
+    projs |> Seq.map (fun (projName,p) -> projName,p,p.Object :?> VSLangProj.VSProject) |> Seq.map (fun (projName,p,vsProj) -> {ReferencesByProj.ProjectName=projName; Refs = mapReferences vsProj ; EnvProj=p;VsProj=vsProj} )
 
   let getDteCommands (dte:EnvDTE.DTE) = dte.Commands.Cast<EnvDTE.Command>()
 
