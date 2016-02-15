@@ -1,4 +1,4 @@
-FsInteractive
+FsInteractive [![Build status](https://ci.appveyor.com/api/projects/status/diqrgmxv00bhpeux?svg=true)](https://ci.appveyor.com/project/ImaginaryDevelopment/fsinteractive)
 =============
 
 my reusable F# interactive code
