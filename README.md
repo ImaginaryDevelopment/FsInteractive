@@ -16,3 +16,6 @@ Includes
   - without 
     -  compile the files individually or as desired (referencing the dlls needed to build them)
     -  then in fsi reference them `#r "(yourdirectory)\tfsmacros";open tfsmacros;; let tfs=getTfs();;`
+
+- currently the tfsmacros are turned off in the sln build, since I wasn't sure if they would be present on appveyor or anyone else's machine that wanted to download this
+ -  to turn them back on, set them back to compile, and make sure the reference dlls are turned back on in the .fsproj file
