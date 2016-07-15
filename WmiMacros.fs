@@ -3,7 +3,7 @@
 open System
 open System.Management
 open Microsoft.FSharp.Reflection
-
+open BReusable
 // http://www.iislogs.com/articles/12/
 // usage: http://stackoverflow.com/a/26111634/57883
 
@@ -78,8 +78,8 @@ module WmiMacros =
         with static member FromWin32Process (p:Win32_Process) = 
                 // "C:\Windows\SysWOW64\inetsrv\w3wp.exe -ap "MarketOnce.WebApi" -v "v4.0" -l "webengine4.dll" -a \\.\pipe\iisipm31653017-1eb6-4324-8724-afdc023ff248 -h "C:\inetpub\temp\apppools\MarketOnce.WebApi\MarketOnce.WebApi.config" -w "" -m 0";
                 printfn "cmd: %s" p.CommandLine
-                let appPool = if p.CommandLine.Contains("-ap ") then p.CommandLine.After("-ap \"").Before("\"") else String.Empty
-                let cleanCommandLine (i:string) = i.After("-h").After("\"").Before("\"")
+                let appPool = if p.CommandLine.Contains("-ap ") then p.CommandLine |> after "-ap \"" |> before "\"" else String.Empty
+                let cleanCommandLine i = i |> after "-h" |> after "\"" |> before "\""
                 let memoryToUi32 (n:UInt32) = 
                     if n> 2048u then n.ToString("n0")
                     else (n / 1024u).ToString() + "Kb"
@@ -92,7 +92,7 @@ module WmiMacros =
                     AppPool = appPool
                     ProcessDisplay.ProcessId = p.ProcessId
                     ThreadCount = p.ThreadCount
-                    Name = cleaned.Before(".config").AfterLast("\\")
+                    Name = cleaned |> before ".config" |> afterLast "\\"
                     Config = p.CommandLine
                     CreationDate = p.CreationDate.ToString()
                     PageFileUsage = memoryToUi32 p.PageFileUsage

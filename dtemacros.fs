@@ -30,7 +30,7 @@ module VsMacros =
   open System.Text.RegularExpressions
   open System.Management 
   open System.Management.Instrumentation
-  open System.Linq 
+//  open System.Linq 
 
   [<DllImport("ole32.dll")>] 
   extern int internal GetRunningObjectTable(uint32 reserved, IRunningObjectTable& pprot) 
@@ -132,7 +132,7 @@ module VsMacros =
     let vsProj = proj.Object :?> VSLangProj.VSProject
     {ReferencesByProj.ProjectName = proj.Name; Refs = mapReferences vsProj; EnvProj = proj; VsProj=vsProj }
 
-  let getDteCommands (dte:EnvDTE.DTE) = dte.Commands.Cast<EnvDTE.Command>()
+  let getDteCommands (dte:EnvDTE.DTE) = dte.Commands |> Seq.cast<EnvDTE.Command>
 
   let getDteCommandsByName (dte:EnvDTE.DTE) search = getDteCommands dte |> Seq.filter(fun f -> f.Name.Contains(search)) |> Seq.map(fun f-> f.Name) |> Array.ofSeq
 
@@ -186,6 +186,9 @@ module CodeModel =  // mostly from EnvDteHelper.ttinclude
                     yield! FindCodeModelProperties ii
                     yield! FindCodeModelImplementedInterfaceProperties ii
             ]
+
+
+
 module ProjFiles = 
     module Seq = // static extensions on Seq
             let mapCarry f = Seq.map (fun value -> (value,f value))

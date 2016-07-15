@@ -53,9 +53,6 @@ module Tfs =
     let GetVcsItemsByWildcard (vcs:VersionControlServer) wildcard = 
         vcs.GetItems(wildcard,RecursionType.Full)
 
-    
-
-
     let GetTfsChangesByUserAndFile (tfs:TfsTeamProjectCollection) (user:string option) querypath (resultLimit:int option) =
       let userArg = match user with |None -> Some Environment.UserName | f -> f
       GetTfsChangesByPath tfs querypath userArg None true
