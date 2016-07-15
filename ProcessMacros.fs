@@ -1,8 +1,11 @@
 namespace Macros
 open System
+open BReusable
 module ProcessMacros = 
     open System.Collections.ObjectModel
     open BReusable.Railways
+    open System.Diagnostics
+
     type RunProcResult = {Outputs:string ObservableCollection; Errors: string ObservableCollection; }
 
     let private setupRunProc filename args startDir fBothOpt outF errorF = 
@@ -39,16 +42,21 @@ module ProcessMacros =
         if not started then
             failwithf "Failed to start process %s" filename
         printfn "Started %s with pid %i" p.ProcessName p.Id
+#if LINQPAD
         let setupKillLinq () = // TODO: try to get the liveKillLink:observable<HyperLinq> deal working
             let killIt () = 
                 p.Id.Dump("killing process")
                 p.Kill()
             let h = Hyperlinq(Action(killIt),sprintf "Kill Process:%i" p.Id, runOnNewThread = true)
             h.Dump()
+#endif
             
         p.BeginOutputReadLine()
         p.BeginErrorReadLine()
+#if LINQPAD
         setupKillLinq()
+#endif
+
         let onFinish = 
             async{
                 try
@@ -120,6 +128,9 @@ module ProcessMacros =
         
         
 module MsBuild = 
+    open System.IO
+    open System.Diagnostics
+
     let msbuild targetProject buildArgs fBothOpt fOutputOpt fErrorOpt = 
         let targetFolder = Path.GetDirectoryName targetProject
         let msbuildPath = @"C:\Program Files (x86)\MSBuild\14.0\Bin\MSBuild.exe"
@@ -132,7 +143,7 @@ module MsBuild =
         //liveMessageStream.OnNext args.Data
         //liveMessageStream.OnCompleted()
         
-        let output,errors = Process'.runProcSync msbuildPath args (Some targetFolder) fBothOpt fOutputOpt fErrorOpt
+        let output,errors = ProcessMacros.runProcSync msbuildPath args (Some targetFolder) fBothOpt fOutputOpt fErrorOpt
 
         match errorCount output errors with
         | Some errorMatch -> 
@@ -176,15 +187,3 @@ module MsBuild =
             failwithf "Build failed %A" errors
         let xml = outputs |> Seq.last
         targetFolder,xml
-    
-let findNewest path = 
-    Directory.GetFiles path
-    |> Seq.map File.GetLastWriteTime
-    |> Seq.max
-
-let getNewestProjFolder projFolder = //debug or release whichever is newer 
-    let sqlFolder = combine projFolder "sql"
-    [combine sqlFolder "debug"; combine sqlFolder "release"]
-    |> Seq.filter Directory.Exists
-    |> Seq.filter (Directory.GetFiles >> Seq.exists(fun _ -> true))
-    |> Seq.maxBy findNewest

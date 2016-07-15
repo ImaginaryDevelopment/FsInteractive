@@ -26,11 +26,22 @@ module StringHelpersAuto =
         if x |> String.contains delimiter then failwithf "After last called with no match"
         x |> String.subString (x.LastIndexOf delimiter + delimiter.Length)
     let replace (target:string) (replacement) (str:string) = str.Replace(target,replacement)
+    let delimit (delimiter:string) (items:#seq<string>) = String.Join(delimiter,items)
     let stringEqualsI s1 (toMatch:string)= toMatch <> null && toMatch.Equals(s1, StringComparison.InvariantCultureIgnoreCase)
     let (|StartsWithI|_|) (toMatch:string) (x:string) = 
         if not <| isNull x && not <| isNull toMatch && toMatch.Length > 0 && x.StartsWith(toMatch, StringComparison.InvariantCultureIgnoreCase) then
             Some () 
         else None
+
+
+module PathHelpers=
+    open System.IO
+    let findNewest path = 
+        Directory.GetFiles path
+        |> Seq.map File.GetLastWriteTime
+        |> Seq.max
+
+
 [<AutoOpen>]
 module FunctionalHelpersAuto = 
     let teeTuple f x = x, f x
