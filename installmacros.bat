@@ -4,6 +4,7 @@ setlocal
 call "C:\Program Files (x86)\Microsoft Visual Studio 14.0\Common7\Tools\vsvars32.bat"
 fsc --out:BReusable.dll --target:library BReusable.fs
 fsc --out:PathMacros.dll --reference:vslangproj.dll --target:library PathMacros.fs
+fsc --out:ProcessMacros.dll --reference:BReusable.dll --target:library ProcessMacros.fs
 fsc --out:ComMacros.dll --target:library ComMacros.fs
 fsc --out:DteMacros.dll --reference:envdte.dll --reference:envdte80.dll --reference:System.Management.dll --reference:vslangproj.dll --reference:System.Xml.Linq.dll --target:library dtemacros.fs
 fsc --out:WinFormsMacros.dll --reference:System.Windows.Forms.dll --reference:vslangproj.dll --target:library WinFormsMacros.fs
