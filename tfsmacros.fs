@@ -9,7 +9,6 @@ open Microsoft.TeamFoundation.VersionControl.Client
 //  #r "tfsmacros";open tfsmacros;let tfs=getTfs();;
 //  getTfsChangesByUserAndFile tfs None "$/Development/";;
 
-
 type ChangeHistory = {ChangesetId:int;Owner:string;CreationDate:DateTime;Changes:string[]}
 type ChangeHistoryWithWorkItems = {ChangesetId:int;Owner:string;CreationDate:DateTime;AssociatedWorkItems:(int*string*string)[];Changes:string[]}
 type UserChangeHistory = {ChangesetId:int;CreationDate:DateTime;AssociatedWorkItems:(int*string*string)[];Changes:string[]}

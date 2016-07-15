@@ -45,6 +45,9 @@
     <Compile Include="..\..\ProcessMacros.fs">
       <Link>ProcessMacros.fs</Link>
     </Compile>
+    <Compile Include="..\..\SqlMacros.fs">
+      <Link>SqlMacros.fs</Link>
+    </Compile>
     <Compile Include="..\..\dtemacros.fs">
       <Link>dtemacros.fs</Link>
     </Compile>

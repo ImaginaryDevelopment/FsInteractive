@@ -18,6 +18,9 @@ module StringHelpersAuto =
 //        member x.Before (delimiter:string) = 
 //            x.Substring(0, x.IndexOf(delimiter))
 //let dumpt (t:string) x = x.Dump(t); x
+    let delimit (delimiter:string) (items:#seq<string>) = String.Join(delimiter,items)
+    let contains delimiter (x:string) = x.Contains delimiter
+    let replace (target:string) (replacement) (str:string) = str.Replace (target,replacement)
     let after (delimiter:string) (s:string) = s|> String.subString (s.IndexOf delimiter + delimiter.Length)
     let before (delimiter:string) s = s|> String.subString2 0 (s.IndexOf delimiter)
     let afterOrSelf delimiter x = if x|> String.contains delimiter then x |> after delimiter else x
@@ -25,8 +28,6 @@ module StringHelpersAuto =
     let afterLast delimiter x = 
         if x |> String.contains delimiter then failwithf "After last called with no match"
         x |> String.subString (x.LastIndexOf delimiter + delimiter.Length)
-    let replace (target:string) (replacement) (str:string) = str.Replace(target,replacement)
-    let delimit (delimiter:string) (items:#seq<string>) = String.Join(delimiter,items)
     let stringEqualsI s1 (toMatch:string)= toMatch <> null && toMatch.Equals(s1, StringComparison.InvariantCultureIgnoreCase)
     let (|StartsWithI|_|) (toMatch:string) (x:string) = 
         if not <| isNull x && not <| isNull toMatch && toMatch.Length > 0 && x.StartsWith(toMatch, StringComparison.InvariantCultureIgnoreCase) then
@@ -52,7 +53,7 @@ module Railways =
         | Success of 't
         | Failure of 'tError
     /// rail -> one track function lifted to pretend it is two track
-    let map f1to1 rx =  
+    let map f1to1 rx = 
         match rx with
         | Success s -> f1to1 s |> Success
         | Failure x -> Failure x
