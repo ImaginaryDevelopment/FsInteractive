@@ -6,19 +6,11 @@ module StringHelpersAuto =
         static member subString i (x:string) = x.Substring(i)
         static member subString2 i e (x:string)= x.Substring(i,e)
         static member contains s (x:string) = x.Contains(s)
-        // favor non attached methods for overfly commonly used methods
+        // favor non attached methods for commonly used methods
 
-//        member x.After (delimiter:string) = 
-//            x.Substring(x.IndexOf(delimiter) + delimiter.Length)
-//        member x.AfterOrSelf(delimiter) = 
-//            if x.Contains delimiter then x.After delimiter else x
-//        member x.AfterLast (delimiter:string) = 
-//            if x.Contains delimiter = false then failwithf "After last called with no match"
-//            x.Substring(x.LastIndexOf(delimiter) + delimiter.Length)
-//        member x.Before (delimiter:string) = 
-//            x.Substring(0, x.IndexOf(delimiter))
-//let dumpt (t:string) x = x.Dump(t); x
+    let splitLines(x:string) = x.Split([| "\r\n";"\n"|], StringSplitOptions.None)
     let delimit (delimiter:string) (items:#seq<string>) = String.Join(delimiter,items)
+    let trim (s:string) = s.Trim()
     let contains delimiter (x:string) = x.Contains delimiter
     let replace (target:string) (replacement) (str:string) = str.Replace (target,replacement)
     let after (delimiter:string) (s:string) = s|> String.subString (s.IndexOf delimiter + delimiter.Length)
@@ -28,11 +20,22 @@ module StringHelpersAuto =
     let afterLast delimiter x = 
         if x |> String.contains delimiter then failwithf "After last called with no match"
         x |> String.subString (x.LastIndexOf delimiter + delimiter.Length)
-    let stringEqualsI s1 (toMatch:string)= toMatch <> null && toMatch.Equals(s1, StringComparison.InvariantCultureIgnoreCase)
+    let stringEqualsI s1 (toMatch:string)= not <| isNull toMatch && toMatch.Equals(s1, StringComparison.InvariantCultureIgnoreCase)
     let (|StartsWithI|_|) (toMatch:string) (x:string) = 
         if not <| isNull x && not <| isNull toMatch && toMatch.Length > 0 && x.StartsWith(toMatch, StringComparison.InvariantCultureIgnoreCase) then
             Some () 
         else None
+#if LINQPAD
+    let dumpt (title:string) x = x.Dump(title); x
+#else
+    let dumpt (title:string) x = printfn "%s:%A" title x; x
+#endif
+    let indent spacing (text:string) =
+        if String.IsNullOrEmpty(text) then 
+            String.Empty 
+        else if trim text |> String.contains "\r\n" then
+            "\r\n" +  text |> splitLines |> Seq.map (fun s -> spacing + s) |> delimit "\r\n"
+        else text
 
 
 module PathHelpers=
@@ -47,6 +50,10 @@ module PathHelpers=
 module FunctionalHelpersAuto = 
     let teeTuple f x = x, f x
     let tee f x = f x; x
+    let flip f x y = f y x
+    let uncurry f (x,y) = f x y
+    let inline getType x = x.GetType()
+
 
 module Railways =
     type Railway<'t,'tError> =
@@ -94,27 +101,28 @@ module Railways =
         if items |> Seq.forall fAll then 
             items |> Seq.choose toSuccessOption |> Success
         else items |> Seq.choose toFailureOption |> Failure
-    
+
 module Seq =
+    let any<'t> (items:'t seq) = items |> Seq.exists (fun _ -> true)
   /// Iterates over elements of the input sequence and groups adjacent elements.
   /// A new group is started when the specified predicate holds about the element
   /// of the sequence (and at the beginning of the iteration).
   ///
   /// For example: 
   ///    Seq.groupWhen isOdd [3;3;2;4;1;2] = seq [[3]; [3; 2; 4]; [1; 2]]
-  let groupWhen f (input:seq<_>) = seq {
-    use en = input.GetEnumerator()
-    let running = ref true
-    
-    // Generate a group starting with the current element. Stops generating
-    // when it founds element such that 'f en.Current' is 'true'
-    let rec group() = 
-      [ yield en.Current
+    let groupWhen f (input:seq<_>) = seq {
+        use en = input.GetEnumerator()
+        let running = ref true
+        
+        // Generate a group starting with the current element. Stops generating
+        // when it founds element such that 'f en.Current' is 'true'
+        let rec group() = 
+          [ yield en.Current
+            if en.MoveNext() then
+              if not (f en.Current) then yield! group() 
+            else running := false ]
+        
         if en.MoveNext() then
-          if not (f en.Current) then yield! group() 
-        else running := false ]
-    
-    if en.MoveNext() then
-      // While there are still elements, start a new group
-      while running.Value do
-        yield group() |> Seq.ofList }
+          // While there are still elements, start a new group
+          while running.Value do
+            yield group() |> Seq.ofList }

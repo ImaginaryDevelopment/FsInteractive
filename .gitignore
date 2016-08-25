@@ -2,3 +2,6 @@
 MacroRunner/MacroRunner/bin/*
 MacroRunner/MacroRunner/obj/*
 MacroRunner/.vs/MacroRunner/v14/.suo
+/MacroRunner/CodeGeneration/bin/Debug
+/MacroRunner/CodeGeneration/obj/Debug
+/MacroRunner/packages

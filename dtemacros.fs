@@ -7,6 +7,9 @@ module Helpers =
         member x.ContainsI(s:string) = if x = null then false else x.IndexOf(s,System.StringComparison.InvariantCultureIgnoreCase) >= 0
 open Helpers
 module VsMacros =
+  type CultureInfo = System.Globalization.CultureInfo
+  type PluralizationService = System.Data.Entity.Design.PluralizationServices.PluralizationService
+  let createPluralizer () = PluralizationService.CreateService(CultureInfo "en") // https://msdn.microsoft.com/en-us/library/system.data.entity.design.pluralizationservices.pluralizationservice(v=vs.110).aspx
 
 // sources:
 // http://eduardoclaudio.wordpress.com/2011/07/04/creating-visual-studio-macros-in-f
@@ -26,10 +29,8 @@ module VsMacros =
   open System
   open System.Runtime.InteropServices 
   open System.Runtime.InteropServices.ComTypes
-  open System.Diagnostics
   open System.Text.RegularExpressions
   open System.Management 
-  open System.Management.Instrumentation
 //  open System.Linq 
 
   [<DllImport("ole32.dll")>] 
@@ -248,6 +249,7 @@ module ProjFiles =
 //        {ProjFilesMated.ProjectName=proj.Name; ProjFileDteItems= {ProjFileDteCollection.MatchedRefs = matches;ProjRefs = projRefs.Refs; Refs = itemGroups}}
 (* SVsTextManager section *)
     // let getSVsTextManager () = (IVsTextManager) (ServiceProvider.GetService(typeof<SVsTextManager>))
+
 
 // more helpful resources:
 // http://www.viva64.com/en/b/0169/
