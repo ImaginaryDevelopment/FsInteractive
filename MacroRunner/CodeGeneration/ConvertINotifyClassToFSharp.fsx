@@ -70,9 +70,9 @@ open BReusable
 
 type System.String with
     static member optionToStringOrEmpty (s:string option) = match s with Some text -> text | None -> String.Empty
-let convertFile fIsDebugCode translateOptions typeAttrs target (cls:FileInfoB) = 
+let convertFile translateOptions typeAttrs target (cls:FileInfoB) = 
     let _debugOpt,getDebugOpt = translateOptions.GetStartDebugState None (ScriptOptions.isDebugCode cls.File)
-    let convertProperties () = PropConversion.convertProperties (fIsDebugCode) translateOptions target translateOptions.Spacing cls
+    let convertProperties () = PropConversion.convertProperties (ScriptOptions.isDebugCode) translateOptions target translateOptions.Spacing cls
     
     match target with 
     //| RecordBasedClass (propertyPrefs,promote)  -> String.Empty
@@ -119,7 +119,7 @@ let convertFile fIsDebugCode translateOptions typeAttrs target (cls:FileInfoB) =
             .AppendLine(String.Empty)
             .AppendLine(delimit "\r\n" props).ToString()
 
-let ``convertToF#`` (fIsDebugCode) translateOptions (runOptions:ConversionRunOptions option) limit =
+let ``convertToF#`` translateOptions (runOptions:ConversionRunOptions option) limit =
     let runOptions = match runOptions with |Some ro -> ro | None -> ScriptOptions.getDefaultRunOptions()
     printfn "runOptions.Source = %A" runOptions.Source
     runOptions.Source |> dumpt "runOptions.Source" |> ignore
@@ -133,7 +133,7 @@ let ``convertToF#`` (fIsDebugCode) translateOptions (runOptions:ConversionRunOpt
         
         for cls in items do
             //printfn "Starting conversion %s" cls.Class'
-            let text = convertFile (fIsDebugCode) translateOptions runOptions.TypeAttributes runOptions.Target cls
+            let text = convertFile translateOptions runOptions.TypeAttributes runOptions.Target cls
             let split = text.Split([| "\r\n" |], StringSplitOptions.RemoveEmptyEntries)
             lines := !lines +  (split |> Seq.length)
             classes:= !classes + 1
@@ -142,10 +142,10 @@ let ``convertToF#`` (fIsDebugCode) translateOptions (runOptions:ConversionRunOpt
     printfn "converted %i classes, %i lines" !classes !lines
     converted()
 
-let convertUsingDefaults (fIsDebugCode) translateOptions fileInfos target= 
+let convertUsingDefaults translateOptions fileInfos target= 
     let options = ScriptOptions.getDefaultRunOptions()
     let target = findModel target fileInfos
-    let target' = target |> Option.map(convertFile (fIsDebugCode) translateOptions options.TypeAttributes options.Target)
+    let target' = target |> Option.map(convertFile translateOptions options.TypeAttributes options.Target)
     target'
 
 #if INTERACTIVE
