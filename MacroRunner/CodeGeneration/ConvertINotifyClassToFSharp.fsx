@@ -177,10 +177,10 @@ module ScriptSample =
             ConversionRunOptions.TypeAttributes = List.empty
         }
         let fileInfo = getFileInfoFrom options.Source |> Seq.head
-        convertFile ScriptOptions.isDebugCode (TranslateOptions.getDefault()) options.TypeAttributes options.Target fileInfo
+        convertFile (TranslateOptions.getDefault()) options.TypeAttributes options.Target fileInfo
     let clipAll runOptions= 
 
-        let converted = ``convertToF#`` ScriptOptions.isDebugCode (TranslateOptions.getDefault()) runOptions None 
+        let converted = ``convertToF#`` (TranslateOptions.getDefault()) runOptions None 
         if Seq.isEmpty converted then
             printfn "nothing converted"
         else

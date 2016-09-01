@@ -106,7 +106,6 @@ module FieldConversion =
                     yield "fieldDefaultsChildNodes"
                     yield! (vDeclaration.ChildNodes() |> Seq.map (fun n -> (n :?> CSharpSyntaxNode).Kind().ToString()) |> Seq.map (fun m -> sprintf "  %s" m) |> List.ofSeq)
                     ]
-                
                 let result= fDec ("= null") "default init" 
                 result
         let fields = fields |> Seq.map (toFField fieldNames getDebugOpt) |> List.ofSeq
@@ -224,3 +223,56 @@ module PropConversion =
             props promoteUninitializedStructsToNullable |> Seq.map f
 
 
+
+module FileConversion = 
+    type System.String with
+        static member optionToStringOrEmpty (s:string option) = match s with Some text -> text | None -> String.Empty
+
+    let convertFile (fIsDebugCode) translateOptions typeAttrs target (cls:FileInfoB) = 
+        let _debugOpt,getDebugOpt = translateOptions.GetStartDebugState None (fIsDebugCode cls.File)
+        let convertProperties () = PropConversion.convertProperties (fIsDebugCode) translateOptions target translateOptions.Spacing cls
+        
+        match target with 
+        //| RecordBasedClass (propertyPrefs,promote)  -> String.Empty
+        | Record -> 
+            let props = convertProperties()
+            sprintf "type %sRecord={%s}" cls.ClassName (delimit ";" props)
+        | CodeGenTarget.Interface ->
+            let props = convertProperties()
+            sprintf "type I%s =\r\n%s" cls.ClassName (props |> Seq.map (sprintf "abstract %s") |> delimit ";")
+        | CodeGenTarget.Class (propertyPrefs,promote) ->
+            let spacing = translateOptions.Spacing
+            let classD = {
+                ClassAttributes = typeAttrs
+                Name=cls.ClassName
+                BaseClass= 
+                    match propertyPrefs with 
+                    | PropertyOptions.InheritFsharpViewModule -> Some "  inherit FSharp.ViewModule.ViewModelBase()" 
+                    |_ -> if cls.Bases |> Seq.any then cls.Bases |> Seq.head |> sprintf "inherit %s()" |> Some else None
+                Fields=  List.empty
+                Members = List.empty
+                Interfaces = List.empty
+                }
+            let classD = 
+                cls.Bases |> dumpt "bases" |> ignore
+                let buildInterface() : ClassMember list = 
+                    [
+                        ClassMember.Interface <| sprintf " interface %s\r\n" "System.ComponentModel.INotifyPropertyChanged"
+                        ClassMember.Method "RaisePropertyChanged"
+                    ]
+                match propertyPrefs with 
+                | PropertyOptions.KeepNotify -> 
+                    {classD with Members = buildInterface() @ classD.Members} 
+                |_ -> classD
+
+            let classD ={classD with Fields = FieldConversion.convertFileFields translateOptions promote spacing  cls getDebugOpt}
+            let props = convertProperties() |> Seq.map (indent spacing)
+            let filename = match cls.File with 
+                            |Code (Some path,_) -> match path with |PathF p -> p
+                            | _ -> "unknown"
+            let text = sprintf "%s\r\ntype %s() = // translated from %s\r\n%s\r\n\r\n" (classD.AttributeText()) cls.ClassName filename (translateOptions.Spacing + String.optionToStringOrEmpty classD.BaseClass)
+            let text = new System.Text.StringBuilder(text)
+            text
+                .AppendLine(classD.FieldText spacing)
+                .AppendLine(String.Empty)
+                .AppendLine(delimit "\r\n" props).ToString()

@@ -192,13 +192,13 @@ module DataModelToF =
         appendLine 2 "]"
         appendLine 2 ("|> fun pairs -> sprintf \"insert into " + schemaName + "." + tableName + "(%s) values (%s)\" (String.Join(\",\", pairs |> Seq.map fst )) (String.Join(\",\", pairs |> Seq.map snd))" )
         appendLine 0 String.Empty
-            
+
     let mapFieldNameFromType(columnName:string) = 
         match toCamel columnName with
         | "type" ->  "type'"
         | camel -> camel
-            
-    let generateClass(typeName:string, columns:ColumnDescription seq, appendLine:int -> string -> unit, useOptions:bool ) =
+
+    let generateINotifyClass(typeName:string, columns:ColumnDescription seq, appendLine:int -> string -> unit, useOptions:bool ) =
         appendLine 0 (generateTypeComment (Seq.length columns))
         appendLine 0 ("type "+ typeName + "N (model:" + typeName + "Record) = ")
         appendLine 0 String.Empty
@@ -334,7 +334,7 @@ module DataModelToF =
             generateInterface (typeName, columns, appendLine', true, useOptions)
             generateRecord(typeName, columns, appendLine', useOptions)
             generateModule(typeName, columns, "dbo", tableName, appendLine', useOptions)
-            generateClass(typeName, columns, appendLine', useOptions)
+            generateINotifyClass(typeName, columns, appendLine', useOptions)
     
             manager.EndBlock()
     
