@@ -7,6 +7,13 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "MacroRunner", "MacroRunner\
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "CodeGeneration", "CodeGeneration\CodeGeneration.fsproj", "{F9A8079C-5EA0-41CE-BDCC-234189E657C0}"
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "MacroRunner.Tests", "MacroRunner.Tests\MacroRunner.Tests.fsproj", "{F23A76D2-5876-494C-9F14-5FD4CF63BDA6}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{DFCA90CC-07FD-4CDB-9157-1FE54C436B18}"
+	ProjectSection(SolutionItems) = preProject
+		appveyor.yml = appveyor.yml
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -16,9 +23,11 @@ Global
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{D48445BD-142F-49AB-A6CE-A6305BF6A27B}.Debug|Any CPU.ActiveCfg = Debug|x86
+		{D48445BD-142F-49AB-A6CE-A6305BF6A27B}.Debug|Any CPU.Build.0 = Debug|x86
 		{D48445BD-142F-49AB-A6CE-A6305BF6A27B}.Debug|x86.ActiveCfg = Debug|x86
 		{D48445BD-142F-49AB-A6CE-A6305BF6A27B}.Debug|x86.Build.0 = Debug|x86
 		{D48445BD-142F-49AB-A6CE-A6305BF6A27B}.Release|Any CPU.ActiveCfg = Release|x86
+		{D48445BD-142F-49AB-A6CE-A6305BF6A27B}.Release|Any CPU.Build.0 = Release|x86
 		{D48445BD-142F-49AB-A6CE-A6305BF6A27B}.Release|x86.ActiveCfg = Release|x86
 		{D48445BD-142F-49AB-A6CE-A6305BF6A27B}.Release|x86.Build.0 = Release|x86
 		{F9A8079C-5EA0-41CE-BDCC-234189E657C0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
@@ -29,6 +38,14 @@ Global
 		{F9A8079C-5EA0-41CE-BDCC-234189E657C0}.Release|Any CPU.Build.0 = Release|Any CPU
 		{F9A8079C-5EA0-41CE-BDCC-234189E657C0}.Release|x86.ActiveCfg = Release|Any CPU
 		{F9A8079C-5EA0-41CE-BDCC-234189E657C0}.Release|x86.Build.0 = Release|Any CPU
+		{F23A76D2-5876-494C-9F14-5FD4CF63BDA6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F23A76D2-5876-494C-9F14-5FD4CF63BDA6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F23A76D2-5876-494C-9F14-5FD4CF63BDA6}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{F23A76D2-5876-494C-9F14-5FD4CF63BDA6}.Debug|x86.Build.0 = Debug|Any CPU
+		{F23A76D2-5876-494C-9F14-5FD4CF63BDA6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F23A76D2-5876-494C-9F14-5FD4CF63BDA6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F23A76D2-5876-494C-9F14-5FD4CF63BDA6}.Release|x86.ActiveCfg = Release|Any CPU
+		{F23A76D2-5876-494C-9F14-5FD4CF63BDA6}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

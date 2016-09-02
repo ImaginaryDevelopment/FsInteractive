@@ -5,3 +5,5 @@ MacroRunner/.vs/MacroRunner/v14/.suo
 /MacroRunner/CodeGeneration/bin/Debug
 /MacroRunner/CodeGeneration/obj/Debug
 /MacroRunner/packages
+/MacroRunner/MacroRunner.Tests/bin/Debug
+/MacroRunner/MacroRunner.Tests/obj/Debug
