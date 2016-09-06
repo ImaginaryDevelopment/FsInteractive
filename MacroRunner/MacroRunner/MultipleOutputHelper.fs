@@ -2,6 +2,7 @@
 open System
 open System.Collections.Generic
 open System.IO
+open BReusable
 
 type Dte = EnvDTE.DTE
 // MultipleOutputHelper.ttinclude
@@ -41,38 +42,64 @@ module MultipleOutputHelper =
             let mutable generatedFileNames : string list = []
     
             member __.GeneratedFileNames with get() = generatedFileNames    
-            member __.StartNewFile(name, ?project) =
+            member __.StartNewFile(name, ?project:Project) =
                 if isNull name then raise <| new ArgumentNullException("name")
                 printfn "Starting new file at %s" name
                 let project = defaultArg project null
-                currentBlock <- new Block(Name=name,Project=project)
+                currentBlock <- new Block(Name=name,Project=project, Start=template.Length)
                 
             member x.StartFooter () = x.CurrentBlock <- footer
             member x.StartHeader () = x.CurrentBlock <- header
             
-            member x.EndBlock () =
+            member __.EndBlock () =
+                let log msg = System.Diagnostics.Debugger.Log(0, "EndBlock", if msg |> endsWith "\r\n" then msg else sprintf "%s\r\n" msg)
                 if isNull currentBlock then
+                    log "ending a null block!"
                     ()
                 else
-                    currentBlock.Length <- template.Length - currentBlock.Start
+                    let len =template.Length - currentBlock.Start 
+
+                    if len < 0 then failwithf "block length is less than zero"
+                    currentBlock.Length <- len
+                    log <| sprintf "ending a block of length %i!\r\nstarted at %i\r\n" currentBlock.Length currentBlock.Start
                     if currentBlock <> header && currentBlock <> footer then
+                        log <| sprintf "Adding a block to the files list: %s" currentBlock.Name
                         files.Add currentBlock
                     currentBlock <- null
                     
             abstract Process : split:bool -> unit
             default x.Process split = 
+                let len = template.Length
+                if len = 0 then failwithf "No text has been added"
+                let log (s:string) = 
+                    if System.Diagnostics.Debugger.IsAttached then
+                        System.Diagnostics.Debugger.Log(0, "Logger", if s.EndsWith "\r\n" then s else sprintf "%s\r\n" s)
+                log "Hello debugger\r\n"
                 if split then
                     x.EndBlock()
-                    let headerText = template.ToString(header.Start, header.Length)
-                    let footerText = template.ToString(footer.Start, footer.Length)
+                    let tryGetByStartEnd s l = 
+                        try
+                            template.ToString(s,l)
+                        with ex ->
+                            raise <| InvalidOperationException(sprintf "could not access substring %i %i in length %i" s l template.Length, ex)
+                    let headerText = tryGetByStartEnd header.Start header.Length
+                    let footerText = tryGetByStartEnd footer.Start footer.Length
                     let outputPath = Path.GetDirectoryName(host.TemplateFile)
                     files.Reverse()
+                    let mutable i = 0
                     for block in files do
+                        
+                        log <| sprintf "Processing block %i:%s" i block.Name
+                        log <| sprintf "Length is %i" template.Length
+                        
                         let fileName = Path.Combine(outputPath, block.Name)
-                        let content = headerText + template.ToString(block.Start, block.Length) + footerText
+                        let content = headerText + (tryGetByStartEnd block.Start block.Length) + footerText
                         generatedFileNames <- fileName::generatedFileNames
                         x.CreateFile fileName content
                         template.Remove(block.Start, block.Length) |> ignore
+                        log <| sprintf "Processed block %i" i
+                        log <| sprintf "Length is %i" template.Length
+                        i <- i + 1
         
             abstract CreateFile : fileName:string -> content:string -> unit
             default x.CreateFile fileName content = 
@@ -81,10 +108,10 @@ module MultipleOutputHelper =
                     File.WriteAllText(fileName, content)
                     
             abstract GetCustomToolNamespace: fileName: string -> string
-            default x.GetCustomToolNamespace fileName = null
+            default __.GetCustomToolNamespace _fileName = null
             
             abstract DefaultProjectNamespace:  string with get
-            default x.DefaultProjectNamespace with get() = null
+            default __.DefaultProjectNamespace with get() = null
             
             abstract IsFileContentDifferent : fileName:string -> newContent:string -> bool
             default __.IsFileContentDifferent fileName newContent =
@@ -102,10 +129,16 @@ module MultipleOutputHelper =
                         v.Start <- template.Length
                     currentBlock <- v
                     
-            static member Create(host:ITextTemplatingEngineHost,template) =
-                match host with 
-                | :? IServiceProvider -> VsManager(host,template) :> Manager
-                | _ -> Manager(host,template)
+            static member Create(host:ITextTemplatingEngineHost,template:StringBuilder) =
+                let beforeConLength = template.Length
+                let manager = 
+                    match host with 
+                    | :? IServiceProvider -> VsManager(host,template) :> Manager
+                    | _ -> 
+                        failwithf "unable to get ahold of vsmanager"
+                        Manager(host,template)
+                if beforeConLength > template.Length then failwithf "Someone touched me!"
+                manager
                 
             interface IManager with
                 override x.StartNewFile (p,s) =
@@ -115,28 +148,35 @@ module MultipleOutputHelper =
                 override x.EndBlock() = x.EndBlock ()
                 override x.Process doMultiFile = x.Process doMultiFile
                 override x.DefaultProjectNamespace = x.DefaultProjectNamespace
-                override x.Dte = None
-                override x.TemplateFile = host.TemplateFile
-                override x.GeneratedFileNames = upcast generatedFileNames
-                
-        and VsManager private (host,dte,template,_templateProjectItem,checkOutAction, projectSyncAction) =
+                override __.Dte = None
+                override __.TemplateFile = host.TemplateFile
+                override __.GeneratedFileNames = upcast generatedFileNames
+
+        and VsManager private (host,dte,template,templateProjectItem:ProjectItem,checkOutAction, projectSyncAction) =
                 inherit Manager(host,template)
                 
-                let templateProjectItem:ProjectItem = null
                 let dte: Dte = dte
                 let checkOutAction: Action<string> = checkOutAction // Action<String> 
                 let projectSyncAction: Action<string seq> = projectSyncAction //Action<IEnumerable<String>> 
     
                 interface IManager with
-                    override x.Dte = Some dte
+                    override __.Dte = Some dte
                     
-                override __.DefaultProjectNamespace with get() = templateProjectItem.ContainingProject.Properties.Item("DefaultNamespace").Value.ToString()
+                override __.DefaultProjectNamespace 
+                    with get() = 
+                        if isNull templateProjectItem then failwithf "templateProjectItem is null"
+                        if isNull templateProjectItem.ContainingProject then failwithf "templateProjectItem.ContainingProject is null"
+                        if isNull templateProjectItem.Properties then failwithf "templateProjectItem.ContainingProject.Properties is null"
+//                        if isNull <| templateProjectItem.Properties.Item("DefaultNamespace") then failwithf "templateProjectItem.ContainingProject.Properties.Item(DefaultNamespace) is null"
+//
+                        templateProjectItem.ContainingProject.Properties.Item("DefaultNamespace").Value.ToString()
                 override __.GetCustomToolNamespace fileName = dte.Solution.FindProjectItem(fileName).Properties.Item("CustomToolNamespace").Value.ToString()
                 
                 override __.Process split =
                     if isNull templateProjectItem.ProjectItems then
                         ()
                     else 
+                        if template.Length = 0 then failwithf "No text has been added"
                         base.Process split
                     projectSyncAction.EndInvoke(projectSyncAction.BeginInvoke(base.GeneratedFileNames, null, null))
         
@@ -155,6 +195,7 @@ module MultipleOutputHelper =
                         raise <| ArgumentNullException("Could not obtain DTE from host")
                     
                     let templateProjectItem = dte.Solution.FindProjectItem(host.TemplateFile)
+                    if isNull templateProjectItem then failwithf "VsManager.new: templateProjectItem is null"
                     let checkOutAction fileName = dte.SourceControl.CheckOutItem fileName |> ignore
                     let projectSyncAction = fun keepFileNames -> VsManager.ProjectSync(templateProjectItem, keepFileNames)
                     VsManager(host,dte,template,templateProjectItem,Action<_>(checkOutAction), Action<_>(projectSyncAction))
@@ -192,8 +233,8 @@ module MultipleOutputHelper =
                             let targetProject = projects |> Seq.find (fun p -> p.Kind <> ProjectKinds.vsProjectKindSolutionFolder && fileName.StartsWith(Path.GetDirectoryName p.FullName))
                             VsManager.WriteLnToOutputPane dte ("Generating into " + targetProject.FullName)
                             targetProject.ProjectItems.AddFromFile fileName |> ignore
-                            
-                member x.CheckoutFileIfRequired fileName =
+
+                member __.CheckoutFileIfRequired fileName =
                     let sc = dte.SourceControl
                     if not <| isNull sc && sc.IsItemUnderSCC fileName && not <| sc.IsItemCheckedOut fileName then
                         checkOutAction.EndInvoke(checkOutAction.BeginInvoke(fileName, null, null))

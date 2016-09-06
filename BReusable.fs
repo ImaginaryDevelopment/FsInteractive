@@ -13,6 +13,7 @@ module StringHelpersAuto =
     let trim (s:string) = s.Trim()
     let contains delimiter (x:string) = x.Contains delimiter
     let replace (target:string) (replacement) (str:string) = str.Replace (target,replacement)
+    let endsWith (delimiter:string) (x:string) = x.EndsWith delimiter
     let after (delimiter:string) (s:string) = s|> String.subString (s.IndexOf delimiter + delimiter.Length)
     let before (delimiter:string) s = s|> String.subString2 0 (s.IndexOf delimiter)
     let afterOrSelf delimiter x = if x|> String.contains delimiter then x |> after delimiter else x

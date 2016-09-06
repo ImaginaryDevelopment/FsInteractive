@@ -1,1 +1,8 @@
 # https://www.appveyor.com/docs/build-configuration/
+# https://www.appveyor.com/docs/appveyor-yml/
+
+#this isn't setup to work in this file, but in case the ui loses it, here's what we had set for this for diagnostics and troubleshooting
+#before_build:
+#dir /w
+#nuget restore MacroRunner/MacroRunner.sln
+

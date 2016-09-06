@@ -14,7 +14,8 @@ module DataModelToF =
 //    open System.Linq
 
     type ColumnDescription = {ColumnName:string; Type:string; Length:int; Nullable:bool; IsIdentity:bool}
-    
+    type TableGenerationInfo = {Schema:string; Name:string; GenerateFull:bool}
+
     let generateTypeComment columnCount = sprintf "/// %i properties" columnCount
     
     let mapNullableType(targetType:string, nullable:bool, useOptions:bool ) = targetType + (if nullable then (if useOptions then " option" else " Nullable") else String.Empty)
@@ -269,45 +270,64 @@ module DataModelToF =
             appendLine 3 (camel + " <- v")
             appendLine 3 ("x.RaisePropertyChanged \"" + cd.ColumnName + "\"")
 
-    let generate(manager:MacroRunner.MultipleOutputHelper.IManager, generationEnvironment:StringBuilder, targetProjectName:string, tables:string seq, cString:string , doMultiFile:bool) (pluralizer:string -> string) (singularizer:string -> string) useOptions=
+    let generate (fPluralizer:string -> string) (fSingularizer:string -> string) (manager:MacroRunner.MultipleOutputHelper.IManager, generationEnvironment:StringBuilder, targetProjectName:string, tables:TableGenerationInfo seq, cString:string , doMultiFile:bool) useOptions columnBlacklist=
+
         let appendLine text = generationEnvironment.AppendLine(text) |> ignore
         generationEnvironment.AppendLine(manager.TemplateFile) |> ignore // was host.TemplateFile
         let appendLine' indentLevels text = 
             let indentation = List.replicate indentLevels "    " (* Enumerable.Repeat("    ",indentLevels) *) |> delimit String.Empty
             generationEnvironment.AppendLine(indentation + text) |> ignore
-        
+
         generationEnvironment.AppendLine("Main file output") |> ignore
-        
+
         //let sol,projects = Macros.VsMacros.getSP dte //EnvDteHelper.recurseSolutionProjects dte 
         let projects = manager.Dte |> Option.map (Macros.VsMacros.getSP>>snd) // was dte
         let targetProject = projects |> Option.map (Seq.find (fun p -> p.Name = targetProjectName))
         let targetProjectFolder = targetProject |> Option.map (fun tp -> tp.FullName |> Path.GetDirectoryName)
     
-        projects |> Option.iter (fun projs ->
-            for p in projs do
+        projects |> Option.iter (Seq.iter (fun p -> 
                 appendLine (p.Name + " " + p.FullName)
+            )
         )
+
+        tables |> Seq.iter (fun t ->
+            appendLine(sprintf "%s.%s" t.Schema t.Name)
+        )
+
+        appendLine(String.Empty)
+
      
         use cn = new SqlConnection(cString)
         cn.Open()
-        
-        for tableName in tables do
+
+        appendLine <| sprintf "Connected to %s,%s" cn.DataSource cn.Database
+        let startNewFile path = manager.StartNewFile(path, targetProject)
+        for tableInfo in tables do
+            let typeName = fSingularizer tableInfo.Name
+            appendLine <| sprintf "Starting table %s as type %s" tableInfo.Name typeName
             match targetProjectFolder with
-            | Some targetProjectFolder -> 
-                manager.StartNewFile(Path.Combine(targetProjectFolder,tableName + ".generated.fs"),targetProject)
-            | None -> manager.StartNewFile(tableName + ".generated.fs",targetProject)
-            let typeName = singularizer tableName
+            | Some targetProjectFolder -> Path.Combine(targetProjectFolder,tableInfo.Name + ".generated.fs")
+            | None -> tableInfo.Name + ".generated.fs"
+            |> startNewFile
+
             let columns = List<ColumnDescription>()
             let identities = List<string>()
-            use cmd = new System.Data.SqlClient.SqlCommand("sp_help " + tableName,cn)
-            use r = cmd.ExecuteReader()
+            let cmdText = sprintf "sp_help '%s.%s'" tableInfo.Schema tableInfo.Name
+            use cmd = new System.Data.SqlClient.SqlCommand(cmdText,cn)
+            use r = 
+                try
+                    cmd.ExecuteReader()
+                with ex ->
+                    let ex = InvalidOperationException(sprintf "cmdText: %s" cmdText, ex)
+                    ex.Data.Add("tableInfo.Name", tableInfo.Name)
+                    raise ex
             r.NextResult() |> ignore // ignore the first table
             while r.Read() do // column info
                 // columns and info
-                let columnName = r.["Column_name"].ToString()
-                let type' = r.["Type"].ToString()
+                let columnName = r.["Column_name"] |> string
+                let type' = r.["Type"] |> string
                 // var computed = r["Computed"];
-                let length = Convert.ToInt32(r.["Length"])
+                let length = Convert.ToInt32 r.["Length"]
                 // var prec = r["Prec"];
                 columns.Add {ColumnName=columnName; Type= type'; Length=length; Nullable = r.["Nullable"].ToString() ="yes"; IsIdentity = false}
     
@@ -316,12 +336,16 @@ module DataModelToF =
                 if r.["Seed"] <> box System.DBNull.Value then // only valid identities (sql uses the identity column to say there are none defined instead of an empty set)
                     identities.Add(r.["Identity"].ToString())
             let columns = 
+                let fIncludeColumn c = isNull (box columnBlacklist) || columnBlacklist |> Map.containsKey tableInfo.Name |> not || columnBlacklist.[tableInfo.Name] |> Seq.contains c.ColumnName |> not 
                 columns
+                |> Seq.filter fIncludeColumn
                 |> Seq.map (fun c -> if identities.Contains(c.ColumnName) then {c with IsIdentity = true} else c)
                 |> List.ofSeq
-                
+
             let columns = columns |> List.sortBy(fun c -> c.ColumnName)
-            appendLine ("namespace Pm.Schema.DataModels." + (pluralizer typeName) + " // Generated by item in namespace " + manager.DefaultProjectNamespace )
+            let subnamespaceName = fPluralizer typeName 
+            let templateProjectNamespace = manager.DefaultProjectNamespace
+            appendLine ("namespace Pm.Schema.DataModels." + subnamespaceName + " // Generated by item in namespace " + templateProjectNamespace)
     
             appendLine String.Empty
             appendLine "open System"
@@ -333,12 +357,75 @@ module DataModelToF =
             generateInterface (typeName, columns, appendLine', false, useOptions)
             generateInterface (typeName, columns, appendLine', true, useOptions)
             generateRecord(typeName, columns, appendLine', useOptions)
-            generateModule(typeName, columns, "dbo", tableName, appendLine', useOptions)
+            generateModule(typeName, columns, "dbo", tableInfo.Name, appendLine', useOptions)
             generateINotifyClass(typeName, columns, appendLine', useOptions)
     
             manager.EndBlock()
     
         manager.Process doMultiFile
+    let Generate (pluralizer:Func<_,_>,singularizer:Func<_,_>) (manager:MacroRunner.MultipleOutputHelper.IManager, generationEnvironment:StringBuilder, targetProjectName:string, tables, cString:string , doMultiFile:bool) useOptions = generate pluralizer.Invoke singularizer.Invoke (manager,generationEnvironment, targetProjectName,tables,cString,doMultiFile) useOptions
+
+    // dbPath was Path.GetFullPath(Path.Combine(currentDir, "..", "..","PracticeManagement","Db"));
+module SqlProj =
+    open System.IO
+    open DataModelToF
+    type TableSpecifier = {Path:string; Schema:string; Table:string; GenerateFull:bool}
+    let toTableGenerationInfo (ts:TableSpecifier) : TableGenerationInfo = 
+        {TableGenerationInfo.Name = ts.Table; Schema= ts.Schema; GenerateFull = ts.GenerateFull}
+
+    type DbPathOption = 
+        |MustExist
+        |FallbackToNone
+    let getTables dbPath = 
+        Directory.GetFiles(dbPath, "*.table.sql", SearchOption.AllDirectories)
+        |> Seq.map (fun tp -> {Path=tp; Schema = tp |> after "Schemas\\" |> before "\\"; Table=tp |> Path.GetFileNameWithoutExtension |> Path.GetFileNameWithoutExtension; GenerateFull = false})
+
+    // tables may be just a simple table name (implying schema is dbo) or 'schema.tablename'
+    let getTableInfoFromSqlProj fLog fAppend pathOption sqlProjRootDir tables blacklist generatePartials= 
+        let sqlProjRootDirOpt = if not <| String.IsNullOrEmpty sqlProjRootDir && Directory.Exists sqlProjRootDir then Some sqlProjRootDir else None
+        match Option.isSome sqlProjRootDirOpt, pathOption with
+        | false,MustExist -> failwithf "Sql project directory not found at %s" sqlProjRootDir
+        | false, FallbackToNone -> ()
+        | true, _ -> 
+            fLog <| sprintf "found sql project directory at %s" sqlProjRootDir
+        let dbTablesOpt = 
+            match sqlProjRootDirOpt with 
+            | Some dbPath -> getTables dbPath |> Some
+            | None -> None
+        let fAppendI indentLevels text = List.replicate indentLevels "    " |> delimit String.Empty |> flip (+) text |> fAppend
+        fAppend "dbTables"
+        dbTablesOpt 
+        |> Option.iter (Seq.iter (fun dt -> sprintf "%s.%s" dt.Schema dt.Table |> fAppendI 1))
+        fAppendI 0 String.Empty
+        let allTables = 
+            match dbTablesOpt with
+            | Some dbTables -> 
+                dbTables 
+                |> Seq.map (fun t -> {t with GenerateFull = tables |> Seq.contains t.Table || tables |> Seq.contains (sprintf "%s.%s" t.Schema t.Table) })
+                |> List.ofSeq
+            | None ->  
+                tables 
+                |> Seq.map (fun t -> 
+                    let schema,table = 
+                        if t |> contains "." then 
+                            t |> before".", t |> after "." 
+                        else "dbo", t
+                    {GenerateFull = true; Schema= schema; Table= table;Path=null }
+                )
+                |> List.ofSeq
+            |> Seq.filter (fun t-> blacklist |> Seq.contains t.Table |> not)
+            |> Seq.filter (fun t -> generatePartials || t.GenerateFull)
+            |> List.ofSeq
+        match sqlProjRootDirOpt with
+        | Some _ ->
+            fAppend "allTables"
+            allTables 
+            |> Seq.iter (fun t -> fAppendI 1 <| sprintf "%s.%s,%s" t.Schema t.Table t.Path)
+        | None -> fLog <| sprintf " didn't find it at %s" sqlProjRootDir
+
+        allTables
+
+    let GetTableInfoFromSqlProj (log:Action<_>) (append:Action<_>) pathOption sqlProjRootDir tables blacklist generatePartials = getTableInfoFromSqlProj log.Invoke append.Invoke pathOption sqlProjRootDir tables blacklist generatePartials
 
 module SqlGeneration = 
     open System.Text
@@ -371,7 +458,7 @@ module SqlGeneration =
         with 
             static member Zero ct = 
                 {Name=null; Type = ct; AllowNull = false; Attributes = List.empty; FKey = None; Comments = List.empty; GenerateReferenceTable = false; ReferenceValuesWithComment = null}
-    
+
     type TableInfo = { Name:string; Schema:string; Columns: ColumnInfo list}
     
     //void GenerateTable(Manager manager, EnvDTE.Project targetProject, string targetProjectFolder, TableInfo ti)
@@ -385,7 +472,7 @@ module SqlGeneration =
             | Some fKey -> 
                 let fKeyColumn = if isNull fKey.Column then column else fKey.Column
                 sprintf "CONSTRAINT [FK_%s_%s_%s_%s] FOREIGN KEY ([%s]) REFERENCES [%s].[%s] ([%s])" table column fKey.Table fKeyColumn column fKey.Schema fKey.Table fKeyColumn
-                
+
         let appendLine text = generationEnvironment.AppendLine(text) |> ignore
         let appendLine' indentLevel text = delimit String.Empty (Enumerable.Repeat("    ",indentLevel)) + text |> appendLine
         appendLine "-- Generated file, DO NOT edit directly"
@@ -471,6 +558,7 @@ module SqlGeneration =
             
             sprintf "CONSTRAINT PK_%s PRIMARY KEY (%s)" tableInfo.Name columns
             |> appendLine' 1
+
     let generateInserts title appendLine (manager:IManager) targetProject targetProjectFolder (tables:#seq<_>) targetRelativePath =
         // generate reference data
         let toGen = tables.Where( fun t -> t.Columns.Any( fun c -> not <| isNull c.ReferenceValuesWithComment && c.ReferenceValuesWithComment.Any())).ToArray()
@@ -526,6 +614,7 @@ module SqlGeneration =
 // impure! applied code, meant for specific scripts, not api
 module GenerationSample = 
     open Microsoft.VisualStudio.TextTemplating
+    open DataModelToF
 
     type GenerationStrategy = 
         | UseMultipleOutputHelperCode
@@ -592,9 +681,11 @@ module GenerationSample =
                     }
                 ] 
             }
+        let tablesToGen = [
+            {Schema="dbo"; Name="Users"; GenerateFull =false}
+        ]
 
-        //let generate(manager:IManager, generationEnvironment:StringBuilder , targetProjectName:string , tables:string seq, cString:string , doMultiFile:bool) (pluralizer:string -> string) (singularizer:string -> string) useOptions=
-        DataModelToF.generate (manager, sb, "Pm.Schema", ["Users"], connectionString, (* doMultiFile *) true) pluralizer.Pluralize pluralizer.Singularize false
+        DataModelToF.generate pluralizer.Pluralize pluralizer.Singularize (manager, sb, "Pm.Schema", tablesToGen, connectionString, (* doMultiFile *) true) false
 
         manager.GeneratedFileNames
         |> dumpt "files generated"
