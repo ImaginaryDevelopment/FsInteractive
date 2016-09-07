@@ -127,3 +127,29 @@ module Seq =
           // While there are still elements, start a new group
           while running.Value do
             yield group() |> Seq.ofList }
+
+module Reflection =
+    // some parts of this may be a translation of BMore.linq
+    let (|TypeDefOf|_|) (_:'a) t = 
+        if t = typedefof<'a> then Some() else None
+    let (|TypeOf|_|) (_:'a) t = 
+        if t = typeof<'a> then Some ()
+        else 
+            //printfn "did not match %A to %A" typeof<'a> t ; 
+            None
+
+    let isType<'a> = Unchecked.defaultof<'a>
+    let rec getMethod recurse name (t:Type) =
+        seq {
+            let m = t.GetMethod(name)
+            if not <| isNull m then
+                yield t,m
+            if recurse then 
+                yield! t.GetInterfaces() |> Seq.collect (getMethod recurse name)
+        }
+    let rec getMethods recurse (t:Type) = 
+        seq {
+            yield (t,t.GetMethods())
+            if recurse then
+                yield! t.GetInterfaces() |> Seq.collect (getMethods recurse)
+        }

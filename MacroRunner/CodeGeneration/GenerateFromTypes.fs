@@ -1,19 +1,10 @@
 ﻿module CodeGeneration.GenerateFromTypes
 open System
 
-// translation of BMore.linq
+// some parts of this may be from a translation of BMore.linq
 [<AutoOpen>]
 module TypeMapper = 
-    let (|TypeDefOf|_|) (_:'a) t = 
-        if t = typedefof<'a> then Some() else None
-    let (|TypeOf|_|) (_:'a) t = 
-        if t = typeof<'a> then Some ()
-        else 
-            //printfn "did not match %A to %A" typeof<'a> t ; 
-            None
-
-    let isType<'a> = Unchecked.defaultof<'a>
-
+    open BReusable.Reflection
     let mapTypeToF = 
         function
         | TypeOf(isType:int) -> "int"

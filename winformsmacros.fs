@@ -59,12 +59,30 @@ module WpfMacros =
     open System.Windows.Data
     open System.Collections.Generic
     open System.Collections.Specialized
+    open System.Windows.Input
+    open BReusable
+
+    let inline addCommand cmd x = 
+        (^t:(member set_Command:ICommand -> unit)(x,cmd))
+        x
 
     let copyFrom (source: _ seq) (toPopulate:IList<_>)  =
         if not <| isNull source && not <| isNull toPopulate then
             use enumerator = source.GetEnumerator()
             while enumerator.MoveNext() do
                 toPopulate.Add(enumerator.Current)
+    type FunCommand (fExecute, ?fCanExecuteOpt) =
+        let canExecuteChanged = new Event<_,_>()
+        let fCanExecute = defaultArg fCanExecuteOpt (fun _ -> true)
+//        [<CLIEvent>]
+//        member __.CanExecuteChanged = canExecuteChanged.Publish
+        member x.CanExecuteChanged = canExecuteChanged.Publish
+
+        interface ICommand with
+            member __.CanExecute o = fCanExecute o
+            member __.Execute o = fExecute o
+            [<CLIEvent>]
+            member x.CanExecuteChanged = x.CanExecuteChanged
 
 
     type BindableObservableCollection<'t> (items) =
@@ -108,6 +126,7 @@ module WpfMacros =
                 base.OnCollectionChanged e
             else
                 changeQueued <- true
+            printfn "Suppressible onCollectionChanged finished"
 
         member x.SuppressRaiseCollectionChanged
             with get() = suppressCc
@@ -123,6 +142,20 @@ module WpfMacros =
     type ItemSource<'t> = 
         | Obs of BindableObservableCollection<'t>
         | Items of 't seq
+
+    // not sure how well this generalizes or if it works outside this one use case
+    let private (|IsUsableAs|_|) (_:'a) (t:Type) = 
+        let t2 = typeof<'a>
+        printfn "IsAssignableFrom: Checking %s is assignable from %s" t.Name t2.Name
+        if t.IsAssignableFrom(t2) then
+            Some()
+        elif t.IsGenericType && t2.IsGenericType && t.GenericTypeArguments.Length = t2.GenericTypeArguments.Length && t.GenericTypeArguments |> Seq.zip t2.GenericTypeArguments |> Seq.forall (fun (ta1,ta2) -> ta1.IsAssignableFrom(ta2) || ta2.IsAssignableFrom(ta1)) then
+            printfn "generics lined up, kinda"
+            Some()
+            //None
+        else
+            printfn "typeof %A :?> %A -> fail" t t2
+            None
 
 
     // threaded wpf ui - http://reedcopsey.com/2011/11/28/launching-a-wpf-window-in-a-separate-thread-part-1/
@@ -152,7 +185,29 @@ module WpfMacros =
         listDisplayer.ItemTemplate <- makeTextBlockTemplate()
 
         listDisplayer |> sp.Children.Add |> ignore<int>
-        Button(Content="Hello World") |> sp.Children.Add |> ignore<int>
+        //let btnClear = 
+        let clearCommand = 
+            // not planning on accounting for the possibility the itemsSource is changed.
+            let src = listDisplayer.ItemsSource
+            let tSrc = src.GetType()
+            let fClearOpt = 
+                match tSrc with
+                | IsUsableAs (Reflection.isType:IList<_>) -> 
+                    let m = tSrc.GetMethod("Clear")
+                    if not <| isNull m then 
+                        Some (fun () -> m.Invoke(src,null) |> ignore<obj>)
+                    else
+                        printfn "Could not locate clear method on type %s" tSrc.Name
+                        None
+                | _ -> None
+                |> Option.map (fun f -> fun _ -> f())
+            let fClear = match fClearOpt with | Some f -> f | None -> fun _ -> ()
+            let fCanClear _ = fClearOpt |> Option.isSome
+            FunCommand(fClear, fCanClear)
+            
+        Button(Content="Clear")
+        |> addCommand clearCommand
+        |> sp.Children.Add |> ignore<int>
         window.Content <- sp
         window.Show()
         fSetWindow window
@@ -185,7 +240,7 @@ module WpfMacros =
         src,t,w
 
     let testSuppression() = 
-        let items = SuppressibleBindableObservableCollection([ "Hello World"])
+        let items = SuppressibleBindableObservableCollection(["Hello World"])
         items.SuppressRaiseCollectionChanged <- true
         let wpfThread,window = items :> BindableObservableCollection<_> |> ItemSource<string>.Obs |> displayAsThread
         items,wpfThread,window
