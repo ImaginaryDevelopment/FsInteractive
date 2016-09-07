@@ -67,11 +67,11 @@ module WpfMacros =
                 toPopulate.Add(enumerator.Current)
 
 
-    type BindingObservableCollection<'t> (items) =
+    type BindableObservableCollection<'t> (items) =
         inherit ObservableCollection<'t>(items)
 
         new(collection : 't seq) as self =
-            BindingObservableCollection(items=List<'t>())
+            BindableObservableCollection(items=List<'t>())
             then
                 self.Items |> copyFrom collection 
 //                let items = self.Items
@@ -90,27 +90,19 @@ module WpfMacros =
             )
             printfn "OnCollection changed finished"
 
-    // WIP: not working, or untested
-    [<Obsolete("WIP: not working or not tested")>]
-    type SuppressableBindingObservableCollection<'t>(items) = 
-        inherit BindingObservableCollection<'t>(items)
+    type SuppressibleBindableObservableCollection<'t>(items) = 
+        inherit BindableObservableCollection<'t>(items)
 
         let mutable suppressCc = false 
         let mutable changeQueued = false
 
         new(collection: 't seq) as self = 
-            SuppressableBindingObservableCollection(items= List<'t>()) 
+            SuppressibleBindableObservableCollection(items= List<'t>()) 
             then 
                 self.Items |> copyFrom collection 
-//                
-//                let items = self.Items
-//                if not <| isNull collection && not <| isNull items then
-//                    use enumerator = collection.GetEnumerator()
-//                    while enumerator.MoveNext() do
-//                        items.Add(enumerator.Current)
 
         override x.OnCollectionChanged e = 
-            printfn "inside Suppressable onCollectionChanged"
+            printfn "inside Suppressible onCollectionChanged"
             if not x.SuppressRaiseCollectionChanged then
 
                 base.OnCollectionChanged e
@@ -128,11 +120,8 @@ module WpfMacros =
                     // hopefully reset will cover all the bases
                     x.OnCollectionChanged (NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset))
 
-
-
-
     type ItemSource<'t> = 
-        | Obs of BindingObservableCollection<'t>
+        | Obs of BindableObservableCollection<'t>
         | Items of 't seq
 
 
@@ -149,7 +138,6 @@ module WpfMacros =
                 match itemSource with
                 | Items source -> source :> _ seq
                 | Obs source -> 
-//                    source.SyncContext <- SynchronizationContext.Current
                     source.Dispatcher <- Dispatcher.CurrentDispatcher
                     upcast source
             ItemsControl(ItemsSource= source) 
@@ -185,14 +173,26 @@ module WpfMacros =
         Thread.Sleep(1000)
         t,window
 
-    let testBindingCollection() = 
-        let items = BindingObservableCollection(["Hello World"])
-        let wpfThread,window = items |> ItemSource<string>.Obs |> displayAsThread
-        items,wpfThread,window
+    let testCollection (items:'t seq) = items |> ItemSource.Items |> displayAsThread
+    let testBindable (items:'t seq) : BindableObservableCollection<'t> * _ * _ = 
+        let src = BindableObservableCollection(items)
+        let t,w = src |> ItemSource.Obs |> displayAsThread
+        src,t,w
 
-    let testIt() = 
-        let items = SuppressableBindingObservableCollection([ "Hello World"])
+    let testSuppressible items = 
+        let src = SuppressibleBindableObservableCollection<_>(collection= items)
+        let t,w = src :> BindableObservableCollection<_> |> ItemSource.Obs |> displayAsThread
+        src,t,w
+
+    let testSuppression() = 
+        let items = SuppressibleBindableObservableCollection([ "Hello World"])
         items.SuppressRaiseCollectionChanged <- true
-        let wpfThread,window = items :> BindingObservableCollection<_> |> ItemSource<string>.Obs |> displayAsThread
+        let wpfThread,window = items :> BindableObservableCollection<_> |> ItemSource<string>.Obs |> displayAsThread
         items,wpfThread,window
+    type SampleObject = {Name:string; Identifier:int}
+        with override x.ToString() = sprintf "%A" x
+    let testDisplayObjects() =
+        [ {Name="HelloObjects"; Identifier=0}]
+        |> testCollection
+        
 
