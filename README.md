@@ -1,6 +1,16 @@
 FsInteractive [![Build status](https://ci.appveyor.com/api/projects/status/diqrgmxv00bhpeux?svg=true)](https://ci.appveyor.com/project/ImaginaryDevelopment/fsinteractive)
 =============
 
+The purpose of this repository was originally for all my F# interactive mode code, (and handy FSharp scripts) but it has grown.
+Now it is broken into 
+
+1. A script that compiles and installs a large portion of the code into somewhere you can easily call it from F# interactive inside Visual Studio (this directory)
+2. Individually useful F# source code
+3. A solution that includes code gen translated from my T4 C# into F# from https://github.com/ImaginaryDevelopment/LinqPad/tree/master/T4
+4.  Including the following previously available NuGet packages
+5.   https://www.nuget.org/packages/T4EnvDte/
+6.   https://www.nuget.org/packages/T4MultiFile/
+
 my reusable F# interactive code
 Includes
  - Wpf window display of a sequence of data
