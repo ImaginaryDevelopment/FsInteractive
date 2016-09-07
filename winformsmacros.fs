@@ -184,6 +184,7 @@ module WpfMacros =
         // let the thread finish starting up so it can populate window
         Thread.Sleep(1000)
         t,window
+
     let testBindingCollection() = 
         let items = BindingObservableCollection(["Hello World"])
         let wpfThread,window = items |> ItemSource<string>.Obs |> displayAsThread
