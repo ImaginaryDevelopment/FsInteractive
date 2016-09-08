@@ -63,9 +63,17 @@ module DataModelToF =
     
     let generateColumnComment (cd:ColumnDescription) = 
         let typeName = if isNull cd.Type then "null" else cd.Type
+        let suffixes = 
+            [
+                if cd.IsIdentity then 
+                    yield "identity"
+                if cd.IsPrimaryKey then
+                    yield "primaryKey"
+            ]
         let nullability = if cd.Nullable then "null" else "not null"
-        let identity = if cd.IsIdentity then " identity" else String.Empty
-        sprintf "/// %s (%i) %s%s" typeName cd.Length nullability identity
+        //let identity = if cd.IsIdentity then " identity" else String.Empty
+        let suffix = if suffixes |> Seq.any then suffixes |> delimit " " |> (+) " " else String.Empty
+        sprintf "/// %s (%i) %s%s" typeName cd.Length nullability suffix
 
     let generateTypeComment columnCount = sprintf "/// %i properties" columnCount
     
@@ -169,22 +177,24 @@ module DataModelToF =
         if not <| String.IsNullOrEmpty schemaName then
             appendLine 2 <| sprintf "let schemaName = \"%s\"" schemaName
 
-        appendLine 2 ("let tableName = \"" + typeName + "\"")
+        appendLine 2 <| sprintf "let tableName = \"%s\"" tableName
         columns
-        |> Seq.iter (fun c -> appendLine 2 <| sprintf "let %s = \"%s\"" c.ColumnName c.ColumnName)
+        |> Seq.map (fun c -> c.ColumnName, c.ColumnName)
+        |> Seq.iter (uncurry (sprintf "let %s = \"%s\"") >> appendLine 2)
+//        |> Seq.iter (fun c -> appendLine 2 <| sprintf "let %s = \"%s\"" c.ColumnName c.ColumnName)
         appendLine 0 String.Empty
 
-        appendLine 1 ("let ToRecord (i" + typeName + ":I" + typeName + ") =")
+        appendLine 1 <| sprintf "let ToRecord (i%s:I%s) =" typeName typeName
         appendLine 2 "{"
     
         for cd in columns do
             let _mapped = mapSqlType(cd.Type,cd.Nullable,cd.Measure,useOptions)
-            appendLine 3 (cd.ColumnName + " = i" + typeName + "." + cd.ColumnName)
+            appendLine 3 <| sprintf "%s = i%s.%s" cd.ColumnName typeName cd.ColumnName
     
         appendLine 2 "}"
         appendLine 0 String.Empty
     
-        appendLine 1 ("let toRecord (" + camelType + ":I"+ typeName + ") =")
+        appendLine 1 <| sprintf "let toRecord (%s:I%s) =" camelType typeName
         appendLine 2 "{"
     
         for cd in columns do
@@ -474,6 +484,7 @@ module DataModelToF =
                 columns
                 |> Seq.filter fIncludeColumn
                 |> Seq.map (fun c -> if identities.Contains(c.ColumnName) then {c with IsIdentity = true} else c)
+                |> Seq.map (fun c -> if pks |> Seq.exists (stringEqualsI c.ColumnName) then {c with IsPrimaryKey = true} else c)
                 |> List.ofSeq
 
             let columns = columns |> List.sortBy(fun c -> c.ColumnName)
