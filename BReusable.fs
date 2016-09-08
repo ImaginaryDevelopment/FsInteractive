@@ -1,20 +1,35 @@
 ﻿namespace BReusable
 open System
 [<AutoOpen>]
+module MatchHelpers =
+    let (|IsTrue|_|) f x = if f x then Some() else None
+
+[<AutoOpen>]
 module StringHelpersAuto =
     type System.String with
         static member subString i (x:string) = x.Substring(i)
         static member subString2 i e (x:string)= x.Substring(i,e)
         static member contains s (x:string) = x.Contains(s)
+        static member defaultComparison = StringComparison.InvariantCultureIgnoreCase
+        static member Null:string = null
         // favor non attached methods for commonly used methods
 
-    let splitLines(x:string) = x.Split([| "\r\n";"\n"|], StringSplitOptions.None)
-    let delimit (delimiter:string) (items:#seq<string>) = String.Join(delimiter,items)
-    let trim (s:string) = s.Trim()
-    let contains delimiter (x:string) = x.Contains delimiter
-    let replace (target:string) (replacement) (str:string) = str.Replace (target,replacement)
-    let endsWith (delimiter:string) (x:string) = x.EndsWith delimiter
     let after (delimiter:string) (s:string) = s|> String.subString (s.IndexOf delimiter + delimiter.Length)
+    let contains (delimiter:string) (x:string) = if isNull x then false elif isNull delimiter || delimiter = "" then failwithf "bad contains call" else x.IndexOf(delimiter, String.defaultComparison) >= 0
+    let containsI (delimiter:string) (x:string) = if isNull x then false elif isNull delimiter || delimiter = "" then failwithf "bad contains call" else x.IndexOf(delimiter, String.defaultComparison) >= 0
+    let delimit (delimiter:string) (items:#seq<string>) = String.Join(delimiter,items)
+    let endsWith (delimiter:string) (x:string) = x.EndsWith delimiter
+    let isNumeric (s:string)= not <| isNull s && s.Length > 0 && s |> String.forall Char.IsNumber 
+    let replace (target:string) (replacement) (str:string) = str.Replace (target,replacement)
+    let splitLines(x:string) = x.Split([| "\r\n";"\n"|], StringSplitOptions.None)
+    let startsWith (delimiter:string) (s:string) = s.StartsWith delimiter
+    let startsWithI (delimiter:string) (s:string) = s.StartsWith(delimiter,String.defaultComparison)
+    let trim (s:string) = s.Trim()
+//    let after (delimiter:string) (x:string) =  
+//        match x.IndexOf delimiter with
+//        | i when i < 0 -> failwithf "after called without matching substring in '%s'(%s)" x delimiter
+//        | i -> x.Substring(i + delimiter.Length)
+
     let before (delimiter:string) s = s|> String.subString2 0 (s.IndexOf delimiter)
     let afterOrSelf delimiter x = if x|> String.contains delimiter then x |> after delimiter else x
     let beforeOrSelf delimiter x = if x|> String.contains delimiter then x |> before delimiter else x
@@ -22,10 +37,28 @@ module StringHelpersAuto =
         if x |> String.contains delimiter then failwithf "After last called with no match"
         x |> String.subString (x.LastIndexOf delimiter + delimiter.Length)
     let stringEqualsI s1 (toMatch:string)= not <| isNull toMatch && toMatch.Equals(s1, StringComparison.InvariantCultureIgnoreCase)
-    let (|StartsWithI|_|) (toMatch:string) (x:string) = 
-        if not <| isNull x && not <| isNull toMatch && toMatch.Length > 0 && x.StartsWith(toMatch, StringComparison.InvariantCultureIgnoreCase) then
-            Some () 
-        else None
+
+    let (|NullString|Empty|WhiteSpace|ValueString|) (s:string) = 
+        match s with
+        | null -> NullString
+        | "" -> Empty
+        | _ when String.IsNullOrWhiteSpace s -> WhiteSpace s
+        | _ -> ValueString s
+
+
+//    let (|StartsWithI|_|) (toMatch:string) (x:string) = 
+//        if not <| isNull x && not <| isNull toMatch && toMatch.Length > 0 && x.StartsWith(toMatch, StringComparison.InvariantCultureIgnoreCase) then
+//            Some () 
+//        else None
+//    let (|StringEqualsI|_|) s1 (toMatch:string) = if stringEqualsI toMatch s1 then Some() else None
+//    let (|IsNumeric|_|) (s:string) = if isNumeric s then Some() else None
+//    let fooTest() = 
+//        "xys"
+//        |> function
+//            | IsTrue (containsI "xy") -> true
+//            | _ -> false
+
+
 #if LINQPAD
     let dumpt (title:string) x = x.Dump(title); x
 #else
@@ -38,6 +71,11 @@ module StringHelpersAuto =
             "\r\n" +  text |> splitLines |> Seq.map (fun s -> spacing + s) |> delimit "\r\n"
         else text
 
+module Map =
+    let ofDictionary x = 
+        x :> _ seq
+        |> Seq.map (|KeyValue|)
+        |> Map.ofSeq
 
 module PathHelpers=
     open System.IO
@@ -153,3 +191,18 @@ module Reflection =
             if recurse then
                 yield! t.GetInterfaces() |> Seq.collect (getMethods recurse)
         }
+module Assemblies =
+    // http://stackoverflow.com/a/28319367/57883
+    let getAssemblyFullPath (assembly:System.Reflection.Assembly) = 
+        let codeBaseFailedAssert () = System.Diagnostics.Debug.Assert(false, "CodeBase evaluation failed! - Using Location as fallback.")
+        let fullPath = 
+            match assembly.CodeBase with
+            | null -> codeBaseFailedAssert () ;assembly.Location
+            | codeBasePseudoUrl ->
+                let filePrefix3 = @"file:///"
+                if codeBasePseudoUrl.StartsWith filePrefix3 then
+                    let sPath = codeBasePseudoUrl.Substring filePrefix3.Length
+                    let bsPath = sPath.Replace('/', '\\')
+                    bsPath
+                else codeBaseFailedAssert () ;assembly.Location
+        fullPath

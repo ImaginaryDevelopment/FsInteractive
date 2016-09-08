@@ -27,6 +27,8 @@ module CodeGeneration =
                  Type = "string"
                  Length = 1
                  Nullable = false
+                 Measure = null
+                 IsPrimaryKey = false
                  IsIdentity = false}
             ]
         let sb = StringBuilder()

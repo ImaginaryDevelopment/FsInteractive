@@ -10,86 +10,141 @@ type Path = System.IO.Path
 type IManager = MacroRunner.MultipleOutputHelper.IManager
 
 module DataModelToF = 
-    open System.Data.SqlClient
-//    open System.Linq
 
-    type ColumnDescription = {ColumnName:string; Type:string; Length:int; Nullable:bool; IsIdentity:bool}
+    open System.Data.SqlClient
+    open System.Diagnostics
+    open System.Data
+
+//    open System.Linq
+    let dbNullToOption (x:obj) : obj option= 
+        if System.DBNull.Value.Equals x then 
+            None
+        else Some x
+
+    // WIP: actual usage of isPrimaryKey (it's never populated and the checking part needs converted from the .ttinclude
+    // isidentity may not be populated/checked in the right places
+    type ColumnDescription = {ColumnName:string; Measure:string; Type:string; Length:int; Nullable:bool; IsPrimaryKey:bool; IsIdentity:bool}
     type TableGenerationInfo = {Schema:string; Name:string; GenerateFull:bool}
 
-    let generateTypeComment columnCount = sprintf "/// %i properties" columnCount
+    let mapNullableType(targetType:string, nullable:bool, measureType:string, useOptions:bool ) = 
+        
+//        return targetType + (string.IsNullOrEmpty(measure)? string.Empty : "<" + measure + ">") + (nullable ? (useOptions ? " option" : " Nullable") : string.Empty);
+//        return targetType + measureType + nullability);
+        let nullability = 
+            match nullable, useOptions with
+            | true,true -> " option"
+            | true,false -> " Nullable"
+            | _ -> String.Empty
+        let measureType = 
+            match String.IsNullOrEmpty measureType with
+            | true -> String.Empty
+            | false -> sprintf "<%s>" measureType
+
+        sprintf "%s%s%s" targetType measureType nullability
     
-    let mapNullableType(targetType:string, nullable:bool, useOptions:bool ) = targetType + (if nullable then (if useOptions then " option" else " Nullable") else String.Empty)
-    
-    let mapSqlType(type' : string, nullable:bool , useOptions:bool) = 
+    let mapSqlType(type' : string, nullable:bool, measureType:string, useOptions:bool) = 
         match type'.ToLower() with
             |"char"
             |"nchar"
             |"nvarchar"
+            |"xml"
             |"varchar" -> "string"
-            |"bit" -> mapNullableType("bool", nullable, useOptions)
+            |"bit" -> mapNullableType("bool", nullable, measureType, useOptions)
             |"date"
             |"datetime"
-            |"smalldatetime" -> mapNullableType("DateTime", nullable, useOptions)
-            |"uniqueidentifier" -> mapNullableType("Guid",nullable, useOptions)
-            |"int" -> mapNullableType("int", nullable, useOptions)
-            |"decimal" -> mapNullableType("decimal", nullable, useOptions)
-            |"float" -> mapNullableType("float", nullable, useOptions)
+            |"datetime2"
+            |"smalldatetime" -> mapNullableType("DateTime", nullable, measureType, useOptions)
+            |"image" -> "byte[]"
+            |"uniqueidentifier" -> mapNullableType("Guid",nullable, measureType, useOptions)
+            |"int" -> mapNullableType("int", nullable, measureType, useOptions)
+            |"decimal" -> mapNullableType("decimal", nullable, measureType, useOptions)
+            |"float" -> mapNullableType("float", nullable, measureType, useOptions)
             |_ -> if isNull type' then String.Empty else type'
     
-    let generateColumnComment (cd:ColumnDescription) = sprintf "/// %s (%i) %s" (if isNull cd.Type then "null" else cd.Type) cd.Length (if cd.Nullable then "null" else "not null")
+    let generateColumnComment (cd:ColumnDescription) = 
+        let typeName = if isNull cd.Type then "null" else cd.Type
+        let nullability = if cd.Nullable then "null" else "not null"
+        let identity = if cd.IsIdentity then " identity" else String.Empty
+        sprintf "/// %s (%i) %s%s" typeName cd.Length nullability identity
+
+    let generateTypeComment columnCount = sprintf "/// %i properties" columnCount
     
-    let generateInterface (typeName:string, columns: ColumnDescription seq, appendLine:int -> string -> unit, writeable:bool , useOptions:bool ) =
+    type InterfaceGeneratorArgs = { Writeable:bool; UseOptions:bool}
+    let generateInterface (typeName:string, columns: ColumnDescription seq, appendLine:int -> string -> unit, interfaceGeneratorArgs ) =
+        appendLine 0 <| sprintf "// typeName:%s writeable:%A useOptions:%A" typeName interfaceGeneratorArgs.Writeable interfaceGeneratorArgs.UseOptions
         appendLine 0 (generateTypeComment (Seq.length columns))
-        appendLine 0 ("type I" + typeName + (if writeable  then "RW" else String.Empty) + " =")
-        if writeable then
+        appendLine 0 ("type I" + typeName + (if interfaceGeneratorArgs.Writeable  then "RW" else String.Empty) + " =")
+        if interfaceGeneratorArgs.Writeable then
             appendLine 1 ("inherit I" + typeName)
             
-        for cd in columns do
+        columns
+        |> Seq.iter (fun cd -> 
             appendLine 1 (generateColumnComment cd)
-            appendLine 1 ("abstract member " + cd.ColumnName + ":" + mapSqlType(cd.Type, cd.Nullable, useOptions) + " with get" + (if writeable then ",set" else String.Empty))
-            
+            let mappedSqlTpe = mapSqlType(cd.Type, cd.Nullable, cd.Measure, interfaceGeneratorArgs.UseOptions) 
+            appendLine 1 <| sprintf "abstract member %s:%s with get%s" cd.ColumnName mappedSqlTpe (if interfaceGeneratorArgs.Writeable then ",set" else String.Empty)
+        )
+
         appendLine 0 String.Empty
-            
-    let getDefaultValue (mappedType:string) =
+
+    let getDefaultValue (mappedType:string) (measureType:string) =
         if mappedType.EndsWith("Nullable") then
             "Nullable()"
         elif mappedType.EndsWith("option") then
             "None"
         else 
-            match mappedType.ToLower() with
-                |"int" -> "0"
+            let reMappedType,measuredValue = 
+                if String.IsNullOrEmpty measureType then 
+                    mappedType,String.Empty
+                else 
+                    mappedType |> before "<", sprintf "<%s>"measureType
+            
+            match reMappedType.ToLower() with
+                |"int" -> "0" + measuredValue
+                |"int64" -> "0L" + measuredValue
                 |"bool" -> "false"
-                |"decimal" -> "0m"
-                |"float" -> "0."
+                |"decimal" -> "0m" + measuredValue
+                |"float" -> "0." + measuredValue
                 |"datetime" -> "System.DateTime.MinValue"
                 |"uniqueidentifier" -> "Guid.Empty"
                 |_ -> "null"
-        
-    let generateRecord(typeName:string, columns: ColumnDescription seq, appendLine:int -> string -> unit, useOptions:bool) =
+
+    let generateRecord(typeName:string, columns: ColumnDescription seq, appendLine:int -> string -> unit, useOptions:bool, generateValueRecord:bool) =
+        //TODO: conversion of generate value records idea - some is already in the latest DataModelToF.ttinclude
+        let columns = if generateValueRecord then columns |> Seq.filter(fun c -> not c.IsPrimaryKey) else columns
+        let recordTypeName = if generateValueRecord then sprintf "type %sValueRecord" typeName else sprintf "type %sRecord" typeName
+
         appendLine 0 (generateTypeComment (Seq.length columns))
         if not useOptions then
             appendLine 0 "[<NoComparison>]"
+            // isn't structuralEquality the default for records?
+//            appendLine 0 "[<StructuralEquality;NoComparison>]"
     
-        appendLine 0 ("type " + typeName + "Record =")
+        appendLine 0 <| sprintf "%s =" recordTypeName //"type " + typeName + "Record =")
         appendLine 1 "{"
-    
-        for cd in columns do
-            appendLine 1 (generateColumnComment cd)
-            appendLine 1 (cd.ColumnName + ":" + mapSqlType(cd.Type,cd.Nullable,useOptions))
+
+        columns
+        |> Seq.iter (fun cd -> 
+            appendLine 1 <| generateColumnComment cd
+            appendLine 1 <| cd.ColumnName + ":" + mapSqlType(cd.Type,cd.Nullable, cd.Measure, useOptions)
+        )
     
         appendLine 1 "}"
-        appendLine 1 ("interface I" + typeName + " with")
-    
-        for cd in columns do
-            appendLine 2 ("member x." + cd.ColumnName + " with get () = x." + cd.ColumnName)
-    
+        if not generateValueRecord then
+            appendLine 1 <| "interface I" + typeName + " with"
+
+            columns
+            |> Seq.iter (fun cd -> 
+                appendLine 2 <| "member x." + cd.ColumnName + " with get () = x." + cd.ColumnName
+            )
+        
+        appendLine 0 String.Empty
         appendLine 1 "static member Zero () = "
         appendLine 2 "{"
     
         for cd in columns do
-            let mapped = mapSqlType(cd.Type, cd.Nullable, useOptions)
-            appendLine 2 (cd.ColumnName + " = " + (getDefaultValue mapped))
-    
+            let mapped = mapSqlType(cd.Type, cd.Nullable, cd.Measure, useOptions)
+            appendLine 2 (cd.ColumnName + " = " + (getDefaultValue mapped cd.Measure))
+
         appendLine 2 "}"
         appendLine 0 String.Empty
     
@@ -108,15 +163,23 @@ module DataModelToF =
     let generateModule (typeName:string, columns:ColumnDescription seq, schemaName:string, tableName:string, appendLine:int -> string -> unit, useOptions:bool ) =
         let camelType = toCamel typeName
         appendLine 0 ("module " + typeName + "Helpers =")
-        appendLine 1 "open Microsoft.FSharp.Core.Operators.Unchecked"
+//        appendLine 1 "open Microsoft.FSharp.Core.Operators.Unchecked"
         appendLine 1 String.Empty
-        appendLine 1 ("let tableName = \"" + typeName + "\"")
+        appendLine 1 "module Meta = "
+        if not <| String.IsNullOrEmpty schemaName then
+            appendLine 2 <| sprintf "let schemaName = \"%s\"" schemaName
+
+        appendLine 2 ("let tableName = \"" + typeName + "\"")
+        columns
+        |> Seq.iter (fun c -> appendLine 2 <| sprintf "let %s = \"%s\"" c.ColumnName c.ColumnName)
+        appendLine 0 String.Empty
+
         appendLine 1 ("let ToRecord (i" + typeName + ":I" + typeName + ") =")
         appendLine 2 "{"
     
         for cd in columns do
-            let _mapped = mapSqlType(cd.Type,cd.Nullable,useOptions)
-            appendLine 2 (cd.ColumnName + " = i" + typeName + "." + cd.ColumnName)
+            let _mapped = mapSqlType(cd.Type,cd.Nullable,cd.Measure,useOptions)
+            appendLine 3 (cd.ColumnName + " = i" + typeName + "." + cd.ColumnName)
     
         appendLine 2 "}"
         appendLine 0 String.Empty
@@ -125,8 +188,8 @@ module DataModelToF =
         appendLine 2 "{"
     
         for cd in columns do
-            let _mapped = mapSqlType(cd.Type,cd.Nullable,useOptions)
-            appendLine 2 (cd.ColumnName + " = " + camelType + "." + cd.ColumnName)
+            let _mapped = mapSqlType(cd.Type,cd.Nullable,cd.Measure,useOptions)
+            appendLine 3 (cd.ColumnName + " = " + camelType + "." + cd.ColumnName)
     
         appendLine 2 "}"
         appendLine 0 String.Empty
@@ -139,10 +202,13 @@ module DataModelToF =
                 |"char"
                 |"nchar"
                 |"nvarchar"
+                |"xml"
                 |"varchar" -> "ToString"
                 |"bit" -> "ToBoolean"
+                |"image" -> "ToBinaryData"
                 |"date"
                 |"datetime"
+                |"datetime2"
                 |"smalldatetime" -> "ToDateTime"
                 |"uniqueidentifier" -> "ToGuid" // invalid
                 |"int" -> "ToInt32"
@@ -150,17 +216,21 @@ module DataModelToF =
                 |"float"  -> "ToDouble"
                 |_ -> if isNull type' then String.Empty else type'
     
+        let nonNullables = ["string";"byte[]"]
         for cd in columns do
-            let mapped = mapSqlType(cd.Type,cd.Nullable,useOptions)
+            let mapped = mapSqlType(cd.Type,cd.Nullable,cd.Measure,useOptions)
             let converter = mapConverter(cd.Type,cd.Nullable,useOptions)
             appendLine 2 (cd.ColumnName + " = ")
-            appendLine 3 ("match camelTypeF.Invoke \"" + cd.ColumnName + "\" with ")
+            appendLine 3 <| sprintf "match camelTypeF.Invoke \"%s\" with // %s" cd.ColumnName mapped
+            let measureType = if String.IsNullOrEmpty cd.Measure then String.Empty else sprintf " |> (*) 1<%s>" cd.Measure
     
-            if cd.Nullable && (mapped <> typeof<string>.Name) && (mapped <> "string") && mapped <> "String" then
-                appendLine 3 ("|Some x -> Nullable (Convert." + converter + " x )")
+            if cd.Nullable && nonNullables |> Seq.exists (stringEqualsI mapped) |> not then//(mapped <> typeof<string>.Name) && stringEqualsI mapped "string" |> not  then
+                sprintf "|Some x -> Nullable (Convert.%s x%s)" converter measureType
             else
-                appendLine 3 ("|Some x -> Convert." + converter + " x ")
-                appendLine 3 "|None -> Unchecked.defaultof<_>"
+                sprintf "|Some x -> Convert.%s x%s" converter measureType
+            |> appendLine 3
+
+            appendLine 3 "|None -> Unchecked.defaultof<_>"
     
         appendLine 2 "}"
     
@@ -170,36 +240,49 @@ module DataModelToF =
         appendLine 2 "{"
 
         for cd in columns do
-            let _mapped = mapSqlType(cd.Type,cd.Nullable,useOptions)
-            appendLine 2 (cd.ColumnName + " = (^a: (member " + cd.ColumnName + ": _) " + camelType + ")")
+            let _mapped = mapSqlType(cd.Type,cd.Nullable,cd.Measure,useOptions)
+            appendLine 3 (cd.ColumnName + " = (^a: (member " + cd.ColumnName + ": _) " + camelType + ")")
 
         appendLine 2 "}"
 
-        appendLine 0 String.Empty
-        appendLine 1 ("let createInsert (r:I" + typeName + ") =")
-        appendLine 2 ("let quoted s = \"'\" + s + \"'\"")
-        let mapValue (cd:ColumnDescription, prefix:string) :string  = 
-            match cd.Type.ToLower() with
-                |"varchar" -> "if String.IsNullOrEmpty " + prefix + cd.ColumnName+ " then \"null\" else quoted " + prefix + cd.ColumnName
-                |"int" -> if cd.Nullable then "if isNull (box " + prefix + cd.ColumnName + ") then \"null\" else " + prefix + cd.ColumnName + " |> string" else prefix + cd.ColumnName + " |> string"
-                |_ ->  if cd.Nullable then "if isNull (box " + prefix + cd.ColumnName + ") then \"null\" else " + prefix + cd.ColumnName + " |> string |> quoted" else prefix + cd.ColumnName + " |> string |> quoted"
-    
-        appendLine 2 "["
-    
-        for cd in columns |> Seq.filter (fun c -> not c.IsIdentity) do
-            let mapped = "\"" + cd.ColumnName + "\", " + mapValue(cd,"r.")
-            appendLine 3 mapped
-    
-        appendLine 2 "]"
-        appendLine 2 ("|> fun pairs -> sprintf \"insert into " + schemaName + "." + tableName + "(%s) values (%s)\" (String.Join(\",\", pairs |> Seq.map fst )) (String.Join(\",\", pairs |> Seq.map snd))" )
-        appendLine 0 String.Empty
+//        var canDoInsert =  !columns.Any(c => c.Type == "image" || c.Type == "byte[]");
+        let canDoInsert = columns |> Seq.exists(fun c -> c.Type = "image" || c.Type = "byte[]") |> not
+        if canDoInsert then
+//        if(canDoInsert)
+            appendLine 0 String.Empty
+            appendLine 1 ("let createInsert blacklist (r:I" + typeName + ") =")
+            let needsQuoted (c:ColumnDescription) = ["varchar"; "char"; "nvarchar"; "nchar";"datetime";"xml";"datetime2"] |> Seq.tryFind (fun n -> match c.Type with |IsTrue (containsI n) -> true | _ -> false)
+            
+            match columns |> Seq.filter (fun c -> not c.IsIdentity) |> Seq.choose needsQuoted |> Seq.tryHead with
+            | Some firstTypeToNeedQuoteF -> 
+                firstTypeToNeedQuoteF
+                |> sprintf "let quoted (s:string) = \"'\" + s.Replace(\"'\",\"''\") + \"'\" // %s" 
+                |> appendLine 2 
+            | None -> ()
 
-    let mapFieldNameFromType(columnName:string) = 
-        match toCamel columnName with
-        | "type" ->  "type'"
-        | camel -> camel
+            let mapValue (cd:ColumnDescription, prefix:string) :string  = 
+                match cd.Type.ToLower() with
+                    |"varchar" -> "if String.IsNullOrEmpty " + prefix + cd.ColumnName+ " then \"null\" else quoted " + prefix + cd.ColumnName
+                    |"int" -> if cd.Nullable then "if isNull (box " + prefix + cd.ColumnName + ") then \"null\" else " + prefix + cd.ColumnName + " |> string" else prefix + cd.ColumnName + " |> string"
+                    |_ ->  if cd.Nullable then "if isNull (box " + prefix + cd.ColumnName + ") then \"null\" else " + prefix + cd.ColumnName + " |> string |> quoted" else prefix + cd.ColumnName + " |> string |> quoted"
+        
+            appendLine 2 "["
+        
+            for cd in columns |> Seq.filter (fun c -> not c.IsIdentity) do
+                let mapped = "\"" + cd.ColumnName + "\", " + mapValue(cd,"r.")
+                appendLine 3 mapped
+        
+            appendLine 2 "]"
+            appendLine 2 <| "|> Seq.filter (fun kvp -> blacklist |> Seq.contains (fst kvp) |> not)"
+            appendLine 2 <| "|> fun pairs -> sprintf \"insert into " + schemaName + "." + tableName + "(%s) values (%s)\" (String.Join(\",\", pairs |> Seq.map fst )) (String.Join(\",\", pairs |> Seq.map snd))" 
+            appendLine 2 <| "|> sprintf \"%s;select SCOPE_IDENTITY()\""
+        appendLine 0 String.Empty
 
     let generateINotifyClass(typeName:string, columns:ColumnDescription seq, appendLine:int -> string -> unit, useOptions:bool ) =
+        let mapFieldNameFromType(columnName:string) = 
+            match toCamel columnName with
+            | "type" ->  "type'"
+            | camel -> camel
         appendLine 0 (generateTypeComment (Seq.length columns))
         appendLine 0 ("type "+ typeName + "N (model:" + typeName + "Record) = ")
         appendLine 0 String.Empty
@@ -230,7 +313,7 @@ module DataModelToF =
         appendLine 2 "{"
     
         for cd in columns do
-            appendLine 2 (cd.ColumnName + " = x." + cd.ColumnName)
+            appendLine 3 (cd.ColumnName + " = x." + cd.ColumnName)
     
         appendLine 2 "}"
     
@@ -241,15 +324,6 @@ module DataModelToF =
         appendLine 2 "member x.PropertyChanged = propertyChanged.Publish"
         appendLine 1 "abstract member RaisePropertyChanged : string -> unit"
         appendLine 1 "default x.RaisePropertyChanged(propertyName : string) = propertyChanged.Trigger(x, PropertyChangedEventArgs(propertyName))"
-                     
-        appendLine 0 String.Empty
-        appendLine 1 "abstract member SetAndNotify<'t> : string * 't byref * 't -> bool"
-        appendLine 1 "default x.SetAndNotify<'t> (propertyName, field: 't byref, value:'t) ="
-        appendLine 2 "if obj.ReferenceEquals(box field,box value) then false"
-        appendLine 2 "else"
-        appendLine 3 "field <- value"
-        appendLine 3 "x.RaisePropertyChanged(propertyNam)"
-        appendLine 3 "true"
 
         appendLine 0 String.Empty
         appendLine 1 "abstract member SetAndNotify<'t,'b> : string * 'b * 't Action * 't -> bool"
@@ -270,48 +344,48 @@ module DataModelToF =
             appendLine 3 (camel + " <- v")
             appendLine 3 ("x.RaisePropertyChanged \"" + cd.ColumnName + "\"")
 
-    let generate (fPluralizer:string -> string) (fSingularizer:string -> string) (manager:MacroRunner.MultipleOutputHelper.IManager, generationEnvironment:StringBuilder, targetProjectName:string, tables:TableGenerationInfo seq, cString:string , doMultiFile:bool) useOptions columnBlacklist=
+    let generate (fPluralizer:string -> string) (fSingularizer:string -> string) (manager:MacroRunner.MultipleOutputHelper.IManager, generationEnvironment:StringBuilder, targetProjectName:string, tables:TableGenerationInfo seq, cString:string , doMultiFile:bool) useOptions columnBlacklist generateValueRecords measures measureBlacklist (includeNonDboSchemaInNamespace:bool) (targetNamespace:string) =
 
         let appendLine text = generationEnvironment.AppendLine(text) |> ignore
-        generationEnvironment.AppendLine(manager.TemplateFile) |> ignore // was host.TemplateFile
+        let appendEmpty() = appendLine String.Empty
         let appendLine' indentLevels text = 
             let indentation = List.replicate indentLevels "    " (* Enumerable.Repeat("    ",indentLevels) *) |> delimit String.Empty
             generationEnvironment.AppendLine(indentation + text) |> ignore
-
-        generationEnvironment.AppendLine("Main file output") |> ignore
+        appendEmpty()
+        appendLine <| sprintf "TemplateFile: %s" manager.TemplateFile
+        appendEmpty()
 
         //let sol,projects = Macros.VsMacros.getSP dte //EnvDteHelper.recurseSolutionProjects dte 
         let projects = manager.Dte |> Option.map (Macros.VsMacros.getSP>>snd) // was dte
         let targetProject = projects |> Option.map (Seq.find (fun p -> p.Name = targetProjectName))
         let targetProjectFolder = targetProject |> Option.map (fun tp -> tp.FullName |> Path.GetDirectoryName)
+
+        appendLine "Projects"
     
         projects |> Option.iter (Seq.iter (fun p -> 
-                appendLine (p.Name + " " + p.FullName)
+                appendLine' 1 (p.Name + " " + p.FullName)
             )
         )
+        appendEmpty()
+        appendLine "Tables"
 
         tables |> Seq.iter (fun t ->
-            appendLine(sprintf "%s.%s" t.Schema t.Name)
+            appendLine' 1 <| sprintf "%s.%s" t.Schema t.Name
         )
 
-        appendLine(String.Empty)
-
-     
+        appendEmpty()
         use cn = new SqlConnection(cString)
         cn.Open()
 
         appendLine <| sprintf "Connected to %s,%s" cn.DataSource cn.Database
+        appendLine String.Empty
         let startNewFile path = manager.StartNewFile(path, targetProject)
         for tableInfo in tables do
             let typeName = fSingularizer tableInfo.Name
             appendLine <| sprintf "Starting table %s as type %s" tableInfo.Name typeName
-            match targetProjectFolder with
-            | Some targetProjectFolder -> Path.Combine(targetProjectFolder,tableInfo.Name + ".generated.fs")
-            | None -> tableInfo.Name + ".generated.fs"
-            |> startNewFile
 
             let columns = List<ColumnDescription>()
-            let identities = List<string>()
+//            let identities = List<string>()
             let cmdText = sprintf "sp_help '%s.%s'" tableInfo.Schema tableInfo.Name
             use cmd = new System.Data.SqlClient.SqlCommand(cmdText,cn)
             use r = 
@@ -321,7 +395,16 @@ module DataModelToF =
                     let ex = InvalidOperationException(sprintf "cmdText: %s" cmdText, ex)
                     ex.Data.Add("tableInfo.Name", tableInfo.Name)
                     raise ex
-            r.NextResult() |> ignore // ignore the first table
+            let unfoldRows f (r:System.Data.IDataReader) = 
+                Seq.unfold(fun _ -> 
+                    if r.Read() then
+                        Some(r :> IDataRecord, ())
+                    else None
+                ) () 
+                |> f
+                |> List.ofSeq
+            r.NextResult() |> Debug.Assert // ignore the first table
+            
             while r.Read() do // column info
                 // columns and info
                 let columnName = r.["Column_name"] |> string
@@ -329,12 +412,63 @@ module DataModelToF =
                 // var computed = r["Computed"];
                 let length = Convert.ToInt32 r.["Length"]
                 // var prec = r["Prec"];
-                columns.Add {ColumnName=columnName; Type= type'; Length=length; Nullable = r.["Nullable"].ToString() ="yes"; IsIdentity = false}
+                let measureType = measures |> Seq.tryFind (fun m -> measureBlacklist |> Seq.contains columnName |> not && containsI m columnName)
+                columns.Add {ColumnName=columnName; Type= type'; Measure = measureType |> Option.toObj; Length=length; Nullable = r.["Nullable"].ToString() ="yes"; IsIdentity = false; IsPrimaryKey = false}
     
-            r.NextResult() |> ignore
-            while r.Read() do // identities
-                if r.["Seed"] <> box System.DBNull.Value then // only valid identities (sql uses the identity column to say there are none defined instead of an empty set)
-                    identities.Add(r.["Identity"].ToString())
+            r.NextResult() |> Debug.Assert
+
+//            let identities = 
+//                seq {
+//                    while r.Read() do // identities
+//                        // only valid identities (sql uses the identity column to say there are none defined instead of an empty set)
+//                        match r.["Seed"] |> dbNullToOption with
+//                        | Some _ -> 
+//                            yield r.["Identity"] |> string
+//                        | None -> ()
+//                }
+//                |> List.ofSeq
+            let identities = 
+                r
+                |> unfoldRows (
+                    Seq.filter(fun r -> r.["Seed"] |> dbNullToOption |> Option.isSome)
+                    >> Seq.map (fun r -> r.["Identity"] |> string)
+                )
+                |> Set.ofSeq
+//                Seq.unfold(fun _ -> 
+//                    if r.Read() then
+//                        Some(r :> IDataRecord, ())
+//                    else None
+//                ) ()
+//                |> Seq.filter(fun r -> r.["Seed"] |> dbNullToOption |> Option.isSome)
+//                |> Seq.map (fun r -> r.["Identity"] |> string)
+//                |> Set.ofSeq
+            // rowGuidCol result set
+            r.NextResult() |> Debug.Assert
+            //Data_located_on_filegroup
+            r.NextResult() |> Debug.Assert
+            //indexes
+            r.NextResult() |> Debug.Assert
+            //multi-row constraints (some rows are more data from the previous row
+            r.NextResult() |> Debug.Assert
+            let (|PrimaryKey|_|) (r:IDataRecord) =
+                r.["constraint_type"]
+                |> dbNullToOption
+                |> Option.map string
+                |> function
+                    | None -> None
+                    | Some s ->
+                        match s with
+                        | ValueString ct -> if ct |> startsWithI "PRIMARY KEY" then Some() else None
+                        | _ -> None
+            let pks = 
+                seq {
+                    while r.Read() do // have not checked what this does on a table with a composite primary key
+                        match r with
+                        | PrimaryKey -> yield r.["constraint_keys"] |> string
+                        | _ -> ()
+                }
+                |> List.ofSeq
+
             let columns = 
                 let fIncludeColumn c = isNull (box columnBlacklist) || columnBlacklist |> Map.containsKey tableInfo.Name |> not || columnBlacklist.[tableInfo.Name] |> Seq.contains c.ColumnName |> not 
                 columns
@@ -343,27 +477,61 @@ module DataModelToF =
                 |> List.ofSeq
 
             let columns = columns |> List.sortBy(fun c -> c.ColumnName)
-            let subnamespaceName = fPluralizer typeName 
+            columns 
+            |> Seq.map (fun c -> sprintf "%s%s" c.ColumnName (if String.IsNullOrEmpty c.Measure then String.Empty else sprintf "<%s>" c.Measure))
+            |> Seq.iter (appendLine' 1)
+
             let templateProjectNamespace = manager.DefaultProjectNamespace
-            appendLine ("namespace Pm.Schema.DataModels." + subnamespaceName + " // Generated by item in namespace " + templateProjectNamespace)
-    
-            appendLine String.Empty
+
+            match targetProjectFolder with
+            | Some targetProjectFolder -> Path.Combine(targetProjectFolder,tableInfo.Name + ".generated.fs")
+            | None -> tableInfo.Name + ".generated.fs"
+            |> startNewFile
+
+            let typeTargetNamespace = 
+                let subNamespaceName = fPluralizer typeName 
+                match tableInfo.Schema, includeNonDboSchemaInNamespace with
+                | "dbo", _  
+                | _, false ->
+                    appendLine <| sprintf "namespace %s.%s // Generated by item in namespace %s" targetNamespace subNamespaceName templateProjectNamespace
+                | x, true -> 
+                    appendLine <| sprintf "namespace %s.%s.%s // Generated by item in namespace %s" targetNamespace x subNamespaceName templateProjectNamespace
+
+
+            appendEmpty()
+
             appendLine "open System"
             appendLine "open System.ComponentModel"
             appendLine "open System.Linq.Expressions"
-            appendLine String.Empty
-            appendLine "open FSharp.NullHelpers"
+            appendEmpty()
+
+            if columns |> Seq.exists (fun c -> c.Measure |> String.IsNullOrEmpty |> not) then
+                appendLine "open Pm.Schema"
+            appendLine "open Pm.Schema.BReusable"
+            appendEmpty()
             
-            generateInterface (typeName, columns, appendLine', false, useOptions)
-            generateInterface (typeName, columns, appendLine', true, useOptions)
-            generateRecord(typeName, columns, appendLine', useOptions)
-            generateModule(typeName, columns, "dbo", tableInfo.Name, appendLine', useOptions)
+            let iga = {UseOptions=useOptions;Writeable=false}
+            generateInterface (typeName, columns, appendLine', iga)
+            appendEmpty()
+
+            generateInterface (typeName, columns, appendLine', {iga with Writeable=true})
+            if generateValueRecords then
+                generateRecord(typeName, columns, appendLine', useOptions, true)
+                
+            generateRecord(typeName, columns, appendLine', useOptions, false)
+            generateModule(typeName, columns, tableInfo.Schema, tableInfo.Name, appendLine', useOptions)
             generateINotifyClass(typeName, columns, appendLine', useOptions)
     
             manager.EndBlock()
     
         manager.Process doMultiFile
-    let Generate (pluralizer:Func<_,_>,singularizer:Func<_,_>) (manager:MacroRunner.MultipleOutputHelper.IManager, generationEnvironment:StringBuilder, targetProjectName:string, tables, cString:string , doMultiFile:bool) useOptions = generate pluralizer.Invoke singularizer.Invoke (manager,generationEnvironment, targetProjectName,tables,cString,doMultiFile) useOptions
+
+    let Generate (pluralizer:Func<_,_>,singularizer:Func<_,_>) (columnBlacklist:IDictionary<string, string seq>) (manager:MacroRunner.MultipleOutputHelper.IManager, generationEnvironment:StringBuilder, targetProjectName:string, tables, cString:string , doMultiFile:bool) useOptions generateValueRecords measures measureBlacklist includeNonDboSchemaInNamespace targetNamespace: unit = 
+        let columnBlacklist = columnBlacklist |> Map.ofDictionary
+        generate 
+            pluralizer.Invoke
+            singularizer.Invoke
+            (manager,generationEnvironment, targetProjectName,tables,cString,doMultiFile) useOptions columnBlacklist generateValueRecords measures measureBlacklist includeNonDboSchemaInNamespace targetNamespace 
 
     // dbPath was Path.GetFullPath(Path.Combine(currentDir, "..", "..","PracticeManagement","Db"));
 module SqlProj =
@@ -427,189 +595,6 @@ module SqlProj =
 
     let GetTableInfoFromSqlProj (log:Action<_>) (append:Action<_>) pathOption sqlProjRootDir tables blacklist generatePartials = getTableInfoFromSqlProj log.Invoke append.Invoke pathOption sqlProjRootDir tables blacklist generatePartials
 
-module SqlGeneration = 
-    open System.Text
-    open BReusable
-    open System.Linq
-
-    type FKeyInfo = {Schema:string; Table:string; Column:string}
-    type ColumnLength = |Max | Length of int
-    type DecimalInfo = {Precision:int; Scale:int}
-    
-    type ColumnType = 
-        |Decimal of DecimalInfo option
-        |VarChar of ColumnLength
-        |NVarChar of ColumnLength
-        |Char of ColumnLength
-        |NChar of ColumnLength
-        |Other of Type
-
-    type ColumnInfo = 
-        { 
-            Name:string; 
-            Type:ColumnType
-            AllowNull:bool
-            Attributes: string list
-            FKey:FKeyInfo option
-            Comments: string list
-            GenerateReferenceTable:bool
-            ReferenceValuesWithComment: IDictionary<string,string>
-        }
-        with 
-            static member Zero ct = 
-                {Name=null; Type = ct; AllowNull = false; Attributes = List.empty; FKey = None; Comments = List.empty; GenerateReferenceTable = false; ReferenceValuesWithComment = null}
-
-    type TableInfo = { Name:string; Schema:string; Columns: ColumnInfo list}
-    
-    //void GenerateTable(Manager manager, EnvDTE.Project targetProject, string targetProjectFolder, TableInfo ti)
-    type Targeting = TargetProject of EnvDTE.Project*targetProjectFolder:string
-    
-    let generateTable (manager:IManager) (generationEnvironment:StringBuilder) targeting tableInfo =
-        printfn "Generating a table into %A %A" targeting tableInfo
-        let formatFKey (table:string) column fKey : string =
-            match fKey with
-            |None -> null
-            | Some fKey -> 
-                let fKeyColumn = if isNull fKey.Column then column else fKey.Column
-                sprintf "CONSTRAINT [FK_%s_%s_%s_%s] FOREIGN KEY ([%s]) REFERENCES [%s].[%s] ([%s])" table column fKey.Table fKeyColumn column fKey.Schema fKey.Table fKeyColumn
-
-        let appendLine text = generationEnvironment.AppendLine(text) |> ignore
-        let appendLine' indentLevel text = delimit String.Empty (Enumerable.Repeat("    ",indentLevel)) + text |> appendLine
-        appendLine "-- Generated file, DO NOT edit directly"
-        appendLine (sprintf "CREATE TABLE [%s].[%s] (" tableInfo.Schema tableInfo.Name)
-        let mapTypeToSql ct =
-            let mapLength = 
-                function 
-                | Max -> "MAX"
-                | Length l -> string l
-            
-            match ct with
-            | Decimal (Some(di)) -> sprintf "decimal(%i,%i)" di.Precision di.Scale
-            | Decimal None -> "decimal"
-            | VarChar cl -> sprintf "varchar(%s)" (mapLength cl)
-            | NVarChar cl -> sprintf "nvarchar(%s)" (mapLength cl)
-            | Char cl -> sprintf "char(%s)" (mapLength cl)
-            | NChar cl -> sprintf "nchar(%s)" (mapLength cl)
-            | Other t -> 
-                if t = typeof<int> then
-                    "int"
-                elif t = typeof<bool> then
-                    "bit"
-                else t.Name
-
-//        let projects = manager.Dte |> Option.bind (EnvDteHelper.recurseSolutionProjects >> Some) // was dte
-//        let targetProject = projects |> Option.bind (fun projs -> projs.First(fun p -> p.Name = targetProjectName) |> Some)
-//        let targetProjectFolder = targetProject |> Option.bind (fun tp -> Path.GetDirectoryName(tp.FullName) |> Some)
-
-        match targeting with
-            |Some (targetProject,targetProjectFolder) ->
-                let targetFilename = Path.Combine(targetProjectFolder, "Schema Objects", "Schemas", tableInfo.Schema, "Tables", tableInfo.Name + ".table.sql")
-                manager.StartNewFile(targetFilename, targetProject)
-            | None -> ()
-        
-        let mutable i = 0
-        let columnCount = tableInfo.Columns.Length
-        let hasCombinationPK = tableInfo.Columns.Count (fun ci -> ci.Attributes |> Seq.contains "primary key") > 1
-        
-        for ci in tableInfo.Columns do
-            let fKey = formatFKey tableInfo.Name ci.Name ci.FKey
-            
-            let multipleComments = ci.Comments.Length > 1
-            if multipleComments then
-                appendLine String.Empty
-                ci.Comments 
-                |> Seq.map (fun c -> "-- " + c)
-                |> delimit "\r\n"
-                |> appendLine' 1 
-
-            let comment = 
-                if not <| isNull ci.ReferenceValuesWithComment && Seq.any ci.ReferenceValuesWithComment && (multipleComments || not <| Seq.any ci.Comments) then
-                    " -- " + (delimit "," ci.ReferenceValuesWithComment.Keys)
-                elif ci.Comments.Length = 1 then 
-                    "--" + (Seq.head ci.Comments)
-                else String.Empty
-            
-            let formatAttributes (attributes: string seq) hasCombinationPK fKey allowNull = 
-                let isPk = not <| isNull attributes && Seq.contains "primary key" attributes
-                let needsStarter = allowNull || not isPk || hasCombinationPK
-                let starter = (if allowNull then "null" elif needsStarter then "not null" else String.Empty) + (if needsStarter then " " else String.Empty)
-                if isNull attributes then
-                    starter + (if not <| isNull fKey then " " + fKey else null)
-                else
-                    let attribs = starter + (delimit " " (if hasCombinationPK && (not <| isNull attributes) then attributes |> Seq.except([| "primary key" |]) else attributes))
-                    if isNull fKey then
-                        attribs
-                    else attribs + " " + fKey
-                    
-            // TODO: finish translation
-            sprintf "%-32s%-16s%s%s%s%s" 
-                (sprintf "[%s]" ci.Name)
-                (mapTypeToSql ci.Type) 
-                (formatAttributes ci.Attributes hasCombinationPK fKey ci.AllowNull) 
-                (if i < columnCount - 1 || hasCombinationPK then "," else String.Empty) 
-                (if multipleComments then Environment.NewLine else String.Empty)
-                comment
-            |> appendLine' 1
-            i <- i + 1
-        if hasCombinationPK then
-            let columns = 
-                tableInfo.Columns.Where(fun ci -> ci.Attributes.Contains("primary key")).Select(fun ci -> ci.Name)
-                |> delimit ","
-            
-            sprintf "CONSTRAINT PK_%s PRIMARY KEY (%s)" tableInfo.Name columns
-            |> appendLine' 1
-
-    let generateInserts title appendLine (manager:IManager) targetProject targetProjectFolder (tables:#seq<_>) targetRelativePath =
-        // generate reference data
-        let toGen = tables.Where( fun t -> t.Columns.Any( fun c -> not <| isNull c.ReferenceValuesWithComment && c.ReferenceValuesWithComment.Any())).ToArray()
-        if not <| Seq.any toGen then
-            ()
-        else
-            let targetFilename = Path.Combine(targetProjectFolder, targetRelativePath)
-            manager.StartNewFile(targetFilename, targetProject)
-        appendLine "-- Generated file, DO NOT edit directly"
-        appendLine "SET ANSI_NULLS ON"
-        appendLine "GO"
-        appendLine "SET QUOTED_IDENTIFIER ON"
-        appendLine "GO"
-        appendLine (sprintf "PRINT 'Starting %s Synchronization'" title)
-        appendLine "GO"
-        for tbl in toGen do
-        for column in tbl.Columns.Where( fun c -> Seq.any c.ReferenceValuesWithComment).ToArray() do
-            let schema, table, columnName = 
-                match column.FKey with
-                | Some fKey -> 
-                    fKey.Schema, fKey.Table, if isNull fKey.Column then column.Name else fKey.Column
-                | None -> failwithf "ReferenceValuesWithComment existed but no fkey"
-            appendLine "---------------------------------------------------"
-            appendLine (sprintf "PRINT 'Synchronizing [%s.%s]'" schema table)
-            appendLine "WITH CTE AS"
-            appendLine "("
-            appendLine (sprintf "    SELECT [%s]" columnName)
-            appendLine "    FROM (VALUES"
-            let mutable i = 0
-            let valueCount = column.ReferenceValuesWithComment.Keys.Count
-            for k in column.ReferenceValuesWithComment.Keys do
-                let comment = match column.ReferenceValuesWithComment.[k] with
-                                |null -> String.Empty
-                                |k -> " -- " + k
-                appendLine (sprintf "        ('%s'%s)%s" (k.Replace("'","''")) (if i < valueCount - 1 then "," else ")" ) comment )
-                i <- i + 1
-            appendLine (sprintf "        AS SOURCE([%s])" columnName)
-            appendLine ")"
-            appendLine (sprintf "MERGE INTO [%s].[%s] AS TARGET" schema table)
-            appendLine "USING CTE"
-            appendLine (sprintf "ON CTE.[%s] = TARGET.[%s]" columnName columnName )
-            appendLine "WHEN NOT MATCHED BY TARGET THEN"
-            appendLine (sprintf "    INSERT([%s])" columnName)
-            appendLine (sprintf "    VALUES([%s]);" columnName)
-            appendLine String.Empty
-            appendLine (sprintf "PRINT 'Done Synchronizing [%s.%s]'" schema table)
-            appendLine "GO"
-            appendLine String.Empty
-            
-        manager.EndBlock()
-// end sql generation module
 
 // impure! applied code, meant for specific scripts, not api
 module GenerationSample = 
@@ -654,24 +639,24 @@ module GenerationSample =
                 let generatedFileNames = List<string>()
                 { new IManager
                      with 
-                        override this.StartNewFile (s,p) = currentFile <- s;  sb.AppendLine(sprintf "// Starting a new file '%s' s for project opt '%A'" s p) |> ignore
-                        override this.EndBlock () = sb.AppendLine(String.Empty) |> ignore; sb.AppendLine(sprintf "// file finished '%s'" currentFile) |> ignore
-                        override this.Process doMultiFile = ()
-                        override this.DefaultProjectNamespace with get() = "DefaultProjectNamespace"
-                        override this.Dte = None
-                        override this.TemplateFile with get() = "DataModels.tt"
-                        override this.GeneratedFileNames = upcast generatedFileNames
+                        override __.StartNewFile (s,p) = currentFile <- s;  sb.AppendLine(sprintf "// Starting a new file '%s' s for project opt '%A'" s p) |> ignore
+                        override __.EndBlock () = sb.AppendLine(String.Empty) |> ignore; sb.AppendLine(sprintf "// file finished '%s'" currentFile) |> ignore
+                        override __.Process _doMultiFile = ()
+                        override __.DefaultProjectNamespace with get() = "DefaultProjectNamespace"
+                        override __.Dte = None
+                        override __.TemplateFile with get() = "DataModels.tt"
+                        override __.GeneratedFileNames = upcast generatedFileNames
                 }
 
         let manager = getManager UseMultipleOutputHelperCode
-        SqlGeneration.generateTable manager sb None 
+        SqlMeta.generateTable manager sb None 
             {
             Name="Users"; Schema="dbo"; 
             Columns= 
                 [ 
                     { // should be [PaymentID]                     int             identity primary key,
                         Name="PaymentID"
-                        Type = SqlGeneration.ColumnType.Other typeof<int>
+                        Type = SqlMeta.ColumnType.Other typeof<int>
                         Attributes = ["identity";"primary key" ]
                         AllowNull = false
                         FKey = None
@@ -685,7 +670,7 @@ module GenerationSample =
             {Schema="dbo"; Name="Users"; GenerateFull =false}
         ]
 
-        DataModelToF.generate pluralizer.Pluralize pluralizer.Singularize (manager, sb, "Pm.Schema", tablesToGen, connectionString, (* doMultiFile *) true) false
+        DataModelToF.generate pluralizer.Pluralize pluralizer.Singularize (manager, sb, "Pm.Schema", tablesToGen, connectionString, (* doMultiFile *) true) false Map.empty false Seq.empty Seq.empty false null
 
         manager.GeneratedFileNames
         |> dumpt "files generated"
