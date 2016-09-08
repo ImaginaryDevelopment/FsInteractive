@@ -8,8 +8,8 @@ Now it is broken into
 2. Individually useful F# source code
 3. A solution that includes code gen translated from my T4 C# into F# from https://github.com/ImaginaryDevelopment/LinqPad/tree/master/T4
 4.  Including the following previously available NuGet packages
-5.   https://www.nuget.org/packages/T4EnvDte/
-6.   https://www.nuget.org/packages/T4MultiFile/
+  - https://www.nuget.org/packages/T4EnvDte/
+  - https://www.nuget.org/packages/T4MultiFile/
 
 my reusable F# interactive code
 Includes
