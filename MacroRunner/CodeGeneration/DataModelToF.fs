@@ -250,8 +250,15 @@ module DataModelToF =
         appendLine 2 "{"
 
         for cd in columns do
+            let measureType = 
+                match String.IsNullOrEmpty cd.Measure,cd.Nullable with
+                | true, _ -> String.Empty
+                | false, true -> sprintf "|> Nullable.map((*) 1<%s>)" cd.Measure
+                | false, false -> sprintf " * 1<%s>" cd.Measure
+
+            
             let _mapped = mapSqlType(cd.Type,cd.Nullable,cd.Measure,useOptions)
-            appendLine 3 (cd.ColumnName + " = (^a: (member " + cd.ColumnName + ": _) " + camelType + ")")
+            appendLine 3 <| sprintf "%s = (^a: (member %s: _) %s)%s" cd.ColumnName cd.ColumnName camelType measureType
 
         appendLine 2 "}"
 
