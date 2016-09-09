@@ -1,4 +1,6 @@
-﻿namespace BReusable
+﻿[<AutoOpen>]
+module BReusable
+
 open System
 [<AutoOpen>]
 module MatchHelpers =
@@ -207,3 +209,105 @@ module Assemblies =
                     bsPath
                 else codeBaseFailedAssert () ;assembly.Location
         fullPath
+
+module Option =
+//    [<AutoOpen>]
+    // Brandon
+//    module BReusable =
+
+    let getValueOrDefault (n: 'a option) = match n with | Some x -> x | None -> Unchecked.defaultof<_>
+    let getOrDefault (default': 'a) (n: 'a option) = match n with| Some x -> x | None -> default'
+    let getOrDefault' (default': 'a Lazy) (n: 'a option) = match n with| Some x -> x | None -> default'.Force()
+    let toNull =
+        function
+        | None -> null
+        | Some x -> x
+    // if something can be null, convert it to option
+    let ofNull = 
+        function
+        | null -> None
+        | x -> Some x
+    // for types the compiler insists aren't nullable, but maybe C# is calling
+    let ofUnsafeNonNullable x = 
+        match box x with
+        | null -> None
+        | _ -> Some x
+    (* End Brandon *)
+    let fromNullable (n: _ Nullable) = 
+        if n.HasValue
+            then Some n.Value
+            else None
+
+    let toNullable =
+        function
+        | None -> Nullable()
+        | Some x -> Nullable x
+
+ 
+let (|NullableNull|NullableValue|) (x: _ Nullable) =
+    if x.HasValue then NullableValue x.Value else NullableNull
+
+[<RequireQualifiedAccess>]
+module Nullable = //http://bugsquash.blogspot.com/2010/09/nullable-in-f.html also https://gist.github.com/mausch/571158
+
+    let getValueOrDefault n = match n with NullableValue x -> x | NullableNull -> n.GetValueOrDefault()
+
+    //let create x = System.Nullable x (* just use Nullable in and of itself, create is unnecessary. perhaps this is because of F# 4? *)
+    let getOrDefault v n = match n with NullableValue x -> x | _ -> v
+    let getOrElse (v: 'a Lazy) (n: 'a Nullable) = match n with NullableValue x -> x | _ -> v.Force()
+
+    let get (x: _ Nullable) = x.Value
+    let fromOption = Option.toNullable
+    let toOption = Option.fromNullable
+    let bind f x =
+        match x with
+        | NullableNull -> Nullable()
+        | NullableValue v -> f v
+    let hasValue (x: _ Nullable) = x.HasValue
+    let isNull (x: _ Nullable) = not x.HasValue
+    let count (x: _ Nullable) = if x.HasValue then 1 else 0
+    let fold f state x =
+        match x with
+        | NullableNull -> state
+        | NullableValue v -> f state v
+    let foldBack f x state =
+        match x with
+        | NullableNull -> state
+        | NullableValue _ -> f x state
+    let exists p x =
+        match x with
+        | NullableNull -> false
+        | NullableValue _ -> p x
+    let forall p x =
+        match x with
+        | NullableNull -> true
+        | NullableValue _ -> p x
+    let iter f x =
+        match x with
+        | NullableNull -> ()
+        | NullableValue v -> f v
+    let map f x =
+        match x with
+        | NullableNull -> Nullable()
+        | NullableValue v -> Nullable(f v)
+    let toArray x =
+        match x with
+        | NullableNull -> [||]
+        | NullableValue v -> [| v |]
+    let toList x =
+        match x with
+        | NullableNull -> []
+        | NullableValue v -> [v]
+
+    let liftNullable op (a: _ Nullable) (b: _ Nullable) =
+        if a.HasValue && b.HasValue
+            then Nullable(op a.Value b.Value)
+            else Nullable()
+ 
+    let mapBoolOp op a b =
+        match a,b with
+        | NullableValue x, NullableValue y -> op x y
+        | _ -> false
+
+    let bindf (n: _ Nullable) f ``default`` = if n.HasValue then f n.Value else ``default``
+

@@ -145,7 +145,7 @@ module MultipleOutputHelper =
                     if not <| isNull v then
                         v.Start <- template.Length
                     currentBlock <- v
-                    
+
             static member Create(host:ITextTemplatingEngineHost,template:StringBuilder) =
                 let beforeConLength = template.Length
                 let manager = 

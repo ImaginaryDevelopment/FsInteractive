@@ -6,6 +6,7 @@ open System.Collections.Generic
 open System.Text
 open System.Linq
 open BReusable
+open BReusable.Reflection
 open MacroRunner.MultipleOutputHelper
 open System.IO
 
@@ -46,8 +47,28 @@ type ReferenceData = {Schema:string; Table:string; Column:string; ValuesWithComm
 //void GenerateTable(Manager manager, EnvDTE.Project targetProject, string targetProjectFolder, TableInfo ti)
 //type Targeting = TargetProject of EnvDTE.Project*targetProjectFolder:string
 
-let generateTable (manager:IManager) (generationEnvironment:StringBuilder) targetPath (tableInfo:TableInfo) =
-    printfn "Generating a table into %A %A" targetPath tableInfo
+let toColumnType (t:Type) length precision scale useMax = 
+    match t with
+    | TypeOf (isType:bool) -> ColumnType.Other typeof<bool>
+    | TypeOf (isType:decimal) -> 
+        match precision,scale with
+        | NullableValue p, NullableValue s ->
+            {Precision=p; Scale = s}
+            |> Some
+            |> ColumnType.Decimal
+        | _ -> ColumnType.Decimal None
+    |TypeOf (isType:string) -> 
+        match useMax,length with
+        | NullableValue true, _ -> Max
+        | _, NullableValue length -> Length length
+        |> ColumnType.VarChar 
+    | _ -> Other t
+
+let generateTable (manager:IManager) (generationEnvironment:StringBuilder) targetProjectFolderOpt (tableInfo:TableInfo) =
+    printfn "Generating a table into %A %A" targetProjectFolderOpt tableInfo
+    let targetFilename = Path.Combine(defaultArg targetProjectFolderOpt null, "Schema Objects", "Schemas", tableInfo.Schema, "Tables", tableInfo.Name + ".table.sql")
+    manager.StartNewFile(targetFilename)
+
     let formatFKey (table:string) column (fKey:FKeyInfo option) : string =
         match fKey with
         |None -> null
@@ -73,22 +94,16 @@ let generateTable (manager:IManager) (generationEnvironment:StringBuilder) targe
         | Char cl -> sprintf "char(%s)" (mapLength cl)
         | NChar cl -> sprintf "nchar(%s)" (mapLength cl)
         | Other t -> 
-            if t = typeof<int> then
-                "int"
-            elif t = typeof<bool> then
-                "bit"
-            else t.Name
+            match t with
+            | TypeOf(isType:int) -> "int"
+            | TypeOf(isType:bool) -> "bit"
+            | TypeOf(isType:DateTime) -> "datetime"
+            | _ -> t.Name
 
 //        let projects = manager.Dte |> Option.bind (EnvDteHelper.recurseSolutionProjects >> Some) // was dte
 //        let targetProject = projects |> Option.bind (fun projs -> projs.First(fun p -> p.Name = targetProjectName) |> Some)
 //        let targetProjectFolder = targetProject |> Option.bind (fun tp -> Path.GetDirectoryName(tp.FullName) |> Some)
 
-    match targetPath with
-        |Some (targetProjectFolder) ->
-            let targetFilename = Path.Combine(targetProjectFolder, "Schema Objects", "Schemas", tableInfo.Schema, "Tables", tableInfo.Name + ".table.sql")
-            manager.StartNewFile(targetFilename)
-        | None -> ()
-    
     let mutable i = 0
     let columnCount = tableInfo.Columns.Length
     let hasCombinationPK = tableInfo.Columns.Count (fun ci -> ci.Attributes |> Seq.contains "primary key") > 1
@@ -109,7 +124,7 @@ let generateTable (manager:IManager) (generationEnvironment:StringBuilder) targe
             if not <| isNull ci.ReferenceValuesWithComment && Seq.any ci.ReferenceValuesWithComment && (multipleComments || not <| Seq.any ci.Comments) then
                 " -- " + (delimit "," ci.ReferenceValuesWithComment.Keys)
             elif ci.Comments.Length = 1 then 
-                "--" + (Seq.head ci.Comments)
+                " -- " + (Seq.head ci.Comments)
             else String.Empty
         
         let formatAttributes (attributes: string seq) hasCombinationPK fKey allowNull = 
@@ -123,7 +138,7 @@ let generateTable (manager:IManager) (generationEnvironment:StringBuilder) targe
                 if isNull fKey then
                     attribs
                 else attribs + " " + fKey
-                
+
         // TODO: finish translation
         sprintf "%-32s%-16s%s%s%s%s" 
             (sprintf "[%s]" ci.Name)
@@ -142,6 +157,8 @@ let generateTable (manager:IManager) (generationEnvironment:StringBuilder) targe
         
         sprintf "CONSTRAINT PK_%s PRIMARY KEY (%s)" tableInfo.Name columns
         |> appendLine' 1
+    appendLine ");"
+    manager.EndBlock()
 
 let generateInserts title appendLine (manager:IManager) targetProjectFolder (tables:#seq<_>) targetRelativePath =
     // generate reference data
@@ -194,6 +211,8 @@ let generateInserts title appendLine (manager:IManager) targetProjectFolder (tab
         
     manager.EndBlock()
 
+    //feature desired: auto-name primary keys
+    // adjustment desired: put all reference values comment (when on the reference table, above the column instead of beside it
 let generateTablesAndReferenceTables(manager:IManager, generationEnvironment:StringBuilder, targeting, toGen: TableInfo seq ) =
     toGen
     |> Seq.iter(fun ti ->
@@ -201,11 +220,18 @@ let generateTablesAndReferenceTables(manager:IManager, generationEnvironment:Str
         ti.Columns
         |> Seq.filter(fun ci-> ci.GenerateReferenceTable)
         |> Seq.iter(fun childCi -> 
-            let pkeyColumn = {childCi with Attributes = ["primary key"]; AllowNull = NotNull}
+            let pkeyColumn = {childCi with Attributes = ["primary key"]; AllowNull = NotNull; FKey=None}
             let fkey = childCi.FKey.Value
             let name = fkey.Table
             let table = {Schema = fkey.Schema; Name=name; Columns = [pkeyColumn]}
             generateTable manager generationEnvironment targeting table
         )
     )
+let makeStrFkey50 name fkey = {Name=name; Type=VarChar (Length 50); Attributes = List.empty; AllowNull = NotNull; FKey = Some fkey; Comments = List.empty; GenerateReferenceTable=false; ReferenceValuesWithComment=null}
+let makeIntFkey name fkey = {Name=name; Type=Other typeof<int>; Attributes = List.empty; AllowNull = NotNull; FKey=Some fkey; Comments = List.empty; GenerateReferenceTable=false; ReferenceValuesWithComment=null}
+let makeNullable50 name = 
+    {Name=name; Type = VarChar (Length 50); AllowNull = AllowNull; Attributes = List.empty; FKey = None; Comments = List.empty; GenerateReferenceTable = false; ReferenceValuesWithComment = null}
+let makeNonFKeyColumn name columnType allowNull = 
+    {Name=name; Type=columnType; AllowNull=allowNull; Comments = List.empty; GenerateReferenceTable = false; ReferenceValuesWithComment=null;FKey=None; Attributes = List.empty}
+
 // end sql generation module

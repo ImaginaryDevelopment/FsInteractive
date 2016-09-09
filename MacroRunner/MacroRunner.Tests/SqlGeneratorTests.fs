@@ -64,16 +64,10 @@ module SqlGeneratorReferenceData =
     let pkeyIdent =[ "identity"; "primary key" ] 
     let vOrnonValueStringToList s = if String.IsNullOrEmpty s then List.empty else [s]
 
-    let makeStrFkey50 name fkey = {Name=name; Type=VarChar (Length 50); Attributes = List.empty; AllowNull = NotNull; FKey = Some fkey; Comments = List.empty; GenerateReferenceTable=false; ReferenceValuesWithComment=null}
-    let makeIntFkey name fkey = {Name=name; Type=Other typeof<int>; Attributes = List.empty; AllowNull = NotNull; FKey=Some fkey; Comments = List.empty; GenerateReferenceTable=false; ReferenceValuesWithComment=null}
     let makeUserIdColumn prefix allowNull comment = 
         { makeIntFkey (prefix + "UserID") {FKeyInfo.Schema="dbo"; Table="Users"; Column="UserID"} with AllowNull = allowNull; Comments= vOrnonValueStringToList comment}
     let makePatientIdColumn prefix allowNull comment = 
         {makeIntFkey (prefix+"PatientID") {FKeyInfo.Schema="dbo";Table="Patients"; Column="PatientID"} with AllowNull = allowNull; Comments=vOrnonValueStringToList comment}
-    let makeNullable50 name = 
-        {Name=name; Type = VarChar (Length 50); AllowNull = AllowNull; Attributes = List.empty; FKey = None; Comments = List.empty; GenerateReferenceTable = false; ReferenceValuesWithComment = null}
-    let makeNonFKeyColumn name columnType allowNull = 
-        {Name=name; Type=columnType; AllowNull=allowNull; Comments = List.empty; GenerateReferenceTable = false; ReferenceValuesWithComment=null;FKey=None; Attributes = List.empty}
 
     let toGen = [
         {Schema="dbo";Name="Payment"; 
