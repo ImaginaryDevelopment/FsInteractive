@@ -39,7 +39,7 @@ type ColumnInfo =
 type TableInfo = { Name:string; Schema:string; Columns: ColumnInfo list}
 
 //void GenerateTable(Manager manager, EnvDTE.Project targetProject, string targetProjectFolder, TableInfo ti)
-type Targeting = TargetProject of EnvDTE.Project*targetProjectFolder:string
+//type Targeting = TargetProject of EnvDTE.Project*targetProjectFolder:string
 
 let generateTable (manager:IManager) (generationEnvironment:StringBuilder) targeting tableInfo =
     printfn "Generating a table into %A %A" targeting tableInfo
@@ -188,4 +188,19 @@ let generateInserts title appendLine (manager:IManager) targetProject targetProj
         appendLine String.Empty
         
     manager.EndBlock()
+
+let generateTablesAndReferenceTables(manager:IManager, generationEnvironment:StringBuilder, targeting, toGen: TableInfo seq ) =
+    toGen
+    |> Seq.iter(fun ti ->
+        generateTable manager generationEnvironment targeting ti
+        ti.Columns
+        |> Seq.filter(fun ci-> ci.GenerateReferenceTable)
+        |> Seq.iter(fun childCi -> 
+            let pkeyColumn = {childCi with Attributes = ["primary key"]; AllowNull = false}
+            let fkey = childCi.FKey.Value
+            let name = fkey.Table
+            let table = {Schema = fkey.Schema; Name=name; Columns = [pkeyColumn]}
+            generateTable manager generationEnvironment targeting table
+        )
+    )
 // end sql generation module

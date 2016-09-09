@@ -207,7 +207,7 @@ module DataModelToF =
         appendLine 1 "let FromF (camelTypeF:Func<string,obj option>) ="
         appendLine 2 "{"
     
-        let mapConverter(type' : string , nullable: bool, useOptions:bool) = 
+        let mapConverter(type' : string , _nullable: bool, _useOptions:bool) = 
             match type'.ToLower() with 
                 |"char"
                 |"nchar"

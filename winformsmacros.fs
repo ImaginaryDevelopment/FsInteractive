@@ -215,10 +215,10 @@ module WpfMacros =
 
     let displayAsThread itemSource = 
         let dispatcherSyncContext = new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher)
-        let mutable window: Window = null
+        let window: Window ref = ref null // f# 4.3 compatability
         let fOnStart () = 
             SynchronizationContext.SetSynchronizationContext(dispatcherSyncContext)
-            display (fun w -> window <- w) itemSource
+            display (fun w -> window := w) itemSource
 
         let t = Thread(fOnStart)
         t.SetApartmentState ApartmentState.STA
