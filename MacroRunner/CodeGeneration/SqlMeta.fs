@@ -21,29 +21,34 @@ type ColumnType =
     |NChar of ColumnLength
     |Other of Type
 
+type Nullability = 
+    | AllowNull
+    | NotNull
 type ColumnInfo = 
     { 
         Name:string; 
         Type:ColumnType
-        AllowNull:bool
+        AllowNull:Nullability
         Attributes: string list
         FKey:FKeyInfo option
         Comments: string list
         GenerateReferenceTable:bool
         ReferenceValuesWithComment: IDictionary<string,string>
     }
-    with 
+    with
         static member Zero ct = 
-            {Name=null; Type = ct; AllowNull = false; Attributes = List.empty; FKey = None; Comments = List.empty; GenerateReferenceTable = false; ReferenceValuesWithComment = null}
+            {Name=null; Type = ct; AllowNull = NotNull; Attributes = List.empty; FKey = None; Comments = List.empty; GenerateReferenceTable = false; ReferenceValuesWithComment = null}
 
 type TableInfo = { Name:string; Schema:string; Columns: ColumnInfo list}
+
+type ReferenceData = {Schema:string; Table:string; Column:string; ValuesWithComments: IDictionary<string,string>}
 
 //void GenerateTable(Manager manager, EnvDTE.Project targetProject, string targetProjectFolder, TableInfo ti)
 //type Targeting = TargetProject of EnvDTE.Project*targetProjectFolder:string
 
-let generateTable (manager:IManager) (generationEnvironment:StringBuilder) targeting tableInfo =
+let generateTable (manager:IManager) (generationEnvironment:StringBuilder) targeting (tableInfo:TableInfo) =
     printfn "Generating a table into %A %A" targeting tableInfo
-    let formatFKey (table:string) column fKey : string =
+    let formatFKey (table:string) column (fKey:FKeyInfo option) : string =
         match fKey with
         |None -> null
         | Some fKey -> 
@@ -79,9 +84,9 @@ let generateTable (manager:IManager) (generationEnvironment:StringBuilder) targe
 //        let targetProjectFolder = targetProject |> Option.bind (fun tp -> Path.GetDirectoryName(tp.FullName) |> Some)
 
     match targeting with
-        |Some (targetProject,targetProjectFolder) ->
+        |Some (targetProjectFolder) ->
             let targetFilename = Path.Combine(targetProjectFolder, "Schema Objects", "Schemas", tableInfo.Schema, "Tables", tableInfo.Name + ".table.sql")
-            manager.StartNewFile(targetFilename, targetProject)
+            manager.StartNewFile(targetFilename)
         | None -> ()
     
     let mutable i = 0
@@ -123,7 +128,7 @@ let generateTable (manager:IManager) (generationEnvironment:StringBuilder) targe
         sprintf "%-32s%-16s%s%s%s%s" 
             (sprintf "[%s]" ci.Name)
             (mapTypeToSql ci.Type) 
-            (formatAttributes ci.Attributes hasCombinationPK fKey ci.AllowNull) 
+            (formatAttributes ci.Attributes hasCombinationPK fKey (match ci.AllowNull with |AllowNull -> true | NotNull -> false))
             (if i < columnCount - 1 || hasCombinationPK then "," else String.Empty) 
             (if multipleComments then Environment.NewLine else String.Empty)
             comment
@@ -145,7 +150,7 @@ let generateInserts title appendLine (manager:IManager) targetProject targetProj
         ()
     else
         let targetFilename = Path.Combine(targetProjectFolder, targetRelativePath)
-        manager.StartNewFile(targetFilename, targetProject)
+        manager.StartNewFile(targetFilename)
     appendLine "-- Generated file, DO NOT edit directly"
     appendLine "SET ANSI_NULLS ON"
     appendLine "GO"
@@ -196,7 +201,7 @@ let generateTablesAndReferenceTables(manager:IManager, generationEnvironment:Str
         ti.Columns
         |> Seq.filter(fun ci-> ci.GenerateReferenceTable)
         |> Seq.iter(fun childCi -> 
-            let pkeyColumn = {childCi with Attributes = ["primary key"]; AllowNull = false}
+            let pkeyColumn = {childCi with Attributes = ["primary key"]; AllowNull = NotNull}
             let fkey = childCi.FKey.Value
             let name = fkey.Table
             let table = {Schema = fkey.Schema; Name=name; Columns = [pkeyColumn]}

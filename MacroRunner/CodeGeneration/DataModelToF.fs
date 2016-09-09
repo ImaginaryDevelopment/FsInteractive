@@ -373,9 +373,10 @@ module DataModelToF =
         appendEmpty()
 
         //let sol,projects = Macros.VsMacros.getSP dte //EnvDteHelper.recurseSolutionProjects dte 
-        let projects = manager.Dte |> Option.map (Macros.VsMacros.getSP>>snd) // was dte
-        let targetProject = projects |> Option.map (Seq.find (fun p -> p.Name = targetProjectName))
-        let targetProjectFolder = targetProject |> Option.map (fun tp -> tp.FullName |> Path.GetDirectoryName)
+        let projects = manager.DteWrapperOpt |> Option.map (fun dte -> dte.GetProjects()) //(Macros.VsMacros.getSP>>snd) // was dte
+        let targetProjectFolder = 
+            projects |> Option.map (Seq.find (fun p -> p.Name = targetProjectName))
+            |> Option.map (fun tp -> tp.FullName |> Path.GetDirectoryName)
 
         appendLine "Projects"
     
@@ -396,7 +397,7 @@ module DataModelToF =
 
         appendLine <| sprintf "Connected to %s,%s" cn.DataSource cn.Database
         appendLine String.Empty
-        let startNewFile path = manager.StartNewFile(path, targetProject)
+        let startNewFile path = manager.StartNewFile(path)
         for tableInfo in tables do
             let typeName = fSingularizer tableInfo.Name
             appendLine <| sprintf "Starting table %s as type %s" tableInfo.Name typeName
@@ -617,6 +618,7 @@ module SqlProj =
 // impure! applied code, meant for specific scripts, not api
 module GenerationSample = 
     open Microsoft.VisualStudio.TextTemplating
+    open SqlMeta
     open DataModelToF
 
     type GenerationStrategy = 
@@ -657,26 +659,26 @@ module GenerationSample =
                 let generatedFileNames = List<string>()
                 { new IManager
                      with 
-                        override __.StartNewFile (s,p) = currentFile <- s;  sb.AppendLine(sprintf "// Starting a new file '%s' s for project opt '%A'" s p) |> ignore
+                        override __.StartNewFile s = currentFile <- s;  sb.AppendLine(sprintf "// Starting a new file '%s' s" s) |> ignore
                         override __.EndBlock () = sb.AppendLine(String.Empty) |> ignore; sb.AppendLine(sprintf "// file finished '%s'" currentFile) |> ignore
                         override __.Process _doMultiFile = ()
                         override __.DefaultProjectNamespace with get() = "DefaultProjectNamespace"
-                        override __.Dte = None
+                        override __.DteWrapperOpt = None
                         override __.TemplateFile with get() = "DataModels.tt"
                         override __.GeneratedFileNames = upcast generatedFileNames
                 }
 
         let manager = getManager UseMultipleOutputHelperCode
-        SqlMeta.generateTable manager sb None 
+        generateTable manager sb None 
             {
             Name="Users"; Schema="dbo"; 
             Columns= 
                 [ 
                     { // should be [PaymentID]                     int             identity primary key,
                         Name="PaymentID"
-                        Type = SqlMeta.ColumnType.Other typeof<int>
+                        Type = ColumnType.Other typeof<int>
                         Attributes = ["identity";"primary key" ]
-                        AllowNull = false
+                        AllowNull = NotNull
                         FKey = None
                         Comments = List.empty
                         GenerateReferenceTable = false

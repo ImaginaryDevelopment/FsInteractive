@@ -4,22 +4,38 @@ open System.Collections.Generic
 open System.IO
 open BReusable
 
-type Dte = EnvDTE.DTE
+module DteWrap = 
+    open EnvDTE
+    type Dte = EnvDTE.DTE
+    type SourceControlWrapper = {
+        GetIsItemUnderSC: string -> bool
+        GetIsItemCheckedOut: string -> bool
+        CheckOutItem:string -> bool
+    }
+    // abstract away any specific needs the manager has to interact with DTE
+    type DteWrapper = {
+        FindProjectItemPropertyValue: string -> string -> string
+        GetSourceControl: unit -> SourceControlWrapper option
+        Sync: string list -> unit
+//        GetProjectFullNameFromProjectName: string -> string
+        GetProjects: unit -> EnvDTE.Project list
+        }
+
 // MultipleOutputHelper.ttinclude
 module MultipleOutputHelper = 
-    open EnvDTE
+    open DteWrap
 
     [<AllowNullLiteral>]
     type Block () =
             member val Name:string = null with get,set
-            member val Project:EnvDTE.Project = null with get,set
+//            member val Project:EnvDTE.Project = null with get,set
             member val Start = 0 with get,set
             member val Length = 0 with get,set
-    
+
     type IManager =
-        abstract member StartNewFile : Filename:string*Project option -> unit
+        abstract member StartNewFile : Filename:string -> unit
         abstract member TemplateFile: string with get
-        abstract member Dte : Dte option with get
+        abstract member DteWrapperOpt : DteWrapper option with get
         abstract member EndBlock: unit -> unit
         abstract member Process: doMultiFile:bool -> unit
         abstract member DefaultProjectNamespace: string with get
@@ -42,11 +58,12 @@ module MultipleOutputHelper =
             let mutable generatedFileNames : string list = []
     
             member __.GeneratedFileNames with get() = generatedFileNames    
-            member __.StartNewFile(name, ?project:Project) =
+            member __.StartNewFile name =
                 if isNull name then raise <| new ArgumentNullException("name")
                 printfn "Starting new file at %s" name
-                let project = defaultArg project null
-                currentBlock <- new Block(Name=name,Project=project, Start=template.Length)
+//                let project = defaultArg project null
+                currentBlock <- new Block(Name=name,//Project=project, 
+                    Start=template.Length)
                 
             member x.StartFooter () = x.CurrentBlock <- footer
             member x.StartHeader () = x.CurrentBlock <- header
@@ -139,38 +156,36 @@ module MultipleOutputHelper =
                         Manager(host,template)
                 if beforeConLength > template.Length then failwithf "Someone touched me!"
                 manager
-                
+
             interface IManager with
-                override x.StartNewFile (p,s) =
-                    match s with
-                    | Some project -> x.StartNewFile(p,project)
-                    | None -> x.StartNewFile(p,null)
+                override x.StartNewFile p = x.StartNewFile p
+//                    match s with
+//                    | Some project -> x.StartNewFile(p,project)
+//                    | None -> x.StartNewFile(p,null)
                 override x.EndBlock() = x.EndBlock ()
                 override x.Process doMultiFile = x.Process doMultiFile
                 override x.DefaultProjectNamespace = x.DefaultProjectNamespace
-                override __.Dte = None
+                override __.DteWrapperOpt = None
                 override __.TemplateFile = host.TemplateFile
                 override __.GeneratedFileNames = upcast generatedFileNames
 
-        and VsManager private (host,dte,template,templateProjectItem:ProjectItem,checkOutAction, projectSyncAction) =
+        and VsManager private (host,dteWrapper:DteWrapper,template,templateProjectItem:EnvDTE.ProjectItem) =
                 inherit Manager(host,template)
-                
-                let dte: Dte = dte
-                let checkOutAction: Action<string> = checkOutAction // Action<String> 
-                let projectSyncAction: Action<string seq> = projectSyncAction //Action<IEnumerable<String>> 
+
+//                let checkOutAction: Action<string> = checkOutAction // Action<String> 
+//                let projectSyncAction: Action<string seq> = projectSyncAction //Action<IEnumerable<String>> 
     
                 interface IManager with
-                    override __.Dte = Some dte
+                    override __.DteWrapperOpt = Some dteWrapper
                     
                 override __.DefaultProjectNamespace 
                     with get() = 
                         if isNull templateProjectItem then failwithf "templateProjectItem is null"
                         if isNull templateProjectItem.ContainingProject then failwithf "templateProjectItem.ContainingProject is null"
                         if isNull templateProjectItem.Properties then failwithf "templateProjectItem.ContainingProject.Properties is null"
-//                        if isNull <| templateProjectItem.Properties.Item("DefaultNamespace") then failwithf "templateProjectItem.ContainingProject.Properties.Item(DefaultNamespace) is null"
 //
                         templateProjectItem.ContainingProject.Properties.Item("DefaultNamespace").Value.ToString()
-                override __.GetCustomToolNamespace fileName = dte.Solution.FindProjectItem(fileName).Properties.Item("CustomToolNamespace").Value.ToString()
+                override __.GetCustomToolNamespace fileName = dteWrapper.FindProjectItemPropertyValue fileName "CustomToolNamespace" //dte.Solution.FindProjectItem(fileName).Properties.Item("CustomToolNamespace").Value.ToString()
                 
                 override __.Process split =
                     if isNull templateProjectItem.ProjectItems then
@@ -178,7 +193,8 @@ module MultipleOutputHelper =
                     else 
                         if template.Length = 0 then failwithf "No text has been added"
                         base.Process split
-                    projectSyncAction.EndInvoke(projectSyncAction.BeginInvoke(base.GeneratedFileNames, null, null))
+                    dteWrapper.Sync base.GeneratedFileNames
+//                    projectSyncAction.EndInvoke(projectSyncAction.BeginInvoke(base.GeneratedFileNames, null, null))
         
                 override x.CreateFile fileName content =
                     if x.IsFileContentDifferent fileName content then
@@ -186,7 +202,7 @@ module MultipleOutputHelper =
                         File.WriteAllText(fileName, content)
                         
                 //static member private x.CreateVsManager(
-                internal new(host:ITextTemplatingEngineHost , template:StringBuilder ) =
+                internal new(host:ITextTemplatingEngineHost , template:StringBuilder) =
                     let hostServiceProvider = host :?> IServiceProvider
                     if isNull hostServiceProvider then
                         raise <| ArgumentNullException("Could not obtain IServiceProvider")
@@ -196,23 +212,39 @@ module MultipleOutputHelper =
                     
                     let templateProjectItem = dte.Solution.FindProjectItem(host.TemplateFile)
                     if isNull templateProjectItem then failwithf "VsManager.new: templateProjectItem is null"
-                    let checkOutAction fileName = dte.SourceControl.CheckOutItem fileName |> ignore
-                    let projectSyncAction = fun keepFileNames -> VsManager.ProjectSync(templateProjectItem, keepFileNames)
-                    VsManager(host,dte,template,templateProjectItem,Action<_>(checkOutAction), Action<_>(projectSyncAction))
-                
+//                    let checkOutAction fileName = dte.SourceControl.CheckOutItem fileName |> ignore
+//                    let projectSyncAction = fun keepFileNames -> VsManager.ProjectSync(templateProjectItem, keepFileNames)
+                    let getProjects() = 
+                        dte|> Macros.VsMacros.getSP |> snd 
+                    let wrapper = {
+                        FindProjectItemPropertyValue= (fun s p -> dte.Solution.FindProjectItem(s).Properties.Item(p).Value |> string); 
+                        GetSourceControl= 
+                            fun () ->
+                                if isNull dte.SourceControl then 
+                                    None 
+                                else
+                                    Some {SourceControlWrapper.CheckOutItem = dte.SourceControl.CheckOutItem; GetIsItemUnderSC= dte.SourceControl.IsItemUnderSCC; GetIsItemCheckedOut= dte.SourceControl.IsItemCheckedOut}
+                        Sync= (fun fileNames -> 
+                            VsManager.ProjectSync(templateProjectItem,fileNames)
+                        )
+                        GetProjects = getProjects
+//                        GetProjectFullNameFromProjectName = fun projectName -> getProjects() |> Seq.find(fun p -> p.Name = projectName) |> fun p -> p.FullName
+                        }
+                    VsManager(host,wrapper,template,templateProjectItem)
+
                 static member WriteLnToOutputPane(dte:Dte) (s:string) =
                     let window = dte.Windows.Item(EnvDTE.Constants.vsWindowKindOutput).Object :?> EnvDTE.OutputWindow
                     window.ActivePane.Activate ()
                     window.ActivePane.OutputString (s + Environment.NewLine)
         
-                static member ProjectSync(templateProjectItem:ProjectItem, keepFileNames:string seq)  =
+                static member ProjectSync(templateProjectItem:EnvDTE.ProjectItem, keepFileNames:string seq)  =
                     let keepFileNameSet = HashSet<string>(keepFileNames)
-                    let projectFiles = Dictionary<string, ProjectItem>()
+                    let projectFiles = Dictionary<string, EnvDTE.ProjectItem>()
                     let dte = templateProjectItem.Collection.DTE
                     let project = templateProjectItem.Collection.ContainingProject
                     VsManager.WriteLnToOutputPane dte ("Starting ProjectSync for t4 in " + project.Name + "\\" + templateProjectItem.Name)
                     let templateProjectDirectory = Path.GetDirectoryName project.FullName
-                    let sol,projects = Macros.VsMacros.getSP dte //EnvDteHelper.recurseSolutionProjects dte 
+                    let _sol,projects = Macros.VsMacros.getSP dte //EnvDteHelper.recurseSolutionProjects dte 
                     let inline isInCurrentProject (fileName:string) =  fileName.StartsWith(templateProjectDirectory)
                     let originalFilePrefix = Path.GetFileNameWithoutExtension(templateProjectItem.get_FileNames(0s)) + "."
                     for projectItem in templateProjectItem.ProjectItems do
@@ -235,9 +267,13 @@ module MultipleOutputHelper =
                             targetProject.ProjectItems.AddFromFile fileName |> ignore
 
                 member __.CheckoutFileIfRequired fileName =
-                    let sc = dte.SourceControl
-                    if not <| isNull sc && sc.IsItemUnderSCC fileName && not <| sc.IsItemCheckedOut fileName then
-                        checkOutAction.EndInvoke(checkOutAction.BeginInvoke(fileName, null, null))
+                    dteWrapper.GetSourceControl()
+                    |> Option.iter (fun sc -> 
+                        if sc.GetIsItemUnderSC fileName && not <| sc.GetIsItemCheckedOut fileName then
+                            sc.CheckOutItem fileName |> ignore<bool>
+//                            checkOutAction.EndInvoke(checkOutAction.BeginInvoke(fileName, null, null))
+                    )
+
                     
 
 
