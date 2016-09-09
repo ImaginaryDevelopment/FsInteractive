@@ -116,7 +116,6 @@ module SqlGeneratorReferenceData =
                     makeNonFKeyColumn "IsElectronic" (Other typeof<bool>) NotNull
                     { makeIntFkey "CCItemID" {Schema="dbo";Table="Accounts";Column="CCItem"} with AllowNull=AllowNull}
                     makeNonFKeyColumn "Comments" (VarChar Max) AllowNull
-
             ]
         }
     ]
@@ -128,8 +127,8 @@ let testSqlGenerator () =
     let sb = StringBuilder()
 //    let manager = MacroRunner.MultipleOutputHelper.Managers.Manager.Create(tHost, sb)
     let manager = MacroRunner.MultipleOutputHelper.Managers.Manager(tHost,sb)
-    let targetProjectName = "ApplicationDatabase"
-    let targetInsertRelativePath = @"Scripts\Post-Deployment\TableInserts\Accounting1.5\AccountingInserts.sql"
+//    let targetProjectName = "ApplicationDatabase"
+//    let targetInsertRelativePath = @"Scripts\Post-Deployment\TableInserts\Accounting1.5\AccountingInserts.sql"
     generateTablesAndReferenceTables(manager,sb, None, SqlGeneratorReferenceData.toGen |> Seq.take 1)
     let output = sb |> string
     Console.WriteLine "Hello world"

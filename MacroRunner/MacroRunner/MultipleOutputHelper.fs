@@ -236,7 +236,88 @@ module MultipleOutputHelper =
                     let window = dte.Windows.Item(EnvDTE.Constants.vsWindowKindOutput).Object :?> EnvDTE.OutputWindow
                     window.ActivePane.Activate ()
                     window.ActivePane.OutputString (s + Environment.NewLine)
-        
+
+                static member AddFileToDbSqlProj dte (targetProject:EnvDTE.Project) fileName = 
+                    let mutable projectItems = targetProject.ProjectItems
+                    let trim1 d (s:string) = s.Trim(d |> Array.ofSeq)
+                    let toDescend = 
+//                                fileName.Substring(System.IO.Path.GetDirectoryName(targetProject.FullName).Length).Trim('\\').Trim('/').Split(new []{"\\","/"}, StringSplitOptions.None)
+                        targetProject.FullName
+                        |> Path.GetDirectoryName
+                        |> String.length
+                        |> flip String.subString fileName
+                        |> trim1 ['\\']
+                        |> trim1 ['/']
+                        |> String.split ["\\";"/"]
+                    toDescend
+//                            foreach(let td in toDescend.Take(toDescend.Length - 1))
+                    |> Seq.take (toDescend.Length - 1)
+                    |> Seq.iter (fun td ->
+                        VsManager.WriteLnToOutputPane dte ("Descending into \"" + td + "\"")
+                        let childProjectItemOpt = 
+                            projectItems
+                            |> Seq.cast<EnvDTE.ProjectItem>
+                            |> Seq.tryFind (fun pi -> //.FirstOrDefault(pi => 
+                                let isMatch = Path.GetFileName(pi.get_FileNames(0s)) = td
+                                isMatch
+                            )
+
+                        match childProjectItemOpt with
+                        | None ->
+                            VsManager.WriteLnToOutputPane dte ("Failed to find \"" + td + "\"")
+                            projectItems
+                            |> Seq.cast<EnvDTE.ProjectItem>
+                            |> Seq.map (fun pi -> pi.get_FileNames(0s))
+                            |> Seq.iter(fun pi ->
+                                VsManager.WriteLnToOutputPane dte ("\tWe did however find \"" + pi + "\"")
+                            )
+                        | Some childProjectItem ->
+                            VsManager.WriteLnToOutputPane dte (sprintf "Appears we found \"%s\" and it has projectItems:%A" td (not <| isNull childProjectItem.ProjectItems))
+                            if not <| isNull childProjectItem.ProjectItems then
+                                projectItems <- childProjectItem.ProjectItems
+                    )
+
+                    VsManager.WriteLnToOutputPane dte ("Generating \"" + fileName + "\" into " + targetProject.FullName)
+
+                    let projectItem = projectItems.AddFromFile(fileName)
+                    VsManager.WriteLnToOutputPane dte ("AddFromFile put it @" + projectItem.get_FileNames(0s))
+
+                // from line to 221..298
+                static member AddFileToProject dte (projects: EnvDTE.Project seq) (fileName:string) = 
+                    // only one this appears to be skipping in a solutionfolder
+                    let unloadedProject = "{67294A52-A4F0-11D2-AA88-00C04F688DDE}";
+                    let canReadProjects = projects |> Seq.filter (fun p -> p.Kind <> unloadedProject && p.Kind <> EnvDTE80.ProjectKinds.vsProjectKindSolutionFolder) |> List.ofSeq
+                    
+                    // line 224
+                    canReadProjects
+                    |> Seq.tryFind (fun p -> //.FirstOrDefault(p => 
+                            try
+                                p.Kind <> EnvDTE80.ProjectKinds.vsProjectKindSolutionFolder && fileName.StartsWith(System.IO.Path.GetDirectoryName(p.FullName))
+                            with _ -> 
+                                VsManager.WriteLnToOutputPane dte ("failing to read project with kind= " + p.Kind)
+                                VsManager.WriteLnToOutputPane dte ("expected kind= " + EnvDTE80.ProjectKinds.vsProjectKindSolutionFolder)
+                                VsManager.WriteLnToOutputPane dte ("hi! my name is "+ p.Name)
+                                reraise()
+                            )
+                    |> function 
+                            | None ->
+                                sprintf "%s, could not find in (%i) projects. %s" fileName (Seq.length projects) (canReadProjects |> Seq.map (fun p -> p.FullName) |> delimit ",") 
+                                |> invalidOp
+                                //InvalidOp (fileName+", could not find in ("+ projects.Count() +") projects." + canReadProjects.Select(p => p.FullName).Aggregate((s1,s2) => s1+","+s2))
+                            | Some targetProject ->
+                                // line 263
+                                // normal adding, traversing, expanding view did not work at all.
+                                if targetProject.FullName.EndsWith(".dbproj") || targetProject.FullName.EndsWith(".sqlproj") then
+                                    VsManager.AddFileToDbSqlProj dte targetProject fileName
+                                // line 299
+                                else 
+                                    VsManager.WriteLnToOutputPane dte ("Generating \"" + fileName + "\" into " + targetProject.FullName)
+                                    let projectItem = targetProject.ProjectItems.AddFromFile(fileName)
+                                    try
+                                        VsManager.WriteLnToOutputPane dte ("AddFromFile put it @" + projectItem.get_FileNames(0s))
+                                    with _ -> 
+                                        VsManager.WriteLnToOutputPane dte ("get_FileNames(0) failed for " + fileName + " into " + targetProject.Name);
+
                 static member ProjectSync(templateProjectItem:EnvDTE.ProjectItem, keepFileNames:string seq)  =
                     let keepFileNameSet = HashSet<string>(keepFileNames)
                     let projectFiles = Dictionary<string, EnvDTE.ProjectItem>()
@@ -262,9 +343,10 @@ module MultipleOutputHelper =
                                 templateProjectItem.ProjectItems.AddFromFile(fileName) |> ignore
                                 VsManager.WriteLnToOutputPane dte ("added " + fileName)
                         else // add to another project
-                            let targetProject = projects |> Seq.find (fun p -> p.Kind <> ProjectKinds.vsProjectKindSolutionFolder && fileName.StartsWith(Path.GetDirectoryName p.FullName))
-                            VsManager.WriteLnToOutputPane dte ("Generating into " + targetProject.FullName)
-                            targetProject.ProjectItems.AddFromFile fileName |> ignore
+                            VsManager.AddFileToProject dte projects fileName
+//                            let targetProject = projects |> Seq.find (fun p -> p.Kind <> ProjectKinds.vsProjectKindSolutionFolder && fileName.StartsWith(Path.GetDirectoryName p.FullName))
+//                            VsManager.WriteLnToOutputPane dte ("Generating into " + targetProject.FullName)
+//                            targetProject.ProjectItems.AddFromFile fileName |> ignore
 
                 member __.CheckoutFileIfRequired fileName =
                     dteWrapper.GetSourceControl()

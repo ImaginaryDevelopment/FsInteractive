@@ -46,8 +46,8 @@ type ReferenceData = {Schema:string; Table:string; Column:string; ValuesWithComm
 //void GenerateTable(Manager manager, EnvDTE.Project targetProject, string targetProjectFolder, TableInfo ti)
 //type Targeting = TargetProject of EnvDTE.Project*targetProjectFolder:string
 
-let generateTable (manager:IManager) (generationEnvironment:StringBuilder) targeting (tableInfo:TableInfo) =
-    printfn "Generating a table into %A %A" targeting tableInfo
+let generateTable (manager:IManager) (generationEnvironment:StringBuilder) targetPath (tableInfo:TableInfo) =
+    printfn "Generating a table into %A %A" targetPath tableInfo
     let formatFKey (table:string) column (fKey:FKeyInfo option) : string =
         match fKey with
         |None -> null
@@ -83,7 +83,7 @@ let generateTable (manager:IManager) (generationEnvironment:StringBuilder) targe
 //        let targetProject = projects |> Option.bind (fun projs -> projs.First(fun p -> p.Name = targetProjectName) |> Some)
 //        let targetProjectFolder = targetProject |> Option.bind (fun tp -> Path.GetDirectoryName(tp.FullName) |> Some)
 
-    match targeting with
+    match targetPath with
         |Some (targetProjectFolder) ->
             let targetFilename = Path.Combine(targetProjectFolder, "Schema Objects", "Schemas", tableInfo.Schema, "Tables", tableInfo.Name + ".table.sql")
             manager.StartNewFile(targetFilename)
@@ -143,7 +143,7 @@ let generateTable (manager:IManager) (generationEnvironment:StringBuilder) targe
         sprintf "CONSTRAINT PK_%s PRIMARY KEY (%s)" tableInfo.Name columns
         |> appendLine' 1
 
-let generateInserts title appendLine (manager:IManager) targetProject targetProjectFolder (tables:#seq<_>) targetRelativePath =
+let generateInserts title appendLine (manager:IManager) targetProjectFolder (tables:#seq<_>) targetRelativePath =
     // generate reference data
     let toGen = tables.Where( fun t -> t.Columns.Any( fun c -> not <| isNull c.ReferenceValuesWithComment && c.ReferenceValuesWithComment.Any())).ToArray()
     if not <| Seq.any toGen then

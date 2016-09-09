@@ -12,6 +12,7 @@ module StringHelpersAuto =
         static member contains s (x:string) = x.Contains(s)
         static member defaultComparison = StringComparison.InvariantCultureIgnoreCase
         static member Null:string = null
+        static member split (delims:string seq) (x:string) = x.Split(delims |> Array.ofSeq, StringSplitOptions.None)
         // favor non attached methods for commonly used methods
 
     let after (delimiter:string) (s:string) = s|> String.subString (s.IndexOf delimiter + delimiter.Length)
