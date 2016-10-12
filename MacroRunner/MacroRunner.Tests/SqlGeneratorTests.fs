@@ -114,6 +114,7 @@ module SqlGeneratorReferenceData =
         }
     ]
 
+
 [<Fact>]
 let testSqlGenerator () = 
 
@@ -132,6 +133,6 @@ let testSqlGenerator () =
     output.Length > 0
     |> Assert.True
     output
-    |> (=) (System.IO.File.ReadAllText(@"C:\TFS\PracticeManagement\dev\PracticeManagement\Db\Schema Objects\Schemas\dbo\Tables\Payment.table.sql"))
+    |> (=) (System.IO.File.ReadAllText(@"Payment.table.sql"))
     |> Assert.True
 
