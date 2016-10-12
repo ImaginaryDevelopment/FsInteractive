@@ -63,10 +63,10 @@ let toColumnType (t:Type) length precision scale useMax =
         | _, NullableValue length -> Length length
         |> ColumnType.VarChar 
     | _ -> Other t
-
+[<Obsolete("Work in progress")>]
 let generateTable (manager:IManager) (generationEnvironment:StringBuilder) targetProjectFolderOpt (tableInfo:TableInfo) =
     printfn "Generating a table into %A %A" targetProjectFolderOpt tableInfo
-    let targetFilename = Path.Combine(defaultArg targetProjectFolderOpt null, "Schema Objects", "Schemas", tableInfo.Schema, "Tables", tableInfo.Name + ".table.sql")
+    let targetFilename = Path.Combine(defaultArg targetProjectFolderOpt String.Empty, "Schema Objects", "Schemas", tableInfo.Schema, "Tables", tableInfo.Name + ".table.sql")
     manager.StartNewFile(targetFilename)
 
     let formatFKey (table:string) column (fKey:FKeyInfo option) : string =
@@ -213,6 +213,7 @@ let generateInserts title appendLine (manager:IManager) targetProjectFolder (tab
 
     //feature desired: auto-name primary keys
     // adjustment desired: put all reference values comment (when on the reference table, above the column instead of beside it
+[<Obsolete("Work in progress")>]
 let generateTablesAndReferenceTables(manager:IManager, generationEnvironment:StringBuilder, targeting, toGen: TableInfo seq ) =
     toGen
     |> Seq.iter(fun ti ->
