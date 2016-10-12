@@ -238,7 +238,7 @@ module MultipleOutputHelper =
                     window.ActivePane.OutputString (s + Environment.NewLine)
 
                 static member AddFileToDbSqlProj dte (targetProject:EnvDTE.Project) fileName = 
-                    let mutable projectItems = targetProject.ProjectItems
+                    let projectItems = ref targetProject.ProjectItems
                     let trim1 d (s:string) = s.Trim(d |> Array.ofSeq)
                     let toDescend = 
 //                                fileName.Substring(System.IO.Path.GetDirectoryName(targetProject.FullName).Length).Trim('\\').Trim('/').Split(new []{"\\","/"}, StringSplitOptions.None)
@@ -255,7 +255,7 @@ module MultipleOutputHelper =
                     |> Seq.iter (fun td ->
                         VsManager.WriteLnToOutputPane dte ("Descending into \"" + td + "\"")
                         let childProjectItemOpt = 
-                            projectItems
+                            !projectItems
                             |> Seq.cast<EnvDTE.ProjectItem>
                             |> Seq.tryFind (fun pi -> //.FirstOrDefault(pi => 
                                 let isMatch = Path.GetFileName(pi.get_FileNames(0s)) = td
@@ -265,7 +265,7 @@ module MultipleOutputHelper =
                         match childProjectItemOpt with
                         | None ->
                             VsManager.WriteLnToOutputPane dte ("Failed to find \"" + td + "\"")
-                            projectItems
+                            !projectItems
                             |> Seq.cast<EnvDTE.ProjectItem>
                             |> Seq.map (fun pi -> pi.get_FileNames(0s))
                             |> Seq.iter(fun pi ->
@@ -274,12 +274,14 @@ module MultipleOutputHelper =
                         | Some childProjectItem ->
                             VsManager.WriteLnToOutputPane dte (sprintf "Appears we found \"%s\" and it has projectItems:%A" td (not <| isNull childProjectItem.ProjectItems))
                             if not <| isNull childProjectItem.ProjectItems then
-                                projectItems <- childProjectItem.ProjectItems
+                                projectItems := childProjectItem.ProjectItems
                     )
 
                     VsManager.WriteLnToOutputPane dte ("Generating \"" + fileName + "\" into " + targetProject.FullName)
 
-                    let projectItem = projectItems.AddFromFile(fileName)
+                    let projectItem = 
+                        !projectItems
+                        |> fun pi -> pi.AddFromFile(fileName)
                     VsManager.WriteLnToOutputPane dte ("AddFromFile put it @" + projectItem.get_FileNames(0s))
 
                 // from line to 221..298
