@@ -66,11 +66,6 @@ module WpfMacros =
         (^t:(member set_Command:ICommand -> unit)(x,cmd))
         x
 
-    let copyFrom (source: _ seq) (toPopulate:IList<_>)  =
-        if not <| isNull source && not <| isNull toPopulate then
-            use enumerator = source.GetEnumerator()
-            while enumerator.MoveNext() do
-                toPopulate.Add(enumerator.Current)
     type FunCommand (fExecute, ?fCanExecuteOpt) =
         let canExecuteChanged = new Event<_,_>()
         let fCanExecute = defaultArg fCanExecuteOpt (fun _ -> true)
@@ -91,7 +86,7 @@ module WpfMacros =
         new(collection : 't seq) as self =
             BindableObservableCollection(items=List<'t>())
             then
-                self.Items |> copyFrom collection 
+                self.Items |> BReusable.Seq.copyFrom collection 
 //                let items = self.Items
 //                if not <| isNull collection && not <| isNull items then
 //                    use enumerator = collection.GetEnumerator()
@@ -117,7 +112,7 @@ module WpfMacros =
         new(collection: 't seq) as self = 
             SuppressibleBindableObservableCollection(items= List<'t>()) 
             then 
-                self.Items |> copyFrom collection 
+                self.Items |> BReusable.Seq.copyFrom collection 
 
         override x.OnCollectionChanged e = 
             printfn "inside Suppressible onCollectionChanged"

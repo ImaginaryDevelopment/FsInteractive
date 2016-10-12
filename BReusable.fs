@@ -145,6 +145,8 @@ module Railways =
         else items |> Seq.choose toFailureOption |> Failure
 
 module Seq =
+    open System.Collections.Generic
+
     let any<'t> (items:'t seq) = items |> Seq.exists (fun _ -> true)
   /// Iterates over elements of the input sequence and groups adjacent elements.
   /// A new group is started when the specified predicate holds about the element
@@ -168,6 +170,12 @@ module Seq =
           // While there are still elements, start a new group
           while running.Value do
             yield group() |> Seq.ofList }
+
+    let copyFrom (source: _ seq) (toPopulate:IList<_>)  =
+        if not <| isNull source && not <| isNull toPopulate then
+            use enumerator = source.GetEnumerator()
+            while enumerator.MoveNext() do
+                toPopulate.Add(enumerator.Current)
 
 module Reflection =
     // some parts of this may be a translation of BMore.linq
