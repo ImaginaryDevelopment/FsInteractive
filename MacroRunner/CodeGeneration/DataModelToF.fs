@@ -104,8 +104,15 @@ module DataModelToF =
                 if String.IsNullOrEmpty measureType then 
                     mappedType,String.Empty
                 else 
-                    mappedType |> before "<", sprintf "<%s>"measureType
-            
+                    try
+                        match mappedType with
+                        | "string" -> mappedType, String.Empty
+                        | _ -> mappedType |> before "<", sprintf "<%s>"measureType
+                    with ex ->
+                        ex.Data.Add("mappedType", mappedType)
+                        ex.Data.Add("measureType", measureType)
+                        reraise()
+
             match reMappedType.ToLower() with
                 |"int" -> "0" + measuredValue
                 |"int64" -> "0L" + measuredValue
@@ -151,7 +158,13 @@ module DataModelToF =
     
         for cd in columns do
             let mapped = mapSqlType(cd.Type, cd.Nullable, cd.Measure, useOptions)
-            appendLine 2 (cd.ColumnName + " = " + (getDefaultValue mapped cd.Measure))
+            try
+                appendLine 2 (cd.ColumnName + " = " + (getDefaultValue mapped cd.Measure))
+            with ex -> 
+                ex.Data.Add("mapped", mapped)
+                ex.Data.Add("ColumnName",cd.ColumnName)
+                ex.Data.Add("Measure", cd.Measure)
+                reraise()
 
         appendLine 2 "}"
         appendLine 0 String.Empty
@@ -232,7 +245,7 @@ module DataModelToF =
             let converter = mapConverter(cd.Type,cd.Nullable,useOptions)
             appendLine 2 (cd.ColumnName + " = ")
             appendLine 3 <| sprintf "match camelTypeF.Invoke \"%s\" with // %s" cd.ColumnName mapped
-            let measureType = if String.IsNullOrEmpty cd.Measure then String.Empty else sprintf " |> (*) 1<%s>" cd.Measure
+            let measureType = if String.IsNullOrEmpty cd.Measure || stringEqualsI mapped "string" then String.Empty else sprintf " |> (*) 1<%s>" cd.Measure
     
             if cd.Nullable && nonNullables |> Seq.exists (stringEqualsI mapped) |> not then//(mapped <> typeof<string>.Name) && stringEqualsI mapped "string" |> not  then
                 sprintf "|Some x -> Nullable (Convert.%s x%s)" converter measureType
@@ -250,14 +263,14 @@ module DataModelToF =
         appendLine 2 "{"
 
         for cd in columns do
+            let mapped = mapSqlType(cd.Type,cd.Nullable,cd.Measure,useOptions)
             let measureType = 
-                match String.IsNullOrEmpty cd.Measure,cd.Nullable with
+                match String.IsNullOrEmpty cd.Measure || stringEqualsI mapped "string", cd.Nullable with
                 | true, _ -> String.Empty
                 | false, true -> sprintf "|> Nullable.map((*) 1<%s>)" cd.Measure
                 | false, false -> sprintf " * 1<%s>" cd.Measure
 
             
-            let _mapped = mapSqlType(cd.Type,cd.Nullable,cd.Measure,useOptions)
             appendLine 3 <| sprintf "%s = (^a: (member %s: _) %s)%s" cd.ColumnName cd.ColumnName camelType measureType
 
         appendLine 2 "}"
