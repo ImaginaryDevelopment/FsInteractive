@@ -59,7 +59,7 @@ let toColumnType (t:Type) length precision scale useMax =
         | _ -> ColumnType.Decimal None
     |TypeOf (isType:string) -> 
         match useMax,length with
-        | NullableValue true, _ -> Max
+        | true, _ -> Max
         | _, NullableValue length -> Length length
         |> ColumnType.VarChar 
     | _ -> Other t
