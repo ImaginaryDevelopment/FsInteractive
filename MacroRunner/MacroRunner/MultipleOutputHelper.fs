@@ -57,7 +57,7 @@ module MultipleOutputHelper =
             //protected List<String> generatedFileNames = new List<String>();
             let mutable generatedFileNames : string list = []
     
-            member __.GeneratedFileNames with get() = generatedFileNames    
+            member __.GeneratedFileNames with get() = generatedFileNames
             member __.StartNewFile name =
                 if isNull name then raise <| new ArgumentNullException("name")
                 printfn "Starting new file at %s" name
@@ -169,7 +169,7 @@ module MultipleOutputHelper =
                 override __.TemplateFile = host.TemplateFile
                 override __.GeneratedFileNames = upcast generatedFileNames
 
-        and VsManager private (host,dteWrapper:DteWrapper,template,templateProjectItem:EnvDTE.ProjectItem) =
+        and VsManager (host,dteWrapper:DteWrapper,template,templateProjectItem:EnvDTE.ProjectItem) =
                 inherit Manager(host,template)
 
 //                let checkOutAction: Action<string> = checkOutAction // Action<String> 
@@ -330,8 +330,9 @@ module MultipleOutputHelper =
                     let _sol,projects = Macros.VsMacros.getSP dte //EnvDteHelper.recurseSolutionProjects dte 
                     let inline isInCurrentProject (fileName:string) =  fileName.StartsWith(templateProjectDirectory)
                     let originalFilePrefix = Path.GetFileNameWithoutExtension(templateProjectItem.get_FileNames(0s)) + "."
-                    for projectItem in templateProjectItem.ProjectItems do
-                        projectFiles.Add(projectItem.get_FileNames(0s), projectItem)
+                    if not <| isNull templateProjectItem.ProjectItems && templateProjectItem.ProjectItems.Count > 0 then
+                        for projectItem in templateProjectItem.ProjectItems do
+                            projectFiles.Add(projectItem.get_FileNames(0s), projectItem)
         
                     // Remove unused items from the project
                     for pair in projectFiles do
