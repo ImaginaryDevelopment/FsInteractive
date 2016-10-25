@@ -46,6 +46,43 @@ module VsMacros =
       let pp = thisProc.GetPropertyValue("ParentProcessId")
       pp :?> uint32
 
+  let getWindowNames () = 
+        let dvproc = System.Diagnostics.Process.GetProcessesByName("devenv")
+        let p = Array.map (fun (px:System.Diagnostics.Process) -> px.MainWindowTitle) dvproc
+        p
+  let getDteByWindowName windowName =
+    let getPidByWindowName (wn:string) =
+        let dvproc = System.Diagnostics.Process.GetProcessesByName("devenv")
+        let p = Array.tryFind (fun (px:System.Diagnostics.Process) -> 
+                px.MainWindowTitle.ToLower().Contains(wn.ToLower())) dvproc
+        match p with
+        |Some x -> x.Id
+        |None -> failwith "No process contains a window with this title"
+    let mutable (prot:IRunningObjectTable) = null  
+    let mutable (pmonkenum:IEnumMoniker) = null 
+    let (monikers:IMoniker[]) =  Array.create 1 null 
+    let pfeteched = System.IntPtr.Zero 
+    let mutable (ret:obj) = null 
+    let pid = getPidByWindowName windowName
+    let endpid = sprintf ":%d" pid 
+    try
+       if (GetRunningObjectTable(0u, &prot) <> 0) || (prot = null) then  
+           failwith "Error opening the ROT" 
+       prot.EnumRunning(&pmonkenum) 
+       pmonkenum.Reset() 
+       while pmonkenum.Next(1, monikers, pfeteched) = 0 do 
+           let mutable (insname:string) = null 
+           let mutable (pctx:IBindCtx) = null 
+           CreateBindCtx(0u, &pctx) |> ignore 
+           (monikers.[0]).GetDisplayName(pctx, null, &insname); 
+           Marshal.ReleaseComObject(pctx) |> ignore 
+           if insname.StartsWith("!VisualStudio.DTE") && insname.EndsWith(endpid) then 
+               prot.GetObject(monikers.[0], &ret) |> ignore 
+    finally 
+       if prot <> null then Marshal.ReleaseComObject(prot) |> ignore 
+       if pmonkenum <> null then Marshal.ReleaseComObject(pmonkenum) |> ignore 
+    (ret :?> EnvDTE.DTE)
+
   let getDte () = 
      let mutable (prot:IRunningObjectTable) = null  
      let mutable (pmonkenum:IEnumMoniker) = null 
@@ -74,7 +111,7 @@ module VsMacros =
      if dte<>null && System.IO.File.Exists <| dte.Solution.FullName+".fs" then 
       printfn "%s \"%s\"" "#load" <| dte.Solution.FullName+".fs" // load up the solution.fs file
      dte
-        
+
   let rec getSolutionFolderProjects(solutionFolder:EnvDTE.Project) : EnvDTE.Project list = 
 
       [
