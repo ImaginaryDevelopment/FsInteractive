@@ -16,9 +16,10 @@ module DteWrap =
     type DteWrapper = {
         FindProjectItemPropertyValue: string -> string -> string
         GetSourceControl: unit -> SourceControlWrapper option
-        Sync: string list -> unit
+//        Sync: string list -> unit
 //        GetProjectFullNameFromProjectName: string -> string
         GetProjects: unit -> EnvDTE.Project list
+        Log: string -> unit
         }
 
 // MultipleOutputHelper.ttinclude
@@ -74,7 +75,7 @@ module MultipleOutputHelper =
                     log "ending a null block!"
                     ()
                 else
-                    let len =template.Length - currentBlock.Start 
+                    let len = template.Length - currentBlock.Start 
 
                     if len < 0 then failwithf "block length is less than zero"
                     currentBlock.Length <- len
@@ -83,14 +84,19 @@ module MultipleOutputHelper =
                         log <| sprintf "Adding a block to the files list: %s" currentBlock.Name
                         files.Add currentBlock
                     currentBlock <- null
-                    
+
             abstract Process : split:bool -> unit
             default x.Process split = 
+                if isNull template then
+                    failwithf "template was null"
+
                 let len = template.Length
                 if len = 0 then failwithf "No text has been added"
                 let log (s:string) = 
+                    let text = if s.EndsWith "\r\n" then s else sprintf "%s\r\n" s 
+                    printfn "%s" text
                     if System.Diagnostics.Debugger.IsAttached then
-                        System.Diagnostics.Debugger.Log(0, "Logger", if s.EndsWith "\r\n" then s else sprintf "%s\r\n" s)
+                        System.Diagnostics.Debugger.Log(0, "Logger", text)
                 log "Hello debugger\r\n"
                 if split then
                     x.EndBlock()
@@ -99,13 +105,21 @@ module MultipleOutputHelper =
                             template.ToString(s,l)
                         with ex ->
                             raise <| InvalidOperationException(sprintf "could not access substring %i %i in length %i" s l template.Length, ex)
+                    if isNull header then
+                        failwithf "header was null"
+                    if isNull footer then
+                        failwithf "footer was null"
                     let headerText = tryGetByStartEnd header.Start header.Length
                     let footerText = tryGetByStartEnd footer.Start footer.Length
+                    if isNull host then
+                        failwithf "host was null"
+                    if isNull host.TemplateFile then
+                        failwithf "host.TemplateFile was null"
                     let outputPath = Path.GetDirectoryName(host.TemplateFile)
+                    if isNull files then failwithf "files was null"
                     files.Reverse()
                     let mutable i = 0
                     for block in files do
-                        
                         log <| sprintf "Processing block %i:%s" i block.Name
                         log <| sprintf "Length is %i" template.Length
                         
@@ -117,7 +131,7 @@ module MultipleOutputHelper =
                         log <| sprintf "Processed block %i" i
                         log <| sprintf "Length is %i" template.Length
                         i <- i + 1
-        
+
             abstract CreateFile : fileName:string -> content:string -> unit
             default x.CreateFile fileName content = 
                 if x.IsFileContentDifferent fileName content then
@@ -186,20 +200,18 @@ module MultipleOutputHelper =
 //
                         templateProjectItem.ContainingProject.Properties.Item("DefaultNamespace").Value.ToString()
                 override __.GetCustomToolNamespace fileName = dteWrapper.FindProjectItemPropertyValue fileName "CustomToolNamespace" //dte.Solution.FindProjectItem(fileName).Properties.Item("CustomToolNamespace").Value.ToString()
-                
+
                 override __.Process split =
-                    if isNull templateProjectItem.ProjectItems then
-                        ()
-                    else 
-                        if template.Length = 0 then failwithf "No text has been added"
-                        base.Process split
-                    dteWrapper.Sync base.GeneratedFileNames
-//                    projectSyncAction.EndInvoke(projectSyncAction.BeginInvoke(base.GeneratedFileNames, null, null))
-        
+                    if template.Length = 0 then failwithf "No text has been added"
+                    base.Process split
+                    VsManager.ProjectSyncScriptWrapped dteWrapper templateProjectItem base.GeneratedFileNames
+
                 override x.CreateFile fileName content =
                     if x.IsFileContentDifferent fileName content then
+                        printfn "Creating File: %s" fileName
                         x.CheckoutFileIfRequired(fileName)
                         File.WriteAllText(fileName, content)
+
                         
                 //static member private x.CreateVsManager(
                 internal new(host:ITextTemplatingEngineHost , template:StringBuilder) =
@@ -224,20 +236,37 @@ module MultipleOutputHelper =
                                     None 
                                 else
                                     Some {SourceControlWrapper.CheckOutItem = dte.SourceControl.CheckOutItem; GetIsItemUnderSC= dte.SourceControl.IsItemUnderSCC; GetIsItemCheckedOut= dte.SourceControl.IsItemCheckedOut}
-                        Sync= (fun fileNames -> 
-                            VsManager.ProjectSync(templateProjectItem,fileNames)
-                        )
+//                        Sync= (fun fileNames -> 
+//                            VsManager.ProjectSync(templateProjectItem,fileNames)
+//                        )
                         GetProjects = getProjects
+                        Log = VsManager.WriteLnToOutputPane dte
 //                        GetProjectFullNameFromProjectName = fun projectName -> getProjects() |> Seq.find(fun p -> p.Name = projectName) |> fun p -> p.FullName
                         }
                     VsManager(host,wrapper,template,templateProjectItem)
 
+                static member WrapDte(dte:Dte) = 
+                    let wrapper = {
+                        FindProjectItemPropertyValue= (fun s p -> dte.Solution.FindProjectItem(s).Properties.Item(p).Value |> string); 
+                        GetSourceControl= 
+                            fun () ->
+                                if isNull dte.SourceControl then 
+                                    None 
+                                else
+                                    Some {SourceControlWrapper.CheckOutItem = dte.SourceControl.CheckOutItem; GetIsItemUnderSC= dte.SourceControl.IsItemUnderSCC; GetIsItemCheckedOut= dte.SourceControl.IsItemCheckedOut}
+                        
+                        GetProjects = fun () -> Macros.VsMacros.getSP dte |> snd
+                        Log = VsManager.WriteLnToOutputPane dte
+//                        GetProjectFullNameFromProjectName = fun projectName -> getProjects() |> Seq.find(fun p -> p.Name = projectName) |> fun p -> p.FullName
+                        }
+                    wrapper 
                 static member WriteLnToOutputPane(dte:Dte) (s:string) =
                     let window = dte.Windows.Item(EnvDTE.Constants.vsWindowKindOutput).Object :?> EnvDTE.OutputWindow
                     window.ActivePane.Activate ()
                     window.ActivePane.OutputString (s + Environment.NewLine)
 
-                static member AddFileToDbSqlProj dte (targetProject:EnvDTE.Project) fileName = 
+                static member AddFileToDbSqlProj (dte:DteWrapper) (targetProject:EnvDTE.Project) fileName = 
+                    dte.Log (sprintf "Attempting to add a file to a dbSqlProj: %s" fileName)
                     let projectItems = ref targetProject.ProjectItems
                     let trim1 d (s:string) = s.Trim(d |> Array.ofSeq)
                     let toDescend = 
@@ -253,7 +282,7 @@ module MultipleOutputHelper =
 //                            foreach(let td in toDescend.Take(toDescend.Length - 1))
                     |> Seq.take (toDescend.Length - 1)
                     |> Seq.iter (fun td ->
-                        VsManager.WriteLnToOutputPane dte ("Descending into \"" + td + "\"")
+                        dte.Log ("Descending into \"" + td + "\"")
                         let childProjectItemOpt = 
                             !projectItems
                             |> Seq.cast<EnvDTE.ProjectItem>
@@ -264,28 +293,28 @@ module MultipleOutputHelper =
 
                         match childProjectItemOpt with
                         | None ->
-                            VsManager.WriteLnToOutputPane dte ("Failed to find \"" + td + "\"")
+                            dte.Log ("Failed to find \"" + td + "\"")
                             !projectItems
                             |> Seq.cast<EnvDTE.ProjectItem>
                             |> Seq.map (fun pi -> pi.get_FileNames(0s))
                             |> Seq.iter(fun pi ->
-                                VsManager.WriteLnToOutputPane dte ("\tWe did however find \"" + pi + "\"")
+                                dte.Log ("\tWe did however find \"" + pi + "\"")
                             )
                         | Some childProjectItem ->
-                            VsManager.WriteLnToOutputPane dte (sprintf "Appears we found \"%s\" and it has projectItems:%A" td (not <| isNull childProjectItem.ProjectItems))
+                            dte.Log (sprintf "OutputPane:Appears we found \"%s\" and it has projectItems:%A" td (not <| isNull childProjectItem.ProjectItems))
                             if not <| isNull childProjectItem.ProjectItems then
                                 projectItems := childProjectItem.ProjectItems
                     )
 
-                    VsManager.WriteLnToOutputPane dte ("Generating \"" + fileName + "\" into " + targetProject.FullName)
+                    dte.Log ("OutputPane: Generating \"" + fileName + "\" into " + targetProject.FullName)
 
                     let projectItem = 
                         !projectItems
                         |> fun pi -> pi.AddFromFile(fileName)
-                    VsManager.WriteLnToOutputPane dte ("AddFromFile put it @" + projectItem.get_FileNames(0s))
+                    dte.Log ("AddFromFile put it @" + projectItem.get_FileNames(0s))
 
                 // from line to 221..298
-                static member AddFileToProject dte (projects: EnvDTE.Project seq) (fileName:string) = 
+                static member AddFileToProject (dte:DteWrapper) (projects: EnvDTE.Project seq) (fileName:string) = 
                     // only one this appears to be skipping in a solutionfolder
                     let unloadedProject = "{67294A52-A4F0-11D2-AA88-00C04F688DDE}";
                     let canReadProjects = projects |> Seq.filter (fun p -> p.Kind <> unloadedProject && p.Kind <> EnvDTE80.ProjectKinds.vsProjectKindSolutionFolder) |> List.ofSeq
@@ -296,9 +325,9 @@ module MultipleOutputHelper =
                             try
                                 p.Kind <> EnvDTE80.ProjectKinds.vsProjectKindSolutionFolder && fileName.StartsWith(System.IO.Path.GetDirectoryName(p.FullName))
                             with _ -> 
-                                VsManager.WriteLnToOutputPane dte ("failing to read project with kind= " + p.Kind)
-                                VsManager.WriteLnToOutputPane dte ("expected kind= " + EnvDTE80.ProjectKinds.vsProjectKindSolutionFolder)
-                                VsManager.WriteLnToOutputPane dte ("hi! my name is "+ p.Name)
+                                dte.Log ("failing to read project with kind= " + p.Kind)
+                                dte.Log ("expected kind= " + EnvDTE80.ProjectKinds.vsProjectKindSolutionFolder)
+                                dte.Log ("hi! my name is "+ p.Name)
                                 reraise()
                             )
                     |> function 
@@ -313,45 +342,91 @@ module MultipleOutputHelper =
                                     VsManager.AddFileToDbSqlProj dte targetProject fileName
                                 // line 299
                                 else 
-                                    VsManager.WriteLnToOutputPane dte ("Generating \"" + fileName + "\" into " + targetProject.FullName)
+                                    dte.Log ("Generating \"" + fileName + "\" into " + targetProject.FullName)
                                     let projectItem = targetProject.ProjectItems.AddFromFile(fileName)
                                     try
-                                        VsManager.WriteLnToOutputPane dte ("AddFromFile put it @" + projectItem.get_FileNames(0s))
+                                        dte.Log ("AddFromFile put it @" + projectItem.get_FileNames(0s))
                                     with _ -> 
-                                        VsManager.WriteLnToOutputPane dte ("get_FileNames(0) failed for " + fileName + " into " + targetProject.Name);
+                                        dte.Log ("get_FileNames(0) failed for " + fileName + " into " + targetProject.Name);
+                // templateProjectItem is just the item to use as a parent if any (may only function in C# projects?) can be null
+                static member ProjectSyncScriptWrapped (dte:DteWrapper) (templateProjectItemOpt: EnvDTE.ProjectItem) (keepFileNames: string seq) =
+                    printfn "Syncing project(s)"
+                    let templateProjectItemOpt = templateProjectItemOpt |> Option.ofObj
+                    let keepFileNameSet = HashSet<string>(keepFileNames)
+                    let projectFiles = Dictionary<string, EnvDTE.ProjectItem>()
+                    let projectOpt = templateProjectItemOpt |> Option.map (fun x -> x.Collection.ContainingProject)
+                    match templateProjectItemOpt, projectOpt with
+                    | Some pi, Some p-> 
+                        dte.Log ("Starting ProjectSync for t4 in " + p.Name + "\\" + pi.Name)
+                    | _ -> ()
+                    let templateProjectDirectoryOpt = projectOpt |> Option.map (fun p -> Path.GetDirectoryName p.FullName)
+                    let originalFilePrefixOpt = templateProjectItemOpt |> Option.map (fun pi -> Path.GetFileNameWithoutExtension(pi.get_FileNames(0s)) + ".")
 
-                static member ProjectSync(templateProjectItem:EnvDTE.ProjectItem, keepFileNames:string seq)  =
+                    templateProjectItemOpt
+                    |> Option.bind(fun pi -> pi.ProjectItems |> Option.ofObj)
+                    |> Option.iter(Seq.cast<EnvDTE.ProjectItem> >> Seq.iter (fun pi -> projectFiles.Add(pi.get_FileNames(0s), pi)))
+                    projectFiles
+                    |> Seq.filter (fun pair -> keepFileNames |> Seq.contains pair.Key |> not && not <| (Path.GetFileNameWithoutExtension(pair.Key) + ".").StartsWith(originalFilePrefixOpt.Value))
+                    |> Seq.iter(fun pair ->
+                        dte.Log (sprintf "removing unused item from keep list: %s" pair.Key)
+                        pair.Value.Delete()
+                    )
+                    dte.Log("finished removing unused items")
+                    let projects = dte.GetProjects()
+                    let isInCurrentProject (fileName:string) = match templateProjectDirectoryOpt with | Some d -> fileName.StartsWith d | None -> false
+                    // Add missing files to the project(s)
+                    keepFileNameSet
+                    |> Seq.iter(fun fileName ->
+                        dte.Log (sprintf "adding a file %s" fileName)
+                        if isInCurrentProject fileName then
+                            if not <| projectFiles.ContainsKey fileName then
+                                let newProjectItem = templateProjectItemOpt.Value.ProjectItems.AddFromFile fileName
+                                if isNull newProjectItem then
+                                    dte.Log(sprintf "add returned null newProjectItem for %s" fileName)
+                        else
+                            VsManager.AddFileToProject dte projects fileName
+                        dte.Log "finished projectSync"
+                    )
+
+                // keep this until such time as it isn't being used by the project .tt and the above method is verified to be working
+                static member ProjectSync(templateProjectItem:EnvDTE.ProjectItem, keepFileNames:string seq) =
+                    printfn "Syncing project(s)"
                     let keepFileNameSet = HashSet<string>(keepFileNames)
                     let projectFiles = Dictionary<string, EnvDTE.ProjectItem>()
                     let dte = templateProjectItem.Collection.DTE
+                    let dteWrapper = VsManager.WrapDte dte
                     let project = templateProjectItem.Collection.ContainingProject
                     VsManager.WriteLnToOutputPane dte ("Starting ProjectSync for t4 in " + project.Name + "\\" + templateProjectItem.Name)
                     let templateProjectDirectory = Path.GetDirectoryName project.FullName
                     let _sol,projects = Macros.VsMacros.getSP dte //EnvDteHelper.recurseSolutionProjects dte 
                     let inline isInCurrentProject (fileName:string) =  fileName.StartsWith(templateProjectDirectory)
                     let originalFilePrefix = Path.GetFileNameWithoutExtension(templateProjectItem.get_FileNames(0s)) + "."
-                    if not <| isNull templateProjectItem.ProjectItems && templateProjectItem.ProjectItems.Count > 0 then
+                    if not <| isNull templateProjectItem.ProjectItems then
                         for projectItem in templateProjectItem.ProjectItems do
                             projectFiles.Add(projectItem.get_FileNames(0s), projectItem)
-        
+                    else
+                        VsManager.WriteLnToOutputPane dte ("templateProjectItem.ProjectItems was null, not sure what all will fail from here on out")
+
                     // Remove unused items from the project
                     for pair in projectFiles do
                         if keepFileNames |> Seq.contains pair.Key |> not && not <| (Path.GetFileNameWithoutExtension(pair.Key) + ".").StartsWith(originalFilePrefix) then
+                            VsManager.WriteLnToOutputPane dte (sprintf "removing unused item from keep list: %s" pair.Key)
                             pair.Value.Delete()
-        
+                    VsManager.WriteLnToOutputPane dte ("finished removing unused items")
+
                     // Add missing files to the project
                     for fileName in keepFileNameSet do
+                        VsManager.WriteLnToOutputPane dte (sprintf "adding a file %s" fileName)
                         if isInCurrentProject fileName then
                             if not <| projectFiles.ContainsKey(fileName) then
                                 templateProjectItem.ProjectItems.AddFromFile(fileName) |> ignore
                                 VsManager.WriteLnToOutputPane dte ("added " + fileName)
                         else // add to another project
-                            VsManager.AddFileToProject dte projects fileName
-//                            let targetProject = projects |> Seq.find (fun p -> p.Kind <> ProjectKinds.vsProjectKindSolutionFolder && fileName.StartsWith(Path.GetDirectoryName p.FullName))
-//                            VsManager.WriteLnToOutputPane dte ("Generating into " + targetProject.FullName)
-//                            targetProject.ProjectItems.AddFromFile fileName |> ignore
+                            VsManager.AddFileToProject dteWrapper projects fileName
+                    VsManager.WriteLnToOutputPane dte "OutputPane: finished projectSync"
 
                 member __.CheckoutFileIfRequired fileName =
+                    printfn "Checking out file if needed: %s" fileName
                     dteWrapper.GetSourceControl()
                     |> Option.iter (fun sc -> 
                         if sc.GetIsItemUnderSC fileName && not <| sc.GetIsItemCheckedOut fileName then
@@ -359,7 +434,6 @@ module MultipleOutputHelper =
 //                            checkOutAction.EndInvoke(checkOutAction.BeginInvoke(fileName, null, null))
                     )
 
-                    
 
 
 

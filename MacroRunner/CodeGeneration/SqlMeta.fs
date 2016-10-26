@@ -61,6 +61,7 @@ let toColumnType (t:Type) length precision scale useMax =
         match useMax,length with
         | true, _ -> Max
         | _, NullableValue length -> Length length
+        | _ -> failwithf "mismatched for %A " (useMax,length)
         |> ColumnType.VarChar 
     | _ -> Other t
 [<Obsolete("Work in progress")>]
