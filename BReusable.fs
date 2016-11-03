@@ -7,6 +7,14 @@ module MatchHelpers =
     let (|IsTrue|_|) f x = if f x then Some() else None
 
 [<AutoOpen>]
+module FunctionalHelpersAuto = 
+    let teeTuple f x = x, f x
+    let tee f x = f x; x
+    let flip f x y = f y x
+    let uncurry f (x,y) = f x y
+    let inline getType x = x.GetType()
+
+[<AutoOpen>]
 module StringHelpersAuto =
     type System.String with
         static member subString i (x:string) = x.Substring(i)
@@ -20,6 +28,8 @@ module StringHelpersAuto =
     let after (delimiter:string) (s:string) = s|> String.subString (s.IndexOf delimiter + delimiter.Length)
     let contains (delimiter:string) (x:string) = if isNull x then false elif isNull delimiter || delimiter = "" then failwithf "bad contains call" else x.IndexOf(delimiter, String.defaultComparison) >= 0
     let containsI (delimiter:string) (x:string) = if isNull x then false elif isNull delimiter || delimiter = "" then failwithf "bad contains call" else x.IndexOf(delimiter, String.defaultComparison) >= 0
+    let containsAnyOf (delimiters:string seq) (x:string) = delimiters |> Seq.exists(flip contains x)
+    let containsIAnyOf (delimiters:string seq) (x:string) = delimiters |> Seq.exists(flip containsI x)
     let delimit (delimiter:string) (items:#seq<string>) = String.Join(delimiter,items)
     let endsWith (delimiter:string) (x:string) = x.EndsWith delimiter
     let isNumeric (s:string)= not <| isNull s && s.Length > 0 && s |> String.forall Char.IsNumber 
@@ -87,14 +97,6 @@ module PathHelpers=
         |> Seq.map File.GetLastWriteTime
         |> Seq.max
 
-
-[<AutoOpen>]
-module FunctionalHelpersAuto = 
-    let teeTuple f x = x, f x
-    let tee f x = f x; x
-    let flip f x y = f y x
-    let uncurry f (x,y) = f x y
-    let inline getType x = x.GetType()
 
 
 module Railways =

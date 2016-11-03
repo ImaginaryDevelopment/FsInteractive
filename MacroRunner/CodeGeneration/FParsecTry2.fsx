@@ -1,4 +1,8 @@
 ﻿// fparsec practice
+#r 
+MacroRunner.NuGetAlternative.
+#if NUGET
+#endif
 #if INTERACTIVE
 
 #r "D:\Users\Dbee\AppData\Local\LINQPad\NuGet.FW46\FParsec\FParsec.1.0.2\lib\portable-net45+netcore45+wpa81+wp8\FParsecCS.dll"
