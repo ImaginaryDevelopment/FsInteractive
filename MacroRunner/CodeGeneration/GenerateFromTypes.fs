@@ -38,14 +38,14 @@ module SimplifiedInput =
     type DbType =
         | String of StringLength
         | Money of NumberDetails
-        
+
     type ColumnInfo = {Name:string; Type:Type; Length: int option; Precision: int option; Scale: int option; UseMax:bool}
     type TableInfo = {Name:string; Schema: string; Columns: ColumnInfo seq}
 
 //let dc = new TypedDataContext()
     // 't is a container type of some sort, in LinqPad it would be Table<_>
-    let extractTypeInfo t =
-        typeof<'t>
+    let extractTypeInfo (t:Type) =
+        t
         |> fun t -> t.GetProperties()
         |> Seq.filter (fun p -> p.Name.StartsWith("_") |> not)
         |> Seq.filter (fun p -> p.PropertyType.IsGenericType && p.PropertyType.GetGenericTypeDefinition() = typedefof<'t> )

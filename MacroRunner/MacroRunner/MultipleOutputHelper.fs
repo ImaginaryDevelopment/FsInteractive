@@ -33,12 +33,16 @@ module MultipleOutputHelper =
             member val Start = 0 with get,set
             member val Length = 0 with get,set
 
+    type CreateProcessResult =
+        |Unchanged
+        |Changed
     type IManager =
         abstract member StartNewFile : Filename:string -> unit
         abstract member TemplateFile: string with get
         abstract member DteWrapperOpt : DteWrapper option with get
         abstract member EndBlock: unit -> unit
-        abstract member Process: doMultiFile:bool -> unit
+        // return the input (startNewFile or null for main file) mapped to the full file path created
+        abstract member Process: doMultiFile:bool -> IDictionary<string,CreateProcessResult*string>
         abstract member DefaultProjectNamespace: string with get
         abstract member GeneratedFileNames : string seq with get
 
@@ -85,7 +89,7 @@ module MultipleOutputHelper =
                         files.Add currentBlock
                     currentBlock <- null
 
-            abstract Process : split:bool -> unit
+            abstract Process : split:bool -> IDictionary<string,CreateProcessResult*string>
             default x.Process split = 
                 if isNull template then
                     failwithf "template was null"
@@ -100,6 +104,7 @@ module MultipleOutputHelper =
                 log "Hello debugger\r\n"
                 if split then
                     x.EndBlock()
+                    let mutable pairs : (string*(CreateProcessResult*string)) list = List.empty
                     let tryGetByStartEnd s l = 
                         try
                             template.ToString(s,l)
@@ -126,17 +131,27 @@ module MultipleOutputHelper =
                         let fileName = Path.Combine(outputPath, block.Name)
                         let content = headerText + (tryGetByStartEnd block.Start block.Length) + footerText
                         generatedFileNames <- fileName::generatedFileNames
-                        x.CreateFile fileName content
+                        let didCreate = x.CreateFile fileName content
+                        if didCreate then
+                            pairs <-  (block.Name, (CreateProcessResult.Changed, fileName))::pairs
+                        else pairs <- (block.Name, (CreateProcessResult.Unchanged, fileName))::pairs
                         template.Remove(block.Start, block.Length) |> ignore
                         log <| sprintf "Processed block %i" i
                         log <| sprintf "Length is %i" template.Length
                         i <- i + 1
+                    pairs |> dict
+                else 
+                    List.empty
+                    |> dict
 
-            abstract CreateFile : fileName:string -> content:string -> unit
+            abstract CreateFile : fileName:string -> content:string -> bool 
             default x.CreateFile fileName content = 
                 if x.IsFileContentDifferent fileName content then
                     printfn "Writing a file to %s" fileName
                     File.WriteAllText(fileName, content)
+                    true
+                else
+                    false
                     
             abstract GetCustomToolNamespace: fileName: string -> string
             default __.GetCustomToolNamespace _fileName = null
@@ -203,14 +218,17 @@ module MultipleOutputHelper =
 
                 override __.Process split =
                     if template.Length = 0 then failwithf "No text has been added"
-                    base.Process split
+                    let results = base.Process split
                     VsManager.ProjectSyncScriptWrapped dteWrapper templateProjectItem base.GeneratedFileNames
+                    results
 
                 override x.CreateFile fileName content =
                     if x.IsFileContentDifferent fileName content then
                         printfn "Creating File: %s" fileName
                         x.CheckoutFileIfRequired(fileName)
                         File.WriteAllText(fileName, content)
+                        true
+                    else false
 
                         
                 //static member private x.CreateVsManager(

@@ -180,7 +180,7 @@ module DataModelToF =
                 camelCase + (s.Substring 1)
             else 
                 camelCase
-    
+
     let generateModule (typeName:string, columns:ColumnDescription seq, schemaName:string, tableName:string, appendLine:int -> string -> unit, useOptions:bool ) =
         let camelType = toCamel typeName
         appendLine 0 ("module " + typeName + "Helpers =")
@@ -295,13 +295,13 @@ module DataModelToF =
                     |"varchar" -> "if String.IsNullOrEmpty " + prefix + cd.ColumnName+ " then \"null\" else quoted " + prefix + cd.ColumnName
                     |"int" -> if cd.Nullable then "if isNull (box " + prefix + cd.ColumnName + ") then \"null\" else " + prefix + cd.ColumnName + " |> string" else prefix + cd.ColumnName + " |> string"
                     |_ ->  if cd.Nullable then "if isNull (box " + prefix + cd.ColumnName + ") then \"null\" else " + prefix + cd.ColumnName + " |> string |> quoted" else prefix + cd.ColumnName + " |> string |> quoted"
-        
+
             appendLine 2 "["
-        
+
             for cd in columns |> Seq.filter (fun c -> not c.IsIdentity) do
                 let mapped = "\"" + cd.ColumnName + "\", " + mapValue(cd,"r.")
                 appendLine 3 mapped
-        
+
             appendLine 2 "]"
             appendLine 2 <| "|> Seq.filter (fun kvp -> blacklist |> Seq.contains (fst kvp) |> not)"
             appendLine 2 <| "|> fun pairs -> sprintf \"insert into " + schemaName + "." + tableName + "(%s) values (%s)\" (String.Join(\",\", pairs |> Seq.map fst )) (String.Join(\",\", pairs |> Seq.map snd))" 
@@ -363,7 +363,7 @@ module DataModelToF =
         appendLine 3 "baseSetter.Invoke value"
         appendLine 3 "x.RaisePropertyChanged(propertyName)"
         appendLine 3 "true"
-    
+
         for cd in columns do
             let camel = mapFieldNameFromType cd.ColumnName
             appendLine 0 String.Empty
@@ -374,7 +374,19 @@ module DataModelToF =
             appendLine 3 (camel + " <- v")
             appendLine 3 ("x.RaisePropertyChanged \"" + cd.ColumnName + "\"")
 
-    let generate (fPluralizer:string -> string) (fSingularizer:string -> string) (manager:MacroRunner.MultipleOutputHelper.IManager, generationEnvironment:StringBuilder, targetProjectName:string, tables:TableGenerationInfo seq, cString:string , doMultiFile:bool) useOptions columnBlacklist generateValueRecords measures measureBlacklist (includeNonDboSchemaInNamespace:bool) (targetNamespace:string) =
+    type CodeGenSettingMap = {
+        TargetProjectName:string
+        TargetNamespace: string
+        CString:string
+        UseOptionTypes:bool
+        ColumnBlacklist:Map<string, string list>
+        Measures: string list
+        MeasuresBlacklist: string list
+        IncludeNonDboSchemaInNamespace:bool
+        GenerateValueRecords:bool
+    }
+
+    let generate (fPluralizer:string -> string) (fSingularizer:string -> string) (cgsm:CodeGenSettingMap) (manager:MacroRunner.MultipleOutputHelper.IManager, generationEnvironment:StringBuilder, tables:TableGenerationInfo seq) =
 
         let appendLine text = generationEnvironment.AppendLine(text) |> ignore
         let appendEmpty() = appendLine String.Empty
@@ -388,7 +400,7 @@ module DataModelToF =
         //let sol,projects = Macros.VsMacros.getSP dte //EnvDteHelper.recurseSolutionProjects dte 
         let projects = manager.DteWrapperOpt |> Option.map (fun dte -> dte.GetProjects()) //(Macros.VsMacros.getSP>>snd) // was dte
         let targetProjectFolder = 
-            projects |> Option.map (Seq.find (fun p -> p.Name = targetProjectName))
+            projects |> Option.map (Seq.find (fun p -> p.Name = cgsm.TargetProjectName))
             |> Option.map (fun tp -> tp.FullName |> Path.GetDirectoryName)
 
         appendLine "Projects"
@@ -405,7 +417,7 @@ module DataModelToF =
         )
 
         appendEmpty()
-        use cn = new SqlConnection(cString)
+        use cn = new SqlConnection(cgsm.CString)
         cn.Open()
 
         appendLine <| sprintf "Connected to %s,%s" cn.DataSource cn.Database
@@ -443,7 +455,7 @@ module DataModelToF =
                 // var computed = r["Computed"];
                 let length = Convert.ToInt32 r.["Length"]
                 // var prec = r["Prec"];
-                let measureType = measures |> Seq.tryFind (fun m -> measureBlacklist |> Seq.contains columnName |> not && containsI m columnName)
+                let measureType = cgsm.Measures |> Seq.tryFind (fun m -> cgsm.MeasuresBlacklist |> Seq.contains columnName |> not && containsI m columnName)
                 columns.Add {ColumnName=columnName; Type= type'; Measure = measureType |> Option.toObj; Length=length; Nullable = r.["Nullable"].ToString() ="yes"; IsIdentity = false; IsPrimaryKey = false}
     
             r.NextResult() |> Debug.Assert
@@ -465,14 +477,6 @@ module DataModelToF =
                     >> Seq.map (fun r -> r.["Identity"] |> string)
                 )
                 |> Set.ofSeq
-//                Seq.unfold(fun _ -> 
-//                    if r.Read() then
-//                        Some(r :> IDataRecord, ())
-//                    else None
-//                ) ()
-//                |> Seq.filter(fun r -> r.["Seed"] |> dbNullToOption |> Option.isSome)
-//                |> Seq.map (fun r -> r.["Identity"] |> string)
-//                |> Set.ofSeq
             // rowGuidCol result set
             r.NextResult() |> Debug.Assert
             //Data_located_on_filegroup
@@ -501,7 +505,7 @@ module DataModelToF =
                 |> List.ofSeq
 
             let columns = 
-                let fIncludeColumn c = isNull (box columnBlacklist) || columnBlacklist |> Map.containsKey tableInfo.Name |> not || columnBlacklist.[tableInfo.Name] |> Seq.contains c.ColumnName |> not 
+                let fIncludeColumn c = isNull (box cgsm.ColumnBlacklist) || cgsm.ColumnBlacklist |> Map.containsKey tableInfo.Name |> not || cgsm.ColumnBlacklist.[tableInfo.Name] |> Seq.contains c.ColumnName |> not 
                 columns
                 |> Seq.filter fIncludeColumn
                 |> Seq.map (fun c -> if identities.Contains(c.ColumnName) then {c with IsIdentity = true} else c)
@@ -522,13 +526,12 @@ module DataModelToF =
 
             let typeTargetNamespace = 
                 let subNamespaceName = fPluralizer typeName 
-                match tableInfo.Schema, includeNonDboSchemaInNamespace with
+                match tableInfo.Schema, cgsm.IncludeNonDboSchemaInNamespace with
                 | "dbo", _  
                 | _, false ->
-                    appendLine <| sprintf "namespace %s.%s // Generated by item in namespace %s" targetNamespace subNamespaceName templateProjectNamespace
+                    appendLine <| sprintf "namespace %s.%s // Generated by item in namespace %s" cgsm.TargetNamespace subNamespaceName templateProjectNamespace
                 | x, true -> 
-                    appendLine <| sprintf "namespace %s.%s.%s // Generated by item in namespace %s" targetNamespace x subNamespaceName templateProjectNamespace
-
+                    appendLine <| sprintf "namespace %s.%s.%s // Generated by item in namespace %s" cgsm.TargetNamespace x subNamespaceName templateProjectNamespace
 
             appendEmpty()
 
@@ -541,29 +544,43 @@ module DataModelToF =
                 appendLine "open Pm.Schema"
             appendLine "open Pm.Schema.BReusable"
             appendEmpty()
-            
-            let iga = {UseOptions=useOptions;Writeable=false}
+
+            let iga = {UseOptions=cgsm.UseOptionTypes;Writeable=false}
             generateInterface (typeName, columns, appendLine', iga)
             appendEmpty()
 
             generateInterface (typeName, columns, appendLine', {iga with Writeable=true})
-            if generateValueRecords then
-                generateRecord(typeName, columns, appendLine', useOptions, true)
-                
-            generateRecord(typeName, columns, appendLine', useOptions, false)
-            generateModule(typeName, columns, tableInfo.Schema, tableInfo.Name, appendLine', useOptions)
-            generateINotifyClass(typeName, columns, appendLine', useOptions)
-    
+            if cgsm.GenerateValueRecords then
+                generateRecord(typeName, columns, appendLine', cgsm.UseOptionTypes, true)
+
+            generateRecord(typeName, columns, appendLine', cgsm.UseOptionTypes, false)
+            generateModule(typeName, columns, tableInfo.Schema, tableInfo.Name, appendLine', cgsm.UseOptionTypes)
+            generateINotifyClass(typeName, columns, appendLine', cgsm.UseOptionTypes)
+
             manager.EndBlock()
     
-        manager.Process doMultiFile
+//        manager.Process doMultiFile
 
-    let Generate (pluralizer:Func<_,_>,singularizer:Func<_,_>) (columnBlacklist:IDictionary<string, string seq>) (manager:MacroRunner.MultipleOutputHelper.IManager, generationEnvironment:StringBuilder, targetProjectName:string, tables, cString:string , doMultiFile:bool) useOptions generateValueRecords measures measureBlacklist includeNonDboSchemaInNamespace targetNamespace: unit = 
-        let columnBlacklist = columnBlacklist |> Map.ofDictionary
+//     TargetProjectName:string
+//        TargetNamespace: string
+//        CString:string
+//        UseOptionTypes:bool
+//        ColumnBlacklist:Map<string, string list>
+//        Measures: string list
+//        MeasuresBlacklist: string list
+//        IncludeNonDboSchemaInNamespace:bool
+//        GenerateValueRecords:bool
+    let Generate (pluralizer:Func<_,_>,singularizer:Func<_,_>) (columnBlacklist:IDictionary<string, string seq>) (manager:MacroRunner.MultipleOutputHelper.IManager, generationEnvironment:StringBuilder, targetProjectName:string, tables, cString:string) useOptions generateValueRecords (measures: string seq) (measureBlacklist: string seq) includeNonDboSchemaInNamespace targetNamespace = 
+        let columnBlacklist = 
+            columnBlacklist |> Map.ofDictionary |> Map.toSeq |> Seq.map (fun (k,v) -> KeyValuePair(k, v |> List.ofSeq)) 
+            |> Map.ofDictionary
+
+        let cgsm = {TargetProjectName= targetProjectName; TargetNamespace=targetNamespace; CString=cString; UseOptionTypes=useOptions; ColumnBlacklist = columnBlacklist; Measures=measures |> List.ofSeq; MeasuresBlacklist= measureBlacklist |> List.ofSeq; IncludeNonDboSchemaInNamespace= includeNonDboSchemaInNamespace; GenerateValueRecords=generateValueRecords}
         generate 
             pluralizer.Invoke
             singularizer.Invoke
-            (manager,generationEnvironment, targetProjectName,tables,cString,doMultiFile) useOptions columnBlacklist generateValueRecords measures measureBlacklist includeNonDboSchemaInNamespace targetNamespace 
+            cgsm
+            (manager, generationEnvironment, tables)
 
     // dbPath was Path.GetFullPath(Path.Combine(currentDir, "..", "..","PracticeManagement","Db"));
 module SqlProj =
@@ -627,7 +644,6 @@ module SqlProj =
 
     let GetTableInfoFromSqlProj (log:Action<_>) (append:Action<_>) pathOption sqlProjRootDir tables blacklist generatePartials = getTableInfoFromSqlProj log.Invoke append.Invoke pathOption sqlProjRootDir tables blacklist generatePartials
 
-
 // impure! applied code, meant for specific scripts, not api
 module GenerationSample = 
     open Microsoft.VisualStudio.TextTemplating
@@ -674,7 +690,7 @@ module GenerationSample =
                      with 
                         override __.StartNewFile s = currentFile <- s;  sb.AppendLine(sprintf "// Starting a new file '%s' s" s) |> ignore
                         override __.EndBlock () = sb.AppendLine(String.Empty) |> ignore; sb.AppendLine(sprintf "// file finished '%s'" currentFile) |> ignore
-                        override __.Process _doMultiFile = ()
+                        override __.Process _doMultiFile = List.empty |> dict
                         override __.DefaultProjectNamespace with get() = "DefaultProjectNamespace"
                         override __.DteWrapperOpt = None
                         override __.TemplateFile with get() = "DataModels.tt"
@@ -702,8 +718,21 @@ module GenerationSample =
         let tablesToGen = [
             {Schema="dbo"; Name="Users"; GenerateFull =false}
         ]
-
-        DataModelToF.generate pluralizer.Pluralize pluralizer.Singularize (manager, sb, "Pm.Schema", tablesToGen, connectionString, (* doMultiFile *) true) false Map.empty false Seq.empty Seq.empty false null
+//         type CodeGenSettingMap = {
+//        TargetProjectName:string
+//        TargetNamespace: string
+//        CString:string
+//        UseOptionTypes:bool
+//        ColumnBlacklist:Map<string, string list>
+//        Measures: string list
+//        MeasuresBlacklist: string list
+//        IncludeNonDboSchemaInNamespace:bool
+//        GenerateValueRecords:bool
+//    }
+        let _results = 
+            let cgsm = {TargetProjectName= null; TargetNamespace="Pm.Schema"; CString=connectionString; UseOptionTypes=false; ColumnBlacklist = Map.empty;Measures=List.empty; MeasuresBlacklist= List.empty; IncludeNonDboSchemaInNamespace= false; GenerateValueRecords = false}
+            DataModelToF.generate pluralizer.Pluralize pluralizer.Singularize cgsm (manager, sb, tablesToGen)
+        
 
         manager.GeneratedFileNames
         |> dumpt "files generated"

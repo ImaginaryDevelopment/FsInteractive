@@ -64,6 +64,7 @@ let toColumnType (t:Type) length precision scale useMax =
         | _ -> failwithf "mismatched for %A " (useMax,length)
         |> ColumnType.VarChar 
     | _ -> Other t
+
 [<Obsolete("Work in progress")>]
 let generateTable (manager:IManager) (generationEnvironment:StringBuilder) targetProjectFolderOpt (tableInfo:TableInfo) =
     printfn "Generating a table into %A %A" targetProjectFolderOpt tableInfo
@@ -214,7 +215,6 @@ let generateInserts title appendLine (manager:IManager) targetProjectFolder (tab
 
     //feature desired: auto-name primary keys
     // adjustment desired: put all reference values comment (when on the reference table, above the column instead of beside it
-[<Obsolete("Work in progress")>]
 let generateTablesAndReferenceTables(manager:IManager, generationEnvironment:StringBuilder, targeting, toGen: TableInfo seq ) =
     toGen
     |> Seq.iter(fun ti ->
