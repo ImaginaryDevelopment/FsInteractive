@@ -180,7 +180,6 @@ module Seq =
 module Reflection =
     open System
     open System.Reflection
-    open FSharp.Reflection
     open Microsoft.FSharp.Reflection
     // some parts of this may be a translation of BMore.linq
     let (|TypeDefOf|_|) (_:'a) t = 
