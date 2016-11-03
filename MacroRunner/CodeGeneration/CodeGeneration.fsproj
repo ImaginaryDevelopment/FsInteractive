@@ -61,6 +61,8 @@
     <None Include="ConvertINotifyClassToFSharp.fsx" />
     <None Include="Script1.fsx" />
     <Content Include="packages.config" />
+    <None Include="FParsec.fsx" />
+    <None Include="FParsecTry2.fsx" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="EnvDTE, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a">
