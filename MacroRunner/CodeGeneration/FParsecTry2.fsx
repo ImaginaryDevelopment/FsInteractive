@@ -1,8 +1,6 @@
 ﻿// fparsec practice
 #if INTERACTIVE
 
-
-
 #r "D:\Users\Dbee\AppData\Local\LINQPad\NuGet.FW46\FParsec\FParsec.1.0.2\lib\portable-net45+netcore45+wpa81+wp8\FParsecCS.dll"
 #r "D:\Users\Dbee\AppData\Local\LINQPad\NuGet.FW46\FParsec\FParsec.1.0.2\lib\portable-net45+netcore45+wpa81+wp8\FParsec.dll"
 open FParsec
@@ -101,7 +99,7 @@ module Ast =
         | Struct of Access * Name * Member list
         | Interface of Access * Name * Implements * Member list
         | Enum of Access * TypeName * EnumValue list
-        | Delegate of Access * Name * ReturnType * Param list    
+        | Delegate of Access * Name * ReturnType * Param list
     // Namespace scopes
     type Import = 
         | Import of Name list
@@ -117,8 +115,7 @@ module Parser =
     let pcomment = pstring "//" >>. many1Satisfy ((<>) '\n') 
     let pspaces = spaces >>. many (spaces >>. pcomment >>. spaces)
     let pmlcomment = pstring "/*" >>. skipCharsTillString "*/" true (maxCount)
-    
-    let ws = pspaces >>. many (pspaces >>. pmlcomment >>. pspaces) |>> (fun _ -> ())
+    let ws = pspaces >>. many (pspaces >>. pmlcomment .>> pspaces) |>> (function | [] -> () | x -> printfn "found comments %A" x)
     let ws1 = spaces1
     let str_ws s = pstring s .>> ws
     let str_ws1 s = pstring s .>> ws1
@@ -146,44 +143,53 @@ module Parser =
         between (pstring "\"") (pstring "\"")
                 (manyChars (normalChar <|> escapedChar))
         |>> fun s -> Literal(s)
-    
+
     let pliteral = pnumber <|> pbool <|> pstringliteral
-    
+
     // Expressions
-    
+
     let pexpr_, pexprimpl = createParserForwardedToRef ()
     let pexpr = 
-        pexpr_ <??> "pexpr failure"
+        pexpr_ <??> "pexpr"
         |>> fun x ->
-                match x with
-                | ObjectConstructor (name, args, objectInitializer) ->
-                    printfn "pexpr returning %A" x
-                | _ -> ()
+//                match x with
+//                | ObjectConstructor (name, args, objectInitializer) ->
+//                    printfn "pexpr returning %A" x
+//                    
+//                    ()
+//                | x -> printfn "pexpr returning %A" x
                 x
-    
-    let reserved = ["for";"do"; "while";"if";"switch";"case";"default";"break" (*;...*)]
+
+    let reserved = ["for";"do"; "while";"if";"switch";"case";"default";"break";"new" (*;...*)]
     let pidentifierraw =
         let isIdentifierFirstChar c = isLetter c || c = '_' || c = '@'
         let isIdentifierChar c = isLetter c || isDigit c || c = '_'
         many1Satisfy2L isIdentifierFirstChar isIdentifierChar "identifier"
     let pidentifier =
         pidentifierraw 
+        <??> "pidentifier"
         >>= fun s -> 
             if s.StartsWith("@") || reserved |> List.exists ((=) s) then fail "keyword" 
             else preturn s
     let pidentifier_ws = pidentifier .>> ws
-    let pvar = pidentifier |>> fun x -> Variable(x)
-    
+    let pvar = 
+        pidentifier 
+        <??> "pvar"
+        >>=  fun s ->
+            preturn s
+        |>> fun x -> Variable(x)
+
     let pargref = str_ws1 "ref" |>> fun _ -> RefArg
     let pargout = str_ws1 "out" |>> fun _ -> OutArg
     let pargtype = (opt pargref <|> opt pargout) 
                    |>> function Some x -> x | None -> ValueArg
-    let parg = pargtype .>>. pexpr .>> ws <?> "expected a param name or out,ref then param name" |>> fun (by,e) -> Arg(by,e)
+    let parg = pargtype .>>. pexpr .>> ws <??> "parg" |>> fun (by,e) -> Arg(by,e)
 
     let pinvoke =
         pidentifier_ws .>>.
         // this appears it would have failed on a multi arg method call
-        between (str_ws "(") (str_ws ")") (sepBy parg (str_ws ","))
+        between (str_ws "(") (str_ws ")") (sepBy parg (str_ws ",")) 
+        <??> "pinvoke"
         |>> fun (name,args) -> MethodInvoke(name,args)
 
     // (could contain more pconstructors inside but they should also be exprs right?)
@@ -199,11 +205,10 @@ module Parser =
     // `new` expressions
     let pconstructorArgs = // not accounting for named params yet
         between (str_ws "(") (str_ws ")") (sepBy parg (str_ws ","))  
-        .>> optional (str_ws ",")  
         <??> "pconstructorArgs expected (comma delimited args)"
         |>> fun args -> args
     let parrayinitializer =
-        exprBraceSeq pexpr .>> optional (str_ws ",") <??> "parrayinitializer expected {comma delimited exprs}"
+        exprBraceSeq pexpr .>> optional (str_ws ",") <??> "parrayinitializer"
 //        between (str_ws "{") (str_ws "}") (many pexpr)
         |>> fun args -> 
             printfn "array initializer returning %A" args
@@ -219,27 +224,40 @@ module Parser =
 //    let pobjinitializer,pbojinitializerImpl = createParserForwardedToRef ()
 
     let pobjinitializer =
-        exprBraceSeq (pidentifier .>> ws .>> str_ws "=" <??> "expected =" .>>. (pexpr <??> "pbojinitializer.pexpr") <??> "namevaluepair expected k = v") 
-        <??> "pobjinitializer expected { Name=value pairs}"
-        |>> fun args -> ObjectInitializer.PropertyInitialization args
+        exprBraceSeq (
+            pidentifier 
+            .>> ws 
+            .>> str_ws "=" <??> "pbojinitializer.'='" 
+            .>>. (pexpr <??> "pbojinitializer.pexpr") <??> "pexpr.'='.pexpr" 
+            //.>> attempt (str_ws "," .>> (lookAhead (str_ws "}")))
+            )
+        <??> "pobjinitializer"
+        |>> fun args -> 
+            printfn "pobjinit %A" args
+            ObjectInitializer.PropertyInitialization args
 
     // used in new X where x can be identifier or int[] for example
 
     let pconstructorcall =  // not necessarily pinvoke may not have ()
-        str_ws "new " >>. ptype .>> ws .>>. (opt (attempt pconstructorArgs)) .>> ws .>>. ((attempt parrayinitializer <|> attempt pobjinitializer) <??> "addl constructor stuff")
-        <??> "expected a constructor call new Object(){} or new String() or new [] {} or new obj[] {}"
+        str_ws "new " 
+        >>. ptype 
+        .>> ws 
+        .>>. ((opt (attempt pconstructorArgs)) <??> "opt attempt pconstructorArgs") 
+        .>> ws 
+        .>>. (opt (attempt parrayinitializer <|> attempt pobjinitializer) <??> "addl constructor stuff")
+        <??> "pconstructorcall"
         //(name,args),objectInitializers
         |>> fun ((name,args),oi) -> 
             let args = defaultArg args List.empty
             printfn "constructor name=%s, args=%A, oi=%A" name args oi
-            ObjectConstructor(name, args, Some oi)
+            ObjectConstructor(name, args, oi)
 
     let pcast =
         let ptypecast = between (str_ws "(") (str_ws ")") pidentifier_ws
         ptypecast .>>. pexpr |>> fun (name,e) -> Cast(name,e)
     
-    let pvalue = (pliteral |>> fun x -> Value(x)) <|> 
-                 attempt pconstructorcall <|> attempt pinvoke <|> attempt pvar <|> attempt pcast 
+    let pvalue = (pliteral <??> "pliteral" |>> fun x -> Value(x)) <|> 
+                 attempt pconstructorcall <??> "pconstructorcall" <|> attempt pinvoke <??> "pinvoke" <|> attempt pvar <??> "pvar" <|> attempt pcast 
 
     pexprimpl:= pvalue
 
@@ -400,11 +418,30 @@ let text3 = """new ColumnInfo{Name="PaymentID", Type = typeof(int),
                         Attributes = jim
                         }"""
 
+module Tests = 
+    let tests = 
+        [
+            pobjinitializer, """{Name="PaymentID", Type = typeof(int),}"""
+            pobjinitializer, """new ColumnInfo{Name="PaymentID", Type = typeof(int)}"""
+        ]
+    let runTests() =
+        tests
+        |> Seq.tryFind (fun (p,s) -> run p s |> function | Failure _ -> true | _ -> false)
+        |> Option.iter (fun (p,s) -> test p s )
+    
 open Ast
 //match run pconstructorcall text with | Success (a,b,c) -> sprintf "%A" (a,b,c);;
 //Expr.ObjectConstructor(x,y,z)
-match run pconstructorcall text with 
-| Success (ObjectConstructor(x,y,z),b,c) -> Some y 
+let rec makeF = 
+    function
+    | ObjectConstructor(x,y,z) as e ->
+        printfn "%A" (x,y)
+        if false then
+            makeF e
+match run pexpr text with 
+| Success (ObjectConstructor(x,y,z) as e,b,c) -> Some e 
+| Success (Variable "new" as e,b,c) -> None
 | x -> 
     printfn "unexpected %A" x
     None
+|> Option.map (fun e -> printfn "clearing"; printfn "--------"; makeF e |> printfn "result:%A")
