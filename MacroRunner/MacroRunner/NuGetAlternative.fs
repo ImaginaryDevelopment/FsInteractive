@@ -83,6 +83,8 @@ module NugetAlternative =
                 failwithf "file copy from parentDir does not exist: %s" (Path.GetDirectoryName fileTarget)
             File.Copy(fileTarget,dll)
             printfn "copied package dll to %s" (Path.GetFullPath(dll))
+        else
+            printfn "dll already exists at %s" (Path.GetFullPath dll)
 
     let getPackageForReference packageLocation dllRelPath dll =
         printfn "Checking %s and %s for %s" Environment.CurrentDirectory srcDir dll

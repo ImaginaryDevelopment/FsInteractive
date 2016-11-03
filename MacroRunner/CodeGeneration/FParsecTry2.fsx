@@ -1,12 +1,17 @@
 ﻿// fparsec practice
-#r 
-MacroRunner.NuGetAlternative.
 #if NUGET
+#r "bin/debug/MacroRunner.exe"
+open MacroRunner.NuGetAlternative.NugetAlternative
+getPackageForReference (PackageLocation.ById("FParsec")) @"lib\portable-net45%2Bnetcore45%2Bwpa81%2Bwp8" @"FParsecCS"
+getPackageForReference (PackageLocation.ById("FParsec")) @"lib\portable-net45%2Bnetcore45%2Bwpa81%2Bwp8" @"FParsec"
 #endif
 #if INTERACTIVE
 
-#r "D:\Users\Dbee\AppData\Local\LINQPad\NuGet.FW46\FParsec\FParsec.1.0.2\lib\portable-net45+netcore45+wpa81+wp8\FParsecCS.dll"
-#r "D:\Users\Dbee\AppData\Local\LINQPad\NuGet.FW46\FParsec\FParsec.1.0.2\lib\portable-net45+netcore45+wpa81+wp8\FParsec.dll"
+//#r "D:\Users\Dbee\AppData\Local\LINQPad\NuGet.FW46\FParsec\FParsec.1.0.2\lib\portable-net45+netcore45+wpa81+wp8\FParsecCS.dll"
+//#r "D:\Users\Dbee\AppData\Local\LINQPad\NuGet.FW46\FParsec\FParsec.1.0.2\lib\portable-net45+netcore45+wpa81+wp8\FParsec.dll"
+#r "C:\projects\FsInteractive\MacroRunner\MacroRunner\FParsecCS.dll"
+#r "C:\projects\FsInteractive\MacroRunner\MacroRunner\FParsec.dll"
+
 open FParsec
 #endif
 
@@ -27,7 +32,6 @@ module Ast =
     type Literal = Literal of Value
     // Expressions
     type ArgType = ValueArg | RefArg | OutArg
-    
     type Expr = 
         | Value of Literal
         | Variable of VarName
@@ -38,9 +42,12 @@ module Ast =
         | PrefixOp of string * Expr
         | PostfixOp of Expr * string
         | TernaryOp of Expr * Expr * Expr
-        | ObjectConstructor of TypeName * Arg list * objectInitializers: ObjectInitializer option (* { items in the case of an array or dict, or property intializers } *)
-    and ObjectInitializer = | ArrayInitialization of Expr list | PropertyInitialization of (MemberName * Expr) list
+        | Lambda of Arg list * Expr
+        | ObjectConstructor of ObjectConstruction(* { items in the case of an array or dict, or property intializers } *)
+    and ObjectInitializer = | ArrayInitialization of Expr list (* * Expr option *) | PropertyInitialization of (MemberName * Expr) list
+    and ObjectConstruction = {Type:TypeName; Args:Arg list; ObjectInitializer: ObjectInitializer option}
     and Arg = Arg of ArgType * Expr
+
     // Statements
     type Define = Define of TypeName * VarName
     type Init = 
@@ -111,7 +118,7 @@ module Ast =
     type NamespaceScope =
         | Namespace of Import list * Name list * NamespaceScope list
         | Types of Import list * CSharpType list
-        
+
 [<AutoOpen>]
 module Parser =  
     open Ast
@@ -182,14 +189,14 @@ module Parser =
         pexpr_ <??> "pexpr"
 
     let parg = pargtype .>>. pexpr .>> ws <??> "parg" |>> fun (by,e) -> Arg(by,e)
+    let pargs = between (str_ws "(") (str_ws ")") (sepBy parg (str_ws ",")) 
 
     let pinvoke =
         pidentifier_ws .>>.
         // this appears it would have failed on a multi arg method call
-        between (str_ws "(") (str_ws ")") (sepBy parg (str_ws ",")) 
+        pargs 
         <??> "pinvoke"
         |>> fun (name,args) -> MethodInvoke(name,args)
-
 
     // (could contain more pconstructors inside but they should also be exprs right?)
     // let pexpr, pexprimpl = createParserForwardedToRef ()
@@ -200,15 +207,12 @@ module Parser =
 //    let pobject = passign
 
     // should match {} { ws } or { Some p }
-    let commaSepOptTrail p =
-        let trailingComma = (str_ws "," |>> fun _ -> None )
-        ((opt (attempt (sepBy p (str_ws ",")))) <|> (attempt trailingComma))
+ 
     let exprBraceSeqOpt p =
-        
-        between (str_ws "{") (str_ws "}") (commaSepOptTrail p)
+        between (str_ws "{") (str_ws "}") (sepEndBy p (str_ws ","))
     // `new` expressions
     let pconstructorArgs = // not accounting for named params yet
-        between (str_ws "(") (str_ws ")") (sepBy parg (str_ws ","))  
+        pargs
         <??> "pconstructorArgs expected (comma delimited args)"
         |>> fun args -> args
     let ptypedarray = 
@@ -219,29 +223,32 @@ module Parser =
         attempt ptypedarray <|> str_ws "[]"
 //        |>> id
         <??> "ptype expected identifer or '[]'"
-
     let parrayinitializer =
-        exprBraceSeqOpt pexpr .>> optional (str_ws ",") <??> "parrayinitializer"
+        exprBraceSeqOpt pexpr <??> "parrayinitializer"
+//        .>> str_ws ".ToDictionary"
+//        .>>. pargs
+//        .>>. regex ".ToDictionary(f=>f,f=>"
+//        .>>. pexpr
+        //.ToDictionary(f=>f,f=> (string)null)
 //        between (str_ws "{") (str_ws "}") (many pexpr)
         |>> fun args -> 
             printfn "array initializer returning %A" args
             args
-            |> Option.map ObjectInitializer.ArrayInitialization
-//    let pobjinitializer,pbojinitializerImpl = createParserForwardedToRef ()
+            |> ObjectInitializer.ArrayInitialization
 
-    let pobjinitializer =
-        exprBraceSeqOpt (
-            pidentifier 
+//    let pobjinitializer,pbojinitializerImpl = createParserForwardedToRef ()
+    let pkeyEqualsValue =
+        pidentifier 
             .>> ws 
             .>> str_ws "=" <??> "pbojinitializer.'='" 
-            .>>. (pexpr <??> "pbojinitializer.pexpr") <??> "pexpr.'='.pexpr" 
-            //.>> attempt (str_ws "," .>> (lookAhead (str_ws "}")))
-            )
+            .>>. (pexpr <??> "pbojinitializer.pexpr") <??> "pexpr.'='.pexpr"
+    let pobjinitializer =
+        exprBraceSeqOpt pkeyEqualsValue
         <??> "pobjinitializer"
         |>> fun args -> 
             printfn "pobjinit %A" args
             args
-            |> Option.map ObjectInitializer.PropertyInitialization
+            |> ObjectInitializer.PropertyInitialization
 
     // used in new X where x can be identifier or int[] for example
 
@@ -255,17 +262,31 @@ module Parser =
         <??> "pconstructorcall"
         //(name,args),objectInitializers
         |>> fun ((name,args),oi) -> 
-            let oi = oi |> Option.bind id
             let args = defaultArg args List.empty
             printfn "constructor name=%s, args=%A, oi=%A" name args oi
-            ObjectConstructor(name, args, oi)
+            {Type=name; Args=args; ObjectInitializer=oi}
+            |> ObjectConstructor
 
     let pcast =
         let ptypecast = between (str_ws "(") (str_ws ")") pidentifier_ws
         ptypecast .>>. pexpr |>> fun (name,e) -> Cast(name,e)
-    
-    let pvalue = (pliteral <??> "pliteral" |>> fun x -> Value(x)) <|> 
-                 attempt pconstructorcall <??> "pconstructorcall" <|> attempt pinvoke <??> "pinvoke" <|> attempt pvar <??> "pvar" <|> attempt pcast 
+    // new []{}.ToDictionary(f=>f,f=> (string)null) for instance
+    let pvalueInvoke =
+        ws >>. str_ws "." >>. pinvoke
+    let plambda= 
+        let pSingleArg = pidentifier_ws |>> fun x -> [Arg.Arg(ArgType.ValueArg, Expr.Variable x)]
+        let pLambdaArgs = attempt pargs <|> pSingleArg
+        pLambdaArgs .>> str_ws "=>" .>>. pexpr
+        |>> Expr.Lambda
+
+    let pvalue = 
+        let pmostofit =
+            attempt plambda <|>
+            (pliteral <??> "pliteral" |>> fun x -> Value(x)) <|> 
+                 attempt pconstructorcall <??> "pconstructorcall" <|>  attempt pinvoke <??> "pinvoke" <|> attempt pvar <??> "pvar" <|> attempt pcast 
+    // new []{}.ToDictionary(f=>f,f=> (string)null) for instance
+        pmostofit .>>. (opt pvalueInvoke)
+        |>> fun (x,y) -> x
 
     pexprimpl:= pvalue
 
@@ -444,14 +465,28 @@ open Ast
 //Expr.ObjectConstructor(x,y,z)
 let rec makeF = 
     function
-    | ObjectConstructor(x,y,z) as e ->
-        printfn "%A" (x,y)
+    | ObjectConstructor(oc) as e ->
+        printfn "%A" oc
         if false then
             makeF e
+printfn "run pexpr text"
+
 match run pexpr text with 
-| Success (ObjectConstructor(x,y,z) as e,b,c) -> Some e 
+| Success (ObjectConstructor(oc) as e,b,c) -> Some e 
 | Success (Variable "new" as e,b,c) -> None
 | x -> 
     printfn "unexpected %A" x
     None
 |> Option.map (fun e -> printfn "clearing"; printfn "--------"; makeF e |> printfn "result:%A")
+
+printfn "Sample run single array starting"
+run pexpr """new []{
+                    new ColumnInfo{ Name = "PaymentItemID", Type = typeof(int), Attributes = new []{"identity","primary key"}},
+                    new ColumnInfo{ Name = "PaymentID", Type = typeof(int), FKey= new FKeyInfo{Schema="dbo",Table="Payment"}},
+                    new ColumnInfo{ Name = "PaymentItemTypeId", Type = typeof(string), Length=50,
+                        AllowNull=true,
+                        GenerateReferenceTable=true, FKey= new FKeyInfo{Schema="Accounts", Table="PaymentItemType", Column="PaymentItemTypeId"},
+                    }}"""
+printfn "regex replace run single array starting"
+let modifiedForNoTrailing = System.Text.RegularExpressions.Regex.Replace(text,"}\s*,\s*}","}}")
+run pexpr modifiedForNoTrailing
