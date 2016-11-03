@@ -9,9 +9,9 @@ getPackageForReference (PackageLocation.ById("FParsec")) @"lib\portable-net45%2B
 
 //#r "D:\Users\Dbee\AppData\Local\LINQPad\NuGet.FW46\FParsec\FParsec.1.0.2\lib\portable-net45+netcore45+wpa81+wp8\FParsecCS.dll"
 //#r "D:\Users\Dbee\AppData\Local\LINQPad\NuGet.FW46\FParsec\FParsec.1.0.2\lib\portable-net45+netcore45+wpa81+wp8\FParsec.dll"
-#r "C:\projects\FsInteractive\MacroRunner\MacroRunner\FParsecCS.dll"
-#r "C:\projects\FsInteractive\MacroRunner\MacroRunner\FParsec.dll"
-
+#r @"C:\projects\FsInteractive\MacroRunner\MacroRunner\FParsecCS.dll"
+#r @"C:\projects\FsInteractive\MacroRunner\MacroRunner\FParsec.dll"
+#r @"C:\projects\FsInteractive\MacroRunner\CodeGeneration\bin\Debug\MacroRunner.exe"
 open FParsec
 #endif
 
@@ -461,14 +461,19 @@ module Tests =
         |> Option.iter (fun (i,p,s) -> printfn "Failing: %i" i; test p s )
     
 open Ast
+open BReusable
 //match run pconstructorcall text with | Success (a,b,c) -> sprintf "%A" (a,b,c);;
 //Expr.ObjectConstructor(x,y,z)
 let rec makeF = 
     function
     | ObjectConstructor(oc) as e ->
+        printfn "on track -----------"
         printfn "%A" oc
         if false then
             makeF e
+    | x ->
+        printfn "off track --------"
+        printfn "makeF:%A" x
 printfn "run pexpr text"
 
 match run pexpr text with 
@@ -489,4 +494,16 @@ run pexpr """new []{
                     }}"""
 printfn "regex replace run single array starting"
 let modifiedForNoTrailing = System.Text.RegularExpressions.Regex.Replace(text,"}\s*,\s*}","}}")
-run pexpr modifiedForNoTrailing
+let lines = modifiedForNoTrailing |> splitLines
+let parsed = run pexpr modifiedForNoTrailing
+let runTranslation() = 
+    parsed
+    |> function 
+        |Success (a,_b,c) -> 
+            printfn "position=%A" c
+            
+            if  c.Line < ( lines.Length |> System.Convert.ToInt64) then
+                printfn "Only %i lines consumed out of %i" c.Line lines.Length
+                printfn "bad match %A" lines.[int c.Line]
+            makeF a |> Some 
+        | x -> printfn "----"; printfn "%A" x; None    
