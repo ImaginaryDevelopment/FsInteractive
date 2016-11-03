@@ -119,7 +119,7 @@ module Parser =
     let ws1 = spaces1
     let str_ws s = pstring s .>> ws
     let str_ws1 s = pstring s .>> ws1
-    
+
     // Literals
     
     type Lit = NumberLiteralOptions
@@ -148,18 +148,6 @@ module Parser =
 
     // Expressions
 
-    let pexpr_, pexprimpl = createParserForwardedToRef ()
-    let pexpr = 
-        pexpr_ <??> "pexpr"
-        |>> fun x ->
-//                match x with
-//                | ObjectConstructor (name, args, objectInitializer) ->
-//                    printfn "pexpr returning %A" x
-//                    
-//                    ()
-//                | x -> printfn "pexpr returning %A" x
-                x
-
     let reserved = ["for";"do"; "while";"if";"switch";"case";"default";"break";"new" (*;...*)]
     let pidentifierraw =
         let isIdentifierFirstChar c = isLetter c || c = '_' || c = '@'
@@ -171,6 +159,7 @@ module Parser =
         >>= fun s -> 
             if s.StartsWith("@") || reserved |> List.exists ((=) s) then fail "keyword" 
             else preturn s
+
     let pidentifier_ws = pidentifier .>> ws
     let pvar = 
         pidentifier 
@@ -183,6 +172,11 @@ module Parser =
     let pargout = str_ws1 "out" |>> fun _ -> OutArg
     let pargtype = (opt pargref <|> opt pargout) 
                    |>> function Some x -> x | None -> ValueArg
+
+    let pexpr_, pexprimpl = createParserForwardedToRef ()
+    let pexpr = 
+        pexpr_ <??> "pexpr"
+
     let parg = pargtype .>>. pexpr .>> ws <??> "parg" |>> fun (by,e) -> Arg(by,e)
 
     let pinvoke =
@@ -192,6 +186,7 @@ module Parser =
         <??> "pinvoke"
         |>> fun (name,args) -> MethodInvoke(name,args)
 
+
     // (could contain more pconstructors inside but they should also be exprs right?)
     // let pexpr, pexprimpl = createParserForwardedToRef ()
     // object initializer or array initializer 
@@ -200,19 +195,18 @@ module Parser =
     // Expr,Expr,Expr
 //    let pobject = passign
 
-    let exprBraceSeq p =
-        between (str_ws "{") (str_ws "}") (sepBy p (str_ws ","))
+    // should match {} { ws } or { Some p }
+    let commaSepOptTrail p =
+        let trailingComma = (str_ws "," |>> fun _ -> None )
+        ((opt (attempt (sepBy p (str_ws ",")))) <|> (attempt trailingComma))
+    let exprBraceSeqOpt p =
+        
+        between (str_ws "{") (str_ws "}") (commaSepOptTrail p)
     // `new` expressions
     let pconstructorArgs = // not accounting for named params yet
         between (str_ws "(") (str_ws ")") (sepBy parg (str_ws ","))  
         <??> "pconstructorArgs expected (comma delimited args)"
         |>> fun args -> args
-    let parrayinitializer =
-        exprBraceSeq pexpr .>> optional (str_ws ",") <??> "parrayinitializer"
-//        between (str_ws "{") (str_ws "}") (many pexpr)
-        |>> fun args -> 
-            printfn "array initializer returning %A" args
-            ObjectInitializer.ArrayInitialization args
     let ptypedarray = 
         pidentifier_ws .>>. opt (str_ws "[]")
         <??> "ptypedarray expected identifier with optional trailing []"
@@ -221,10 +215,18 @@ module Parser =
         attempt ptypedarray <|> str_ws "[]"
 //        |>> id
         <??> "ptype expected identifer or '[]'"
+
+    let parrayinitializer =
+        exprBraceSeqOpt pexpr .>> optional (str_ws ",") <??> "parrayinitializer"
+//        between (str_ws "{") (str_ws "}") (many pexpr)
+        |>> fun args -> 
+            printfn "array initializer returning %A" args
+            args
+            |> Option.map ObjectInitializer.ArrayInitialization
 //    let pobjinitializer,pbojinitializerImpl = createParserForwardedToRef ()
 
     let pobjinitializer =
-        exprBraceSeq (
+        exprBraceSeqOpt (
             pidentifier 
             .>> ws 
             .>> str_ws "=" <??> "pbojinitializer.'='" 
@@ -234,7 +236,8 @@ module Parser =
         <??> "pobjinitializer"
         |>> fun args -> 
             printfn "pobjinit %A" args
-            ObjectInitializer.PropertyInitialization args
+            args
+            |> Option.map ObjectInitializer.PropertyInitialization
 
     // used in new X where x can be identifier or int[] for example
 
@@ -248,6 +251,7 @@ module Parser =
         <??> "pconstructorcall"
         //(name,args),objectInitializers
         |>> fun ((name,args),oi) -> 
+            let oi = oi |> Option.bind id
             let args = defaultArg args List.empty
             printfn "constructor name=%s, args=%A, oi=%A" name args oi
             ObjectConstructor(name, args, oi)
@@ -421,13 +425,15 @@ let text3 = """new ColumnInfo{Name="PaymentID", Type = typeof(int),
 module Tests = 
     let tests = 
         [
+            pobjinitializer, """{Name="PaymentID"}"""
             pobjinitializer, """{Name="PaymentID", Type = typeof(int),}"""
             pobjinitializer, """new ColumnInfo{Name="PaymentID", Type = typeof(int)}"""
         ]
     let runTests() =
         tests
-        |> Seq.tryFind (fun (p,s) -> run p s |> function | Failure _ -> true | _ -> false)
-        |> Option.iter (fun (p,s) -> test p s )
+        |> Seq.mapi (fun i (x,y) -> i,x,y)
+        |> Seq.tryFind (fun (_,p,s) -> run p s |> function | Failure _ -> true | _ -> false)
+        |> Option.iter (fun (i,p,s) -> printfn "Failing: %i" i; test p s )
     
 open Ast
 //match run pconstructorcall text with | Success (a,b,c) -> sprintf "%A" (a,b,c);;
