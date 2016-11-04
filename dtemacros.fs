@@ -182,6 +182,14 @@ module VsMacros =
     |> Array.ofSeq
 
   let getTextSelection (dte:EnvDTE.DTE) = dte.ActiveDocument.Selection
+  let getDocuments (dte:EnvDTE.DTE) = dte.Documents |> Seq.cast<Document>
+  let closeDocument dte documentFullName = dte |> getDocuments |> Seq.tryFind(fun d-> d.FullName = documentFullName)
+  let activateDocument dte documentFullName = 
+    dte
+    |> getDocuments
+    |> Seq.tryFind (fun d -> d.FullName = documentFullName)
+    |> Option.iter (fun d -> d.Activate())
+
   let SolutionExplorerWindow = "{3AE79031-E1BC-11D0-8F78-00A0C9110057}"
   let SolutionFolder = "{66A26720-8FB5-11D2-AA7E-00C04F688DDE}"
 
