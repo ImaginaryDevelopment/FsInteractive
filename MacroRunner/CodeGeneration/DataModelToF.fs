@@ -598,6 +598,7 @@ module SqlProj =
         |> Seq.map (fun tp -> {Path=tp; Schema = tp |> after "Schemas\\" |> before "\\"; Table=tp |> Path.GetFileNameWithoutExtension |> Path.GetFileNameWithoutExtension; GenerateFull = false})
 
     // tables may be just a simple table name (implying schema is dbo) or 'schema.tablename'
+    // fLog and fAppend appear to be the same place, in current usage, why were they ever distinct?
     let getTableInfoFromSqlProj fLog fAppend pathOption sqlProjRootDir tables blacklist generatePartials= 
         let sqlProjRootDirOpt = if not <| String.IsNullOrEmpty sqlProjRootDir && Directory.Exists sqlProjRootDir then Some sqlProjRootDir else None
         match Option.isSome sqlProjRootDirOpt, pathOption with
