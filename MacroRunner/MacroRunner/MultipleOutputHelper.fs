@@ -206,14 +206,17 @@ module MultipleOutputHelper =
     
                 interface IManager with
                     override __.DteWrapperOpt = Some dteWrapper
-                    
+
                 override __.DefaultProjectNamespace 
                     with get() = 
-                        if isNull templateProjectItem then failwithf "templateProjectItem is null"
-                        if isNull templateProjectItem.ContainingProject then failwithf "templateProjectItem.ContainingProject is null"
-                        if isNull templateProjectItem.Properties then failwithf "templateProjectItem.ContainingProject.Properties is null"
-//
-                        templateProjectItem.ContainingProject.Properties.Item("DefaultNamespace").Value.ToString()
+                        match templateProjectItem with
+                        | null -> null
+                        | _ -> 
+                            if isNull templateProjectItem then failwithf "templateProjectItem is null"
+                            if isNull templateProjectItem.ContainingProject then failwithf "templateProjectItem.ContainingProject is null"
+                            if isNull templateProjectItem.Properties then failwithf "templateProjectItem.ContainingProject.Properties is null"
+    //
+                            templateProjectItem.ContainingProject.Properties.Item("DefaultNamespace").Value.ToString()
                 override __.GetCustomToolNamespace fileName = dteWrapper.FindProjectItemPropertyValue fileName "CustomToolNamespace" //dte.Solution.FindProjectItem(fileName).Properties.Item("CustomToolNamespace").Value.ToString()
 
                 override __.Process split =
