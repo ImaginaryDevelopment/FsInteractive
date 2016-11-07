@@ -14,6 +14,12 @@ module DataModelToF =
     open System.Data.SqlClient
     open System.Diagnostics
     open System.Data
+    let private log (s:string) = 
+        let text = if s.EndsWith "\r\n" then s else sprintf "%s\r\n" s 
+        printfn "%s" text
+        if System.Diagnostics.Debugger.IsAttached then
+            System.Diagnostics.Debugger.Log(0, "Logger", text)
+
 
 //    open System.Linq
     let dbNullToOption (x:obj) : obj option= 
@@ -388,6 +394,7 @@ module DataModelToF =
 
     let generate (fPluralizer:string -> string) (fSingularizer:string -> string) (cgsm:CodeGenSettingMap) (manager:MacroRunner.MultipleOutputHelper.IManager, generationEnvironment:StringBuilder, tables:TableGenerationInfo seq) =
 
+        log(sprintf "DataModelToF.generate:cgsm:%A" cgsm)
         let appendLine text = generationEnvironment.AppendLine(text) |> ignore
         let appendEmpty() = appendLine String.Empty
         let appendLine' indentLevels text = 
@@ -457,19 +464,9 @@ module DataModelToF =
                 // var prec = r["Prec"];
                 let measureType = cgsm.Measures |> Seq.tryFind (fun m -> cgsm.MeasuresBlacklist |> Seq.contains columnName |> not && containsI m columnName)
                 columns.Add {ColumnName=columnName; Type= type'; Measure = measureType |> Option.toObj; Length=length; Nullable = r.["Nullable"].ToString() ="yes"; IsIdentity = false; IsPrimaryKey = false}
-    
+
             r.NextResult() |> Debug.Assert
 
-//            let identities = 
-//                seq {
-//                    while r.Read() do // identities
-//                        // only valid identities (sql uses the identity column to say there are none defined instead of an empty set)
-//                        match r.["Seed"] |> dbNullToOption with
-//                        | Some _ -> 
-//                            yield r.["Identity"] |> string
-//                        | None -> ()
-//                }
-//                |> List.ofSeq
             let identities = 
                 r
                 |> unfoldRows (
