@@ -60,7 +60,7 @@ type ColumnInput = {
             ColumnInput.create name typeof<'T>
             |> fun x -> {x with FKey = Some fkeyInfo }
         static member createFKeyedNColumn<'T> name fkeyInfo =
-            ColumnInput.createFKeyedColumn name fkeyInfo
+            ColumnInput.createFKeyedColumn<'T> name fkeyInfo
             |> fun x -> { x with AllowNull = Nullability.AllowNull}
         static member createPatientIdColumn prefix allowNull comments = 
             ColumnInput.createFKeyedColumn<int> (prefix + "PatientID") {Schema="dbo"; Table="Patients"; Column ="PatientID"}
@@ -68,7 +68,8 @@ type ColumnInput = {
         static member createUserIdColumn prefix allowNull comment = 
             ColumnInput.createFKeyedColumn<int> (prefix + "UserID") {Schema="dbo"; Table="Users";Column="UserID" }
             |> fun x -> {x with Comments = comment; AllowNull= allowNull}
-        static member makeNullable50 = ()
+        static member makeNullable50 name = 
+            {Name=name; Type=typeof<string>; Length=Some 50; Precision=None; Scale=None; UseMax=false; AllowNull = Nullability.AllowNull; Attributes=List.empty; FKey = None;Comments = List.empty; GenerateReferenceTable=false; ReferenceValuesWithComment=null; IsUnique=false }
 
 type TableInput() = 
      member val Name:string = Unchecked.defaultof<_> with get,set
@@ -76,7 +77,11 @@ type TableInput() =
      member val Columns:ColumnInput seq = Unchecked.defaultof<_> with get,set
 
 let runGeneration (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) manager targetSqlProjectName (cgsm: CodeGeneration.DataModelToF.CodeGenSettingMap) (toGen:TableInput list) additionalToCodeGenItems = 
-
+    match toGen |> Seq.tryFind(fun g -> g.Columns |> Seq.exists(fun c -> c.Type = typeof<obj>)) with
+    | Some g -> 
+        printfn "failing because of %s.%s" g.Schema g.Name
+        failwithf "object found"
+    | _ -> ()
     let pluralizer = Macros.VsMacros.createPluralizer()
     let projects = snd <| Macros.VsMacros.getSP dte // RecurseSolutionProjects(Dte)
     let appendLine text (sb:System.Text.StringBuilder) = 
@@ -147,10 +152,6 @@ let runGeneration (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) manager target
         cgsm
         (manager, sb, mappedTables) 
 
-//    manager.Process(doMultiFile)
-
-
-// StringBuilder ge = GenerationEnvironment;
 let sb = System.Text.StringBuilder()
 let appendLine text (sb:System.Text.StringBuilder) = 
     sb.AppendLine text

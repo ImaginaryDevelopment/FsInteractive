@@ -65,7 +65,6 @@ let toColumnType (t:Type) length precision scale useMax =
         |> ColumnType.VarChar 
     | _ -> Other t
 
-[<Obsolete("Work in progress")>]
 // SqlGeneration.ttinclude ~ 49
 let generateTable (manager:IManager) (generationEnvironment:StringBuilder) targetProjectFolderOpt (tableInfo:TableInfo) =
     printfn "Generating a table into %A %s" targetProjectFolderOpt tableInfo.Name
@@ -89,7 +88,7 @@ let generateTable (manager:IManager) (generationEnvironment:StringBuilder) targe
             function 
             | Max -> "MAX"
             | Length l -> string l
-        
+
         match ct with
         | Decimal (Some(di)) -> sprintf "decimal(%i,%i)" di.Precision di.Scale
         | Decimal None -> "decimal"
@@ -104,10 +103,6 @@ let generateTable (manager:IManager) (generationEnvironment:StringBuilder) targe
             | TypeOf(isType:DateTime) -> "datetime"
             | _ -> t.Name
 
-//        let projects = manager.Dte |> Option.bind (EnvDteHelper.recurseSolutionProjects >> Some) // was dte
-//        let targetProject = projects |> Option.bind (fun projs -> projs.First(fun p -> p.Name = targetProjectName) |> Some)
-//        let targetProjectFolder = targetProject |> Option.bind (fun tp -> Path.GetDirectoryName(tp.FullName) |> Some)
-
     let mutable i = 0
     let columnCount = tableInfo.Columns.Length
     let hasCombinationPK = tableInfo.Columns.Count (fun ci -> ci.Attributes |> Seq.contains "primary key") > 1
@@ -115,7 +110,7 @@ let generateTable (manager:IManager) (generationEnvironment:StringBuilder) targe
     tableInfo.Columns
     |> Seq.iter (fun ci -> 
         let fKey = formatFKey tableInfo.Name ci.Name ci.FKey
-        
+
         let multipleComments = ci.Comments.Length > 1
         if multipleComments then
             appendLine String.Empty
