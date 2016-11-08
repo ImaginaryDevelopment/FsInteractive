@@ -1,4 +1,4 @@
-﻿module CodeGeneration.GenerateSql
+﻿module CodeGeneration.GenerateAllTheThings
 // purpose: run SqlMeta.generateSql >> DataModelToF.generate
 open System
 open System.Collections.Generic

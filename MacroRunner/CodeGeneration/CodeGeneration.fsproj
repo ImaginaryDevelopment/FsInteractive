@@ -57,7 +57,7 @@
     <Compile Include="Conversion.fs" />
     <Compile Include="DataModelToF.fs" />
     <Compile Include="GenerateFromTypes.fs" />
-    <Compile Include="GenerateSql.fs" />
+    <Compile Include="GenerateAllTheThings.fs" />
     <None Include="ConvertINotifyClassToFSharp.fsx" />
     <None Include="Script1.fsx" />
     <Content Include="packages.config" />

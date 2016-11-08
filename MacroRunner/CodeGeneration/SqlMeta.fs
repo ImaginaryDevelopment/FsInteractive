@@ -68,7 +68,7 @@ let toColumnType (t:Type) length precision scale useMax =
 [<Obsolete("Work in progress")>]
 // SqlGeneration.ttinclude ~ 49
 let generateTable (manager:IManager) (generationEnvironment:StringBuilder) targetProjectFolderOpt (tableInfo:TableInfo) =
-    printfn "Generating a table into %A %A" targetProjectFolderOpt tableInfo
+    printfn "Generating a table into %A %s" targetProjectFolderOpt tableInfo.Name
     let targetFilename = Path.Combine(defaultArg targetProjectFolderOpt String.Empty, "Schema Objects", "Schemas", tableInfo.Schema, "Tables", tableInfo.Name + ".table.sql")
     manager.StartNewFile(targetFilename)
 
