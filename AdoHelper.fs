@@ -135,6 +135,18 @@ module Connections =
         if tType = typeof<Delegate> || tType.IsSubclassOf typeof<Delegate> || tType.FullName.StartsWith "Microsoft.FSharp.Core.FSharpFunc" then
             invalidArg "f" (sprintf "Bad delegate passed %A" tType)
 
+    let cleanConnectionString x = 
+        //"Data Source=;Initial Catalog=;App=;User Id=;Password=;"
+        x
+        |> String.split [";"] StringSplitOptions.RemoveEmptyEntries
+        |> Seq.map(String.split ["="] StringSplitOptions.None >> List.ofSeq)
+        |> Seq.map(function | [name;value] -> Rail.Happy(name,value) | _ -> Rail.Unhappy "could not read connection string to clean")
+        |> Seq.choose Railway.toHappyOption
+        |> Seq.filter(fst >> String.equalsI "password" >> not )
+        |> Seq.filter(fst >> String.equalsI "user id" >> not)
+        |> Seq.map (fun (name,value) -> sprintf "%s=%s" name value)
+        |> delimit ";"
+
     /// Expectations:
     ///     Connector.ICon expects an open connection
     /// as long as you aren't returning 
@@ -142,13 +154,21 @@ module Connections =
     ///  a partial function
     let inline runWithConnection connector f = 
         validateDelegateIsNotPartial f
-
-        match connector with
-        | ICon con -> f con
-        | CString cs -> 
-            use conn = new SqlConnection(cs)
-            openConnection conn
-            f conn
+        // hoping this is the correct central place that ALL logic comes through for connections, so we can catch errors/etc.
+        let mutable cstring = null
+        try
+            match connector with
+            | ICon con -> 
+                cstring <- con.ConnectionString
+                f con
+            | CString cs -> 
+                cstring <- cs
+                use conn = new SqlConnection(cs)
+                openConnection conn
+                f conn
+        with ex -> 
+            ex.Data.Add("cstring", cleanConnectionString cstring)
+            reraise()
 
     let runWithCn cn f = runWithConnection cn (Connector.ICon >> f)
 
@@ -186,7 +206,7 @@ module Transactions =
 module SqlConnections =
     type SqlConnector = Connections.Connector
 
-    /// Expecations:
+    /// Expectations:
     ///     Connector.ICon expects an open connection
     /// as long as you aren't returning an IEnumerable that depends on the connection staying open, this method is safe for anything
     let inline runWithConnection (connector:SqlConnector) f = Connections.runWithConnection connector (fun con -> con :?> SqlConnection |> f)
