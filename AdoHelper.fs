@@ -153,10 +153,11 @@ module Connections =
     ///  an IEnumerable that depends on the connection staying open
     ///  a partial function
     let inline runWithConnection connector f = 
-        validateDelegateIsNotPartial f
         // hoping this is the correct central place that ALL logic comes through for connections, so we can catch errors/etc.
+
+        validateDelegateIsNotPartial f
         let mutable cstring = null
-        try
+        let withCon f =
             match connector with
             | ICon con -> 
                 cstring <- con.ConnectionString
@@ -166,8 +167,31 @@ module Connections =
                 use conn = new SqlConnection(cs)
                 openConnection conn
                 f conn
+        try
+            withCon f
         with ex -> 
-            ex.Data.Add("cstring", cleanConnectionString cstring)
+            if not <| ex.Data.Contains "cstring" then
+                ex.Data.Add("cstring", cleanConnectionString cstring)
+            let getAddSprocText name = 
+                withCon (fun con ->
+                    let con = con:?> SqlConnection 
+                    use cmd = new SqlCommand(sprintf "sp_helptext '%s'" name, con)
+                    let text = cmd.ExecuteScalar()
+                    ex.Data.Add("sp_helptext", text)
+                )
+            if not <| isNull ex.Message then
+                if ex.Message.StartsWith "Procedure or function '" && ex.Message.EndsWith "' has too many arguments specified." then
+                    try
+                        let name = System.Text.RegularExpressions.Regex.Match(ex.Message, "Procedure or function '(\w+)' has too many arguments specified.").Groups.[1].Value
+                        getAddSprocText name
+                        ()
+                    with ex -> ()
+                elif ex.Message.StartsWith "Procedure or function '" && ex.Message.Contains "' expects parameter '" && ex.Message.EndsWith "', which was not supplied." then
+                    try
+                        let name = System.Text.RegularExpressions.Regex.Match(ex.Message, "Procedure or function '(\w+)' expects parameter '(@\w+)', which was not supplied.").Groups.[1].Value
+                        getAddSprocText name
+                    with ex -> ()
+                    ()
             reraise()
 
     let runWithCn cn f = runWithConnection cn (Connector.ICon >> f)

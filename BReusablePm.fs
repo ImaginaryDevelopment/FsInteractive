@@ -270,6 +270,8 @@ type System.Convert with
     static member ToBinaryData(o:obj) = o :?> byte[] // http://stackoverflow.com/a/5371281/57883
 
 type System.String with
+
+    static member trim (s:string) = match s with | null -> null | s -> s.Trim()
     static member defaultComparison = StringComparison.InvariantCultureIgnoreCase
     static member Null:string = null
     static member emptyToNull (x:string) = if String.IsNullOrEmpty x then null else x
@@ -331,6 +333,7 @@ module StringHelpers =
     open StringPatterns
     let contains (sub:string) (x:string) = if isNull x then false elif isNull sub || sub = "" then failwithf "bad contains call" else x.IndexOf(sub, String.defaultComparison) >= 0
     let containsI (sub:string) (x:string) = if isNull x then false elif isNull sub || sub = "" then failwithf "bad contains call" else x.IndexOf(sub, String.defaultComparison) >= 0
+    let trim = String.trim
     let replace (target:string) (replacement) (str:string) = if String.IsNullOrEmpty target then invalidOp "bad target" else str.Replace(target,replacement)
     let delimit delimiter (values:#seq<string>) = String.Join(delimiter, Array.ofSeq values)
     let after (delimiter:string) (x:string) =  
