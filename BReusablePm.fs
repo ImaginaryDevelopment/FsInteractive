@@ -928,6 +928,82 @@ module Nullable = //http://bugsquash.blogspot.com/2010/09/nullable-in-f.html als
 
     let bindf (n: _ Nullable) f ``default`` = if n.HasValue then f n.Value else ``default``
 
+// things I'm not sure are a good idea but enable things that otherwise might not be possible
+// things that create a buttload of complexity one place, to reduce boilerplate or lessen complexity elsewhere
+module Ideas =
+
+    // encapsulate INPC such that, fields can hold INPC values
+    module Inpc = 
+        open System.ComponentModel
+        let triggerPropChanged (event:Event<PropertyChangedEventHandler,PropertyChangedEventArgs>) name () =
+            event.Trigger(null, PropertyChangedEventArgs(name))
+        // consider adding a param for comparison, so the inpc won't fire if they are equal
+        // or the parent property exposure could do it?
+        type InpcWrapper<'T> (fNotifier, defaultValue:'T) = 
+            let mutable field = defaultValue
+            // consider:
+            //member x.UnsafeSet v = field <- v
+            member __.Value 
+                with get() = field
+                and set v = 
+                    field <- v
+                    fNotifier()
+
+        // Pros: doesn't require the child to actually have a Property with the name used, lessens the amount of work involved with setting up an Inpc class
+        // Cons: doesn't require the child to actually have a Property with the name used
+        type InpcParent () = 
+            let propertyChanged = new Event<_, _>()
+            interface INotifyPropertyChanged with
+                [<CLIEvent>]
+                member __.PropertyChanged = propertyChanged.Publish
+            abstract member RaisePropertyChanged : string -> unit
+            default x.RaisePropertyChanged(propertyName : string) = propertyChanged.Trigger(x, PropertyChangedEventArgs(propertyName))
+            member x.CreateNotifierProxy name defaultValue = 
+                let fNotifier () = x.RaisePropertyChanged name
+                InpcWrapper(fNotifier, defaultValue)
+
+        type private SampleChild (raiseInInit) as self = 
+            inherit InpcParent ()
+            let _testCanCallParentInFieldInit = 
+                if raiseInInit then
+                    // this one doesn't appear to complain if `base.` is used instead of `self.` no idea why
+                    self.RaisePropertyChanged "test"
+            let encapsulated = self.CreateNotifierProxy "Encapsulated" true
+            member __.Encapsulated 
+                with get() = encapsulated.Value
+                and set v = if v <> encapsulated.Value then encapsulated.Value <- v
+            static member _runSample () = 
+                let child = SampleChild(false)
+                child :> INotifyPropertyChanged
+                |> fun inpc -> inpc.PropertyChanged.Add (fun e -> 
+                #if LINQPAD
+                    e -> e.Dump()
+                #else 
+                    Trace.WriteLine("Inpc:" + e.PropertyName)
+                #endif
+                )
+
+                child.Encapsulated <- true
+                child.Encapsulated <- false
+
+        // instead of using a parent/base class: use this method! 
+        let createInpc event name defaultValue = InpcWrapper(triggerPropChanged event name, defaultValue)
+
+        // sample class for the createInpc method above
+        type InpcEventWrappedSample () = 
+            let propertyChanged = new Event<_, _>()
+            let encapsulated = createInpc propertyChanged "Encapsulated" false
+
+            member x.Encapsulated 
+                with get() = encapsulated.Value
+                and set v = if v <> encapsulated.Value then encapsulated.Value <- v
+
+            interface INotifyPropertyChanged with
+                [<CLIEvent>]
+                member __.PropertyChanged = propertyChanged.Publish
+            abstract member RaisePropertyChanged : string -> unit
+            default x.RaisePropertyChanged(propertyName : string) = propertyChanged.Trigger(x, PropertyChangedEventArgs(propertyName))
+            member x.PropertyChanged = propertyChanged
 
 module ExpressionHelpers = 
     open System.Reflection
