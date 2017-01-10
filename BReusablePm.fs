@@ -587,7 +587,14 @@ module Diagnostics =
                         logS (Some scopeName) [] (sprintf "  <Elapsed>%A</Elapsed>" sw.ElapsedMilliseconds)
                         logS (Some scopeName) [] (sprintf "<%s/>" scopeName)
         }
-
+    let addDataMaybe k v (ex:#exn) =
+        if not <| ex.Data.Contains k then
+            ex.Data.Add (k, v)
+    let tryDataAdd (_:#exn) f =
+        try
+            f()
+        with ex ->
+            logEx (Some "error adding exception data") ex
 
 module Option = // https://github.com/fsharp/fsharp/blob/master/src/fsharp/FSharp.Core/option.fs
 //    [<AutoOpen>]
