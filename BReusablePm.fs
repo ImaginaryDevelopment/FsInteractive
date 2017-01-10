@@ -12,7 +12,7 @@ let breakpoint f x =
     result
 
 // based on http://stackoverflow.com/a/2362114/57883
-let castAs<'t> (o:obj): 't option = 
+let castAs<'t> (o:obj): 't option =
     match o with
     | :? 't as x -> Some x
     | _ -> None
@@ -39,17 +39,17 @@ let inline isNullOrEmptyToOpt s =
     if String.IsNullOrEmpty s then None else Some s
 
 //if more is needed consider humanizer or inflector
-let toPascalCase s = 
+let toPascalCase s =
     s
     |> Seq.mapi (fun i l -> if i=0 && Char.IsLower l then Char.ToUpper l else l)
     |> String.Concat
 
-let humanize camel :string = 
+let humanize camel :string =
     seq {
         let pascalCased = toPascalCase camel
         yield pascalCased.[0]
         for l in  pascalCased |> Seq.skip 1 do
-            if System.Char.IsUpper l then 
+            if System.Char.IsUpper l then
                 yield ' '
                 yield l
             else
@@ -58,7 +58,7 @@ let humanize camel :string =
     |> String.Concat
 
 
-module Debug = 
+module Debug =
     open System.Collections.ObjectModel
 
     type FListener(fWrite: _ -> unit,fWriteLn:_ -> unit, name) =
@@ -81,11 +81,11 @@ module Debug =
             |> source.Add
         new(source, lineMap:Func<_, _>) = new FLineListener(source,fLineMap = if isNull lineMap then None else Some lineMap.Invoke)
 
-        override __.Write (msg:string) = 
+        override __.Write (msg:string) =
             addText msg false
             lastWasWriteNotWriteLine <- true
 
-        override __.WriteLine (msg:string) = 
+        override __.WriteLine (msg:string) =
             addText msg true
             lastWasWriteNotWriteLine <- false
 
@@ -98,7 +98,7 @@ module Debug =
             let toIgnorePatterns = [
                 @"BindingExpression path error: 'Title' property not found on 'object' ''String' \(HashCode=-[0-9]+\)'. BindingExpression:Path=Title; DataItem='String' \(HashCode=-[0-9]+\); target element is 'ContentPresenter' \(Name='Content'\); target property is 'ResourceKey' \(type 'String'\)"
             ]
-            let regMatch p = 
+            let regMatch p =
                 let m = Text.RegularExpressions.Regex.Match(msg,p)
                 if m.Success then
                     Some p
@@ -108,23 +108,23 @@ module Debug =
             let matchedIgnorePattern = toIgnorePatterns |> Seq.choose regMatch |> Seq.tryHead
             match matchedIgnorePattern with
             | Some _ -> ()
-            | None -> 
+            | None ->
                 if breakOnAll && Debugger.IsAttached then
                     Debugger.Break()
                 else ()
 
-    type Listener(created:DateTime, name) = 
+    type Listener(created:DateTime, name) =
         inherit TraceListener(name)
 
         new(created) = new Listener(created, null)
 
         override __.Write (msg:string) = printf "%s" msg
-        override __.WriteLine (msg:string) = 
+        override __.WriteLine (msg:string) =
             printfn "%s" msg
         member __.Created= created
 
 
-    let inline assertIfDebugger b = 
+    let inline assertIfDebugger b =
         if not b then
             printfn "Assertion failed"
             if Diagnostics.Debugger.IsAttached then
@@ -150,7 +150,7 @@ module Tuple2 = // idea and most code taken from https://gist.github.com/ploeh/6
         match f x with
         | Some x -> Some (x, y)
         | None -> None
-    let optionOfSnd f (x,y) = 
+    let optionOfSnd f (x,y) =
         match f y with
         | Some y -> Some (x,y)
         | None -> None
@@ -176,7 +176,7 @@ type System.Func<'tResult> with
 module Seq =
     // Seq.take throws if there are no items
     let takeLimit limit =
-        let mutable count = 0 
+        let mutable count = 0
         Seq.takeWhile(fun _ ->
             let result = count < limit
             count <- count + 1
@@ -187,7 +187,7 @@ module Seq =
             use enumerator = source.GetEnumerator()
             while enumerator.MoveNext() do
                 toPopulate.Add(enumerator.Current)
-    let ofType<'t> items = 
+    let ofType<'t> items =
         items |> Seq.cast<obj> |> Seq.choose (fun x -> match x with | :? 't as x -> Some x | _ -> None )
 
 //module List =
@@ -197,7 +197,7 @@ module Seq =
 //        items - toScrape
 
     // return a Tuple where (A, B) (both present if they have a match)
-    let forceJoin b a = 
+    let forceJoin b a =
         let b = Set.ofList b
         let a = Set.ofList a
         let x = Set.intersect a b
@@ -212,7 +212,7 @@ module Seq =
 module Observables =
     open System.Collections.ObjectModel
     open System.Collections.Specialized
-    let bindObsTToObsObjDispatched (obsCollection:ObservableCollection<'t>) fDispatch = 
+    let bindObsTToObsObjDispatched (obsCollection:ObservableCollection<'t>) fDispatch =
         let obsObj = ObservableCollection<obj>()
         obsCollection.CollectionChanged.Add (fun e ->
             match e.Action with
@@ -246,7 +246,7 @@ module Observables =
                     )
                 )
             | NotifyCollectionChangedAction.Reset ->
-                fDispatch (fun () -> 
+                fDispatch (fun () ->
                     obsObj.Clear()
                     if not <| isNull e.NewItems then
                         e.NewItems
@@ -257,7 +257,7 @@ module Observables =
 
         )
         obsObj
-    let bindObsTToObsObj (obsCollection:ObservableCollection<'t>) = 
+    let bindObsTToObsObj (obsCollection:ObservableCollection<'t>) =
         bindObsTToObsObjDispatched obsCollection (fun f -> f())
 // |Null|Value| already in use by Nullable active pattern
 
@@ -282,16 +282,16 @@ type System.String with
     static member startsWithI (toMatch:string) (x:string) = not <| isNull x && not <| isNull toMatch && toMatch.Length > 0 && x.StartsWith(toMatch, String.defaultComparison)
     static member isNumeric (x:string) = not <| isNull x && x.Length > 0 && x |> String.forall Char.IsNumber
 //    static member before (delimiter:string) (x:string) = x.Substring(0, x.IndexOf delimiter)
-//    static member after (delimiter:string) (x:string) =  
+//    static member after (delimiter:string) (x:string) =
 //        match x.IndexOf delimiter with
 //        | i when i < 0 -> failwithf "after called without matching substring in '%s'(%s)" x delimiter
 //        | i -> x.Substring(i + delimiter.Length)
     static member split (items:string seq) options (x:string) = x.Split(items |> Array.ofSeq, options)
     static member splitLines(x:string) = x.Split([| "\r\n";"\n"|], StringSplitOptions.None)
-    
-    static member beforeAnyOf (delimiters:string list) (x:string) = 
-        let index, _ = 
-            delimiters 
+
+    static member beforeAnyOf (delimiters:string list) (x:string) =
+        let index, _ =
+            delimiters
             |> Seq.map (fun delimiter -> x.IndexOf(delimiter),delimiter)
             |> Seq.filter(fun (index,_) -> index >= 0)
             |> Seq.minBy (fun (index, _) -> index)
@@ -299,8 +299,8 @@ type System.String with
 
 [<AutoOpen>]
 module StringPatterns =
-    
-    let (|NullString|Empty|WhiteSpace|ValueString|) (s:string) = 
+
+    let (|NullString|Empty|WhiteSpace|ValueString|) (s:string) =
         match s with
         | null -> NullString
         | "" -> Empty
@@ -310,7 +310,7 @@ module StringPatterns =
     let (|StringEqualsI|_|) s1 (toMatch:string) = if String.equalsI toMatch s1 then Some() else None
     let (|IsNumeric|_|) (s:string) = if not <| isNull s && s.Length > 0 && s |> String.forall Char.IsNumber then Some() else None
 
-    let inline (|IsTOrTryParse|_|) (t,parser) (x:obj): 't option = 
+    let inline (|IsTOrTryParse|_|) (t,parser) (x:obj): 't option =
         match x with
         | v when v.GetType() = t -> Some (v :?> 't)
         | :? string as p ->
@@ -319,9 +319,9 @@ module StringPatterns =
             | _, _ -> None
         | _ -> None
 
-    let (|Int|_|) (x:obj) = 
+    let (|Int|_|) (x:obj) =
         match x with
-        | :? string as p -> 
+        | :? string as p ->
             let success,value = System.Int32.TryParse(p)
             if success then
                 Some value
@@ -329,14 +329,14 @@ module StringPatterns =
         | _ -> None
 
 [<AutoOpen>]
-module StringHelpers = 
+module StringHelpers =
     open StringPatterns
     let contains (sub:string) (x:string) = if isNull x then false elif isNull sub || sub = "" then failwithf "bad contains call" else x.IndexOf(sub, String.defaultComparison) >= 0
     let containsI (sub:string) (x:string) = if isNull x then false elif isNull sub || sub = "" then failwithf "bad contains call" else x.IndexOf(sub, String.defaultComparison) >= 0
     let trim = String.trim
     let replace (target:string) (replacement) (str:string) = if String.IsNullOrEmpty target then invalidOp "bad target" else str.Replace(target,replacement)
     let delimit delimiter (values:#seq<string>) = String.Join(delimiter, Array.ofSeq values)
-    let after (delimiter:string) (x:string) =  
+    let after (delimiter:string) (x:string) =
         match x.IndexOf delimiter with
         | i when i < 0 -> failwithf "after called without matching substring in '%s'(%s)" x delimiter
         | i -> x.Substring(i + delimiter.Length)
@@ -347,7 +347,7 @@ module StringHelpers =
     let substring i (x:string) = x.Substring i
     let substring2 i length (x:string)  = x.Substring(i, length)
 
-    let isValueString s = 
+    let isValueString s =
         match s with
         | ValueString -> true
         | _ -> false
@@ -355,28 +355,28 @@ module StringHelpers =
 // based on http://stackoverflow.com/questions/15115050/f-type-constraints-on-enums
 type System.Enum with // I think enum<int> is the only allowed enum-ish constraint allowed in all of .net
     static member parse<'t when 't : enum<int>> x = Enum.Parse(typeof<'t>,x)
-    static member parseT t x = Enum.Parse(t, x) 
+    static member parseT t x = Enum.Parse(t, x)
     static member fromString<'t when 't:enum<int>> x = Enum.parse<'t> x :?> 't
     static member getName<'t when 't : enum<int>> x = Enum.GetName(typeof<'t>,x)
-    static member getAll<'t when 't : enum<int>>() = 
+    static member getAll<'t when 't : enum<int>>() =
         Enum.GetValues(typeof<'t>)
         |> Seq.cast<int>
         |> Seq.map (fun x -> Enum.getName<'t> x)
         |> Seq.map (fun x -> Enum.parse<'t> x :?> 't)
-    static member fromInt<'t when 't :enum<int>>(i:int) = 
+    static member fromInt<'t when 't :enum<int>>(i:int) =
         Enum.getName<'t> i
         |> fun x -> Enum.parse<'t> x :?> 't
 
- 
+
 type System.DateTime with
     static member addDays dy (dt:DateTime) = dt.AddDays dy
     static member addHours h (dt:DateTime) = dt.AddHours h
     static member addMinutes min (dt:DateTime) = dt.AddMinutes min
     static member toShortDateString (dt:DateTime) = dt.ToShortDateString()
     // taken from SO http://stackoverflow.com/a/1595311/57883
-    static member getAge  (now:DateTime) (dt:DateTime) = 
+    static member getAge  (now:DateTime) (dt:DateTime) =
         let age = now.Year - dt.Year
-        if (now.Month < dt.Month || (now.Month = dt.Month && now.Day < dt.Day)) then 
+        if (now.Month < dt.Month || (now.Month = dt.Month && now.Day < dt.Day)) then
             age - 1
         else
             age
@@ -385,12 +385,12 @@ type System.DateTime with
     //public static string CalculateAge(DateTime birthDate, DateTime now)
     static member getAgeDisplay (now:DateTime) (dob:DateTime) =
         let years = DateTime.getAge now dob
-        let _days,now = 
+        let _days,now =
             let days = now.Day - dob.Day
             if days < 0 then
                 let newNow = now.AddMonths(-1)
                 let totalDays = now - newNow
-                let totalDays = int totalDays.TotalDays 
+                let totalDays = int totalDays.TotalDays
                 days + totalDays,newNow
             else days,now
 
@@ -410,20 +410,20 @@ type System.TimeSpan with
 
 
 [<CompilationRepresentation (CompilationRepresentationFlags.ModuleSuffix)>] // for C# access
-module DateTime = 
+module DateTime =
     let getAgeDisplay now dob = DateTime.getAgeDisplay now dob
 
 // Railway Oriented Programming
-type Rail<'tSuccess,'tFailure> = 
+type Rail<'tSuccess,'tFailure> =
     |Happy of 'tSuccess
     |Unhappy of 'tFailure
 
 [<RequireQualifiedAccess>]
-module Railway = 
+module Railway =
 
     /// apply either a success function or a failure function
-    let inline either happyFunc unhappyFunc twoTrackInput = 
-        match twoTrackInput with 
+    let inline either happyFunc unhappyFunc twoTrackInput =
+        match twoTrackInput with
         |Happy s -> happyFunc s
         |Unhappy u -> unhappyFunc u
 
@@ -441,14 +441,14 @@ module Railway =
     /// primary design purpose: adding data to the failure track
     let inline bind' f = either (Happy) f
 
-    let toHappyOption = 
+    let toHappyOption =
         function
         | Happy s -> s |> Some
         | _ -> None
 
     /// An adapter that takes a normal one-track function and turns it into a switch function, and also catches exceptions
     /// could use id instead of a full exnHandler function for cases you just want the exception
-    let inline tryCatch f exnHandler x = 
+    let inline tryCatch f exnHandler x =
         try
             f x |> Happy
         with ex -> exnHandler ex |> Unhappy
@@ -456,11 +456,11 @@ module Railway =
 module Rop =
 
     type Error = {Property : string; Message : string}
-    type Result<'a> = 
+    type Result<'a> =
         | Success of 'a
         | Fail of Error
 
-    let bind f x = 
+    let bind f x =
         match x with Success x -> f x |Fail err -> Fail err
 
     let bind' f1 f2 x =
@@ -480,25 +480,25 @@ let lock (lockobj:obj) f =
   finally
     System.Threading.Monitor.Exit lockobj
 
-let (|InvariantEqualI|_|) (str:string) arg = 
+let (|InvariantEqualI|_|) (str:string) arg =
    if String.Compare(str, arg, StringComparison.InvariantCultureIgnoreCase) = 0
    then Some() else None
 
-let (|StartsWith|_|) (str:string) arg = 
+let (|StartsWith|_|) (str:string) arg =
     if str.StartsWith(arg) then Some() else None
 
-let (|OrdinalEqualI|_|) (str:string) arg = 
+let (|OrdinalEqualI|_|) (str:string) arg =
    if String.Compare(str, arg, StringComparison.OrdinalIgnoreCase) = 0
    then Some() else None
 
-let buildCmdString fs arg i :string*string*obj = 
+let buildCmdString fs arg i :string*string*obj =
     let applied = sprintf fs arg
     let replacement = (sprintf"{%i}" i)
     let replace target = replace target replacement
-    let replaced = 
+    let replaced =
         fs.Value
-        |> replace "'%s'" 
-        |> replace "'%i'" 
+        |> replace "'%s'"
+        |> replace "'%i'"
         |> replace "'%d'"
     applied,replaced, upcast arg
 
@@ -511,11 +511,11 @@ let inline SetAndNotify eq setter notifier=
         setter()
         notifier()
         true
-let inline SetAndNotifyEquality field value setter notifier = 
+let inline SetAndNotifyEquality field value setter notifier =
     let eq () = EqualityComparer<'T>.Default.Equals(field, value)
     SetAndNotify eq setter notifier
 
-let SetAndNotifyEqualityC (field:'a byref, value:'a, notifier:System.Action) = 
+let SetAndNotifyEqualityC (field:'a byref, value:'a, notifier:System.Action) =
     if EqualityComparer<'a>.Default.Equals(field,value) then
         false
     else
@@ -523,17 +523,17 @@ let SetAndNotifyEqualityC (field:'a byref, value:'a, notifier:System.Action) =
         notifier.Invoke()
         true
 
-module Diagnostics = 
+module Diagnostics =
     open System.Diagnostics
-    let tryAsyncCatch f = 
+    let tryAsyncCatch f =
         f
         |> Async.Catch
         |> Async.Ignore
         |> Async.Start
 
-    let filename (dt:DateTime) = 
-        let pid = 
-            try 
+    let filename (dt:DateTime) =
+        let pid =
+            try
                 let proc = System.Diagnostics.Process.GetCurrentProcess()
                 sprintf "%i_%i" proc.Id proc.SessionId
 
@@ -541,14 +541,14 @@ module Diagnostics =
         let dt = dt.ToString("yyyyMMdd")
         sprintf "DebugLog_%s_%s.txt" dt pid
 
-    let fileLog filename (dt:DateTime) topic attrs s = 
+    let fileLog filename (dt:DateTime) topic attrs s =
         let attrs = (sprintf "dt=\"%A\"" dt)::attrs |> delimit " "
         let topic = match topic with |Some t -> t |_ -> "Message"
         let msg = sprintf "<%s %s>%s</%s>%s" topic attrs s topic Environment.NewLine
         System.IO.File.AppendAllText(filename,msg)
 
     let logS topic attrs s =
-        if String.IsNullOrEmpty s = false then 
+        if String.IsNullOrEmpty s = false then
             printfn "%s" s
             Debug.WriteLine s
 
@@ -557,7 +557,7 @@ module Diagnostics =
         let fileLog'= fileLog filename dt topic attrs
         try
             fileLog' s
-        with |ex -> 
+        with |ex ->
             printfn "Exception attemping to log:%A" ex
 
     let LogS topic s =
@@ -569,20 +569,20 @@ module Diagnostics =
     let logExS topic s ex = sprintf "%s:%A" s ex |> logS topic []
     let LogExS topic s ex = logExS (isNullOrEmptyToOpt topic) s ex
 
-    let BeginLogScope scopeName= 
+    let BeginLogScope scopeName=
         let pid = Process.GetCurrentProcess().Id
         logS (Some scopeName) [ sprintf "pid=\"%i\"" pid ] ""
-        { new System.IDisposable 
+        { new System.IDisposable
             with member __.Dispose() = logS (Some scopeName) [] (sprintf "<%s/>" scopeName)
         }
 
-    let BeginTimedLogScope scopeName= 
+    let BeginTimedLogScope scopeName=
         let pid = Process.GetCurrentProcess().Id
         let sw = Stopwatch.StartNew()
         logS (Some scopeName) [ sprintf "pid=\"%i\"" pid ] ""
-        { 
+        {
             new System.IDisposable
-                with member __.Dispose() = 
+                with member __.Dispose() =
                         sw.Stop()
                         logS (Some scopeName) [] (sprintf "  <Elapsed>%A</Elapsed>" sw.ElapsedMilliseconds)
                         logS (Some scopeName) [] (sprintf "<%s/>" scopeName)
@@ -608,50 +608,50 @@ module Option = // https://github.com/fsharp/fsharp/blob/master/src/fsharp/FShar
     let getOrDefault (default': 'a) (n: 'a option) = match n with| Some x -> x | None -> default'
     let getOrDefault' (default': 'a Lazy) (n: 'a option) = match n with| Some x -> x | None -> default'.Force()
     // for types the compiler insists aren't nullable, but maybe C# is calling
-    let ofUnsafeNonNullable x = 
+    let ofUnsafeNonNullable x =
         match box x with
         | null -> None
         | _ -> Some x
-    let toUnsafeObj x = 
+    let toUnsafeObj x =
         match x with
         | Some x -> box x
         | None -> null
 
     (* End Brandon *)
     [<Obsolete("Use the built-in Option.ofNullable")>]
-    let fromNullable (n: _ Nullable) = 
+    let fromNullable (n: _ Nullable) =
         if n.HasValue
             then Some n.Value
             else None
 
 
-module Reflection = 
+module Reflection =
     open System.Reflection
     open Microsoft.FSharp.Reflection
-    let rec compareProps goDeep asTypeOpt blacklist nameOpt expected actual = 
+    let rec compareProps goDeep asTypeOpt blacklist nameOpt expected actual =
         let doNotDescendTypes = [typeof<string>; typeof<DateTime>; typeof<Type>;]
         // for types we don't want to take a reference to, but should not be descended
         let doNotDescendTypeNames = ["System.Windows.Threading.Dispatcher";"System.Windows.DependencyObjectType";"System.Windows.Media.Transform"]
-        let t = asTypeOpt |> Option.getOrDefault' (Lazy(Func<_>(fun () -> expected.GetType()))) 
+        let t = asTypeOpt |> Option.getOrDefault' (Lazy(Func<_>(fun () -> expected.GetType())))
         let props = t.GetProperties()
         let toWalk = props |> Seq.filter(fun p -> blacklist |> Seq.contains p.Name |> not && p.GetMethod.GetParameters().Length = 0)
         let blacklist = blacklist |> Seq.except (props |> Seq.map (fun p -> p.Name)) |> List.ofSeq
         seq{
             for p in toWalk do
                 printfn "Getting property %s via type %s(%s)" p.Name t.Name t.FullName
-                let valuesOpt = 
+                let valuesOpt =
                     try
-                        Some (p.GetValue(expected), p.GetValue(actual))
+                        Some (p.GetValue expected , p.GetValue actual)
                     with ex ->
                         ex.Data.Add("Type", t.Name)
                         ex.Data.Add("TypeFullName", t.FullName)
                         None
                 match valuesOpt with
-                | Some (expected,actual) -> 
-                    if goDeep 
-                            && not <| isNull expected 
-                            && not <| isNull actual 
-                            && doNotDescendTypes |> Seq.contains p.PropertyType |> not 
+                | Some (expected,actual) ->
+                    if goDeep
+                            && not <| isNull expected
+                            && not <| isNull actual
+                            && doNotDescendTypes |> Seq.contains p.PropertyType |> not
                             && doNotDescendTypeNames |> Seq.contains p.PropertyType.FullName |> not
                         then
                         printfn "Going deep into %s via type %s(%s)" p.Name t.Name t.FullName
@@ -662,8 +662,8 @@ module Reflection =
                 | None -> ()
             }
 
-    let rec typeMatch t (g:Type) = 
-        if t = typeof<obj> then 
+    let rec typeMatch t (g:Type) =
+        if t = typeof<obj> then
             None
         elif g.IsInterface then
             let ints = if t.IsInterface then [| t |] else t.GetInterfaces()
@@ -676,29 +676,29 @@ module Reflection =
     /// match list with
     /// | TypeDefOf (isType:List<_>) typeArgs -> sprintf "Yay matched1 : %A" typeArgs \r\n
     /// | _ -> "boo"
-    /// Also works for some types: 
+    /// Also works for some types:
     /// | TypeDefOf (null:List<_>) typeArgs -> sprintf "Yay matched: %A" typeArgs
-    let (|TypeDef|_|) (_:'a) (value:obj) = 
+    let (|TypeDef|_|) (_:'a) (value:obj) =
         let typeDef = typedefof<'a>
-        if obj.ReferenceEquals(value, null) then 
+        if obj.ReferenceEquals(value, null) then
             None
         else
             let typ = value.GetType()
             if typ.Name = "RuntimeType" then failwithf "Invalid use of |TypeDef|"
 //            let gtd = if typ.IsGenericType then typ.GetGenericTypeDefinition() |> Some else None
-            if typ.IsGenericType && typ.GetGenericTypeDefinition() = typeDef then 
+            if typ.IsGenericType && typ.GetGenericTypeDefinition() = typeDef then
                 Some(typ.GetGenericArguments())
-            else 
+            else
                 let typeArgs = typeMatch typ typeDef
                 typeArgs
 
     // for when you don't have a value or you want a switch on an instance of Type
     // or you want to unbox as one of a number of possible types
     // do not use where `| :?` is appropriate
-    let (|TypeOf|_|) (_:'a) t = 
+    let (|TypeOf|_|) (_:'a) t =
         if t = typeof<'a> then Some ()
-        else 
-            //printfn "did not match %A to %A" typeof<'a> t 
+        else
+            //printfn "did not match %A to %A" typeof<'a> t
             None
 
     // instead of null in TypeOf or TypeDef matches for types that don't allow null
@@ -709,10 +709,10 @@ module Reflection =
             let m = t.GetMethod(name)
             if not <| isNull m then
                 yield t,m
-            if recurse then 
+            if recurse then
                 yield! t.GetInterfaces() |> Seq.collect (getMethod recurse name)
         }
-    let rec getMethods recurse (t:Type) = 
+    let rec getMethods recurse (t:Type) =
         seq {
             yield (t,t.GetMethods())
             if recurse then
@@ -722,17 +722,17 @@ module Reflection =
     // primarily for use hand-in-hand with the 'Nullish' active pattern
     //unhandled: _ Nullable option
     /// for boxed objects that may be 'Valueable`
-    let rec getReflectionValueOpt (genTypeOpt:Type option) (typeOpt:Type option)  (o:obj) = 
+    let rec getReflectionValueOpt (genTypeOpt:Type option) (typeOpt:Type option)  (o:obj) =
         match o,genTypeOpt, typeOpt with
         | null, _, _ -> None
-        | _ , Some gt ,_  -> 
+        | _ , Some gt ,_  ->
             // based on http://stackoverflow.com/a/13367848/57883
             match gt.GetProperty "Value" with
             | null -> None
             | prop ->
                 let v = prop.GetValue(o,null)
                 Some v
-        | _, _,Some t -> 
+        | _, _,Some t ->
             match t.IsGenericType with
             | true -> getReflectionValueOpt typeOpt (t.GetGenericTypeDefinition() |> Some) o
             | false -> Some o
@@ -741,16 +741,16 @@ module Reflection =
     //method taken from http://stackoverflow.com/q/4604139/57883
     let methodSourceName (mi:MemberInfo) =
         mi.GetCustomAttributes(true)
-        |> Array.tryPick 
+        |> Array.tryPick
                 (function
                     | :? CompilationSourceNameAttribute as csna -> Some(csna)
                     | _ -> None)
         |> (function | Some(csna) -> csna.SourceName | None -> mi.Name)
-    
+
     let rec getAllDUCases fNonUnionArg t : obj list =
         let getAllDUCases = getAllDUCases fNonUnionArg
         // both of the following are taken from http://stackoverflow.com/questions/6497058/lazy-cartesian-product-of-multiple-sequences-sequence-of-sequences
-        let cartesian_product sequences = 
+        let cartesian_product sequences =
 #if FSHARP44
             let step acc sequence = seq {
                 for x in acc do
@@ -760,28 +760,28 @@ module Reflection =
 #else
             sequences |> ignore
             Array.empty
-//        let cartesian_product sequences = 
-//            let step acc sequence = seq { 
-//                for x in acc do 
-//                for y in sequence do 
+//        let cartesian_product sequences =
+//            let step acc sequence = seq {
+//                for x in acc do
+//                for y in sequence do
 //                yield Seq.append x [y] }
-//            Seq.fold step (Seq.singleton Seq.empty) sequences 
+//            Seq.fold step (Seq.singleton Seq.empty) sequences
 #endif
 
         let makeCaseTypes (fUnion:Type-> obj list) (fNonUnionArg:Type -> obj) (uc: UnionCaseInfo) : UnionCaseInfo*(obj list list) =
-            let constructorArgs = 
-                uc.GetFields() 
-                |> Seq.map (fun f -> 
+            let constructorArgs =
+                uc.GetFields()
+                |> Seq.map (fun f ->
                     if FSharpType.IsUnion f.PropertyType then
                         let childTypes = fUnion f.PropertyType
-                        if 
+                        if
                             childTypes
                             |> Seq.exists (fun ct -> FSharpType.IsUnion (ct.GetType()) |> not) then
                                 failwithf "fUnion returned a bad type in list %A" childTypes
                         childTypes
                     else [ fNonUnionArg f.PropertyType] )
                 |> List.ofSeq
-            let allCombinationsOfFieldPossibles = 
+            let allCombinationsOfFieldPossibles =
                 cartesian_product constructorArgs
                 |> Seq.map List.ofSeq
                 |> List.ofSeq
@@ -792,7 +792,7 @@ module Reflection =
             FSharpType.GetUnionCases t
             |> Seq.map (makeCaseTypes getAllDUCases fNonUnionArg)
             |> List.ofSeq
-        let result = 
+        let result =
             result
             |> Seq.map (fun (uc,allFieldComboCases) -> allFieldComboCases |> Seq.map (fun args-> FSharpValue.MakeUnion(uc,args |> Array.ofList)))
             |> Seq.collect id
@@ -803,9 +803,9 @@ module Reflection =
 
     module Assemblies =
         // http://stackoverflow.com/a/28319367/57883
-        let getAssemblyFullPath (assembly:Assembly) = 
+        let getAssemblyFullPath (assembly:Assembly) =
             let codeBaseFailedAssert () = Debug.Assert(false, "CodeBase evaluation failed! - Using Location as fallback.")
-            let fullPath = 
+            let fullPath =
                 match assembly.CodeBase with
                 | null -> codeBaseFailedAssert () ;assembly.Location
                 | codeBasePseudoUrl ->
@@ -819,10 +819,10 @@ module Reflection =
 
 open System.Linq.Expressions
 open Microsoft.FSharp.Quotations.Patterns
-module QuotationHelpers = 
+module QuotationHelpers =
     open Reflection
 
-    let rec getQuoteMemberName expr = 
+    let rec getQuoteMemberName expr =
         match expr with
         |Call (_,mi,_) -> methodSourceName mi
         |Lambda (_,expr) -> getQuoteMemberName expr
@@ -836,13 +836,13 @@ module QuotationHelpers =
         let expr = expr :> Quotations.Expr
         getQuoteMemberName expr
 
-    let getTypeName<'t> = 
+    let getTypeName<'t> =
         match <@ fun (_:'t) -> () @> with
         | Lambda(x,_expr) -> x.Type.Name
         | x -> failwithf "getTypeName failed for %A" x
 
 type Microsoft.FSharp.Core.Option<'t> with
-    static member OfT (targetOptionType:Type) value = 
+    static member OfT (targetOptionType:Type) value =
         let someMethod = targetOptionType.GetMethod("Some")
         let wrappedValue = someMethod.Invoke(null, [| value |])
         wrappedValue
@@ -850,13 +850,13 @@ type Microsoft.FSharp.Core.Option<'t> with
 let (|NullableNull|NullableValue|) (x: _ Nullable) =
     if x.HasValue then NullableValue x.Value else NullableNull
 // Nullish covers actual null, NullableNull, and None
-let (|Nullish|NullableObj|SomeObj|GenericObj|NonNullObj|) (o:obj) = 
+let (|Nullish|NullableObj|SomeObj|GenericObj|NonNullObj|) (o:obj) =
     // consider including empty string in nullish?
     Debug.Assert(Nullable<int>() |> box |> isNull)
     Debug.Assert(None |> box |> isNull)
     match isNull o with
     | true -> Nullish
-    | false -> 
+    | false ->
         let t = o |> getType
         // a more direct translation would have been t |> Nullable.GetUnderlyingType|> isNull |> not
         match t.IsGenericType with
@@ -927,7 +927,7 @@ module Nullable = //http://bugsquash.blogspot.com/2010/09/nullable-in-f.html als
         if a.HasValue && b.HasValue
             then Nullable(op a.Value b.Value)
             else Nullable()
- 
+
     let mapBoolOp op a b =
         match a,b with
         | NullableValue x, NullableValue y -> op x y
@@ -941,31 +941,31 @@ module Ideas =
     ()
 
 // encapsulate INPC such that, fields can hold INPC values
-module Inpc = 
+module Inpc =
     open System.ComponentModel
     let triggerPropChanged (event:Event<PropertyChangedEventHandler,PropertyChangedEventArgs>) name () =
         event.Trigger(null, PropertyChangedEventArgs(name))
     // consider adding a param for comparison, so the inpc won't fire if they are equal
     // or the parent property exposure could do it?
-    type InpcWrapper<'T> (fNotifier, defaultValue:'T) = 
+    type InpcWrapper<'T> (fNotifier, defaultValue:'T) =
         let mutable field = defaultValue
         // consider:
         //member x.UnsafeSet v = field <- v
-        member __.Value 
+        member __.Value
             with get() = field
-            and set v = 
+            and set v =
                 field <- v
                 fNotifier()
 
-    // instead of using a parent/base class: use this method! 
+    // instead of using a parent/base class: use this method!
     let createInpc event name defaultValue = InpcWrapper(triggerPropChanged event name, defaultValue)
 
     // sample class for the createInpc method above
-    type InpcEventWrappedSample () = 
+    type InpcEventWrappedSample () =
         let propertyChanged = new Event<_, _>()
         let encapsulated = createInpc propertyChanged "Encapsulated" false
 
-        member x.Encapsulated 
+        member x.Encapsulated
             with get() = encapsulated.Value
             and set v = if v <> encapsulated.Value then encapsulated.Value <- v
 
@@ -976,14 +976,14 @@ module Inpc =
         default x.RaisePropertyChanged(propertyName : string) = propertyChanged.Trigger(x, PropertyChangedEventArgs(propertyName))
         member x.PropertyChanged = propertyChanged
 
-module ExpressionHelpers = 
+module ExpressionHelpers =
     open System.Reflection
-    let maybeUnary (exp:Expression<_>) = 
+    let maybeUnary (exp:Expression<_>) =
         match exp.Body with
         | :? UnaryExpression as uExpr -> uExpr.Operand
         | x -> x
 
-    let inline getMember(expr:Expression<_>) = 
+    let inline getMember(expr:Expression<_>) =
         if expr = null then raise <| System.ArgumentNullException("expr")
         //if expr.Body :? MemberExpression = false then raise <| System.ArgumentException("The body must be a member expression")
         let memExpr = maybeUnary expr :?> MemberExpression
@@ -996,20 +996,20 @@ module ExpressionHelpers =
     let inline GetMemberTAct<'t> (expr:Expression<Action<'t>>) =
         getMember expr
 
-    let inline GetMemberTF(expr:Expression<Func<_>>) = 
+    let inline GetMemberTF(expr:Expression<Func<_>>) =
         getMember expr
 
-    let inline GetMemberTF2<'t> (expr:Expression<Func<'t,_>>) = 
+    let inline GetMemberTF2<'t> (expr:Expression<Func<'t,_>>) =
         getMember expr
 
     let getMethodOf (expr: Expression<_>) =
         let methExpr = expr.Body :?> MethodCallExpression
         methExpr.Method
 
-    let PropertyInfoOf<'T> (expr : Expression<Func<'T,_>>) = 
+    let PropertyInfoOf<'T> (expr : Expression<Func<'T,_>>) =
         let mem= getMember expr
         mem :?> PropertyInfo
 
-    let FieldInfoOf<'T> (expr : Expression<Func<_>>) = 
+    let FieldInfoOf<'T> (expr : Expression<Func<_>>) =
         let mem = getMember expr
         mem :?> FieldInfo
