@@ -7,11 +7,16 @@ open System.Diagnostics
 //consider pulling in useful functions from https://gist.github.com/ruxo/a9244a6dfe5e73337261
 
 // long pipe chains don't allow breakpoints anywhere inside
-let breakpoint f x =
+// does this need anything to prevent the method from being inlined/optimized away?
+let breakpoint x = 
+    let result = x
+    result
+let breakpointf f x =
     let result = f x
     result
 
 // based on http://stackoverflow.com/a/2362114/57883
+// mimic the C# as keyword
 let castAs<'t> (o:obj): 't option =
     match o with
     | :? 't as x -> Some x
@@ -24,6 +29,7 @@ let castAs<'t> (o:obj): 't option =
 
 // for statically typed parameters in an active pattern see: http://stackoverflow.com/questions/7292719/active-patterns-and-member-constraint
 
+/// super handy with operators like (*) and (-)
 /// take a function that expects 2 arguments and flips them before applying to the function
 let inline flip f x y = f y x
 /// take a tuple and apply the 2 arguments one at a time (from haskell https://www.haskell.org/hoogle/?hoogle=uncurry)
@@ -32,11 +38,13 @@ let uncurry f (x,y) = f x y
 let inline tee f x = f x; x
 /// does not work with null x
 let inline getType x = x.GetType()
-/// might not work with a box'd null
-let inline tryGetType<'t>(_:'t) = typeof<'t>
 
 let inline isNullOrEmptyToOpt s =
     if String.IsNullOrEmpty s then None else Some s
+
+// was toFormatString
+// with help from http://www.readcopyupdate.com/blog/2014/09/26/type-constraints-by-example-part1.html
+let inline toFormatString (f:string) (a:^a) = ( ^a : (member ToString:string -> string) (a,f))
 
 //if more is needed consider humanizer or inflector
 let toPascalCase s =
@@ -190,7 +198,9 @@ module Seq =
     let ofType<'t> items =
         items |> Seq.cast<obj> |> Seq.choose (fun x -> match x with | :? 't as x -> Some x | _ -> None )
 
-//module List =
+
+module List =
+//    is this work having/keeping?
 //    let except toScrape items =
 //        let toScrape = Set.ofList toScrape
 //        let items = Set.ofList items
@@ -261,14 +271,12 @@ module Observables =
         bindObsTToObsObjDispatched obsCollection (fun f -> f())
 // |Null|Value| already in use by Nullable active pattern
 
-// was toFormatString
-// with help from http://www.readcopyupdate.com/blog/2014/09/26/type-constraints-by-example-part1.html
-let inline toFormatString (f:string) (a:^a) = ( ^a : (member ToString:string -> string) (a,f))
-
 type System.Convert with
     static member ToGuid(o:obj) = o :?> Guid
     static member ToBinaryData(o:obj) = o :?> byte[] // http://stackoverflow.com/a/5371281/57883
 
+// I've been fighting/struggling with where to namespace/how to architect string functions, they are so commonly used, static members make it easier to find them
+// since typing `String.` with this module open makes them all easy to find
 type System.String with
 
     static member trim (s:string) = match s with | null -> null | s -> s.Trim()
@@ -297,6 +305,7 @@ type System.String with
             |> Seq.minBy (fun (index, _) -> index)
         x.Substring(0,index)
 
+// I've also been struggling with the idea that Active patterns are frequently useful as just methods, so sometimes methods are duplicated as patterns
 [<AutoOpen>]
 module StringPatterns =
 
@@ -306,9 +315,17 @@ module StringPatterns =
         | "" -> Empty
         | _ when String.IsNullOrWhiteSpace s -> WhiteSpace
         | _ -> ValueString
+    let (|StartsWith|_|) (str:string) arg = if str.StartsWith(arg) then Some() else None
     let (|StartsWithI|_|) s1 (toMatch:string) = if toMatch <> null && toMatch.StartsWith(s1, StringComparison.InvariantCultureIgnoreCase) then Some () else None
     let (|StringEqualsI|_|) s1 (toMatch:string) = if String.equalsI toMatch s1 then Some() else None
+    let (|InvariantEqualI|_|) (str:string) arg =
+       if String.Compare(str, arg, StringComparison.InvariantCultureIgnoreCase) = 0
+       then Some() else None
     let (|IsNumeric|_|) (s:string) = if not <| isNull s && s.Length > 0 && s |> String.forall Char.IsNumber then Some() else None
+
+    let (|OrdinalEqualI|_|) (str:string) arg =
+       if String.Compare(str, arg, StringComparison.OrdinalIgnoreCase) = 0
+       then Some() else None
 
     let inline (|IsTOrTryParse|_|) (t,parser) (x:obj): 't option =
         match x with
@@ -328,11 +345,15 @@ module StringPatterns =
             else None
         | _ -> None
 
+
+// not having to type `String.` on at least the used constantly is a huge reduction in typing
+// also helps with point-free style
 [<AutoOpen>]
 module StringHelpers =
     open StringPatterns
     let contains (sub:string) (x:string) = if isNull x then false elif isNull sub || sub = "" then failwithf "bad contains call" else x.IndexOf(sub, String.defaultComparison) >= 0
     let containsI (sub:string) (x:string) = if isNull x then false elif isNull sub || sub = "" then failwithf "bad contains call" else x.IndexOf(sub, String.defaultComparison) >= 0
+    
     let trim = String.trim
     let replace (target:string) (replacement) (str:string) = if String.IsNullOrEmpty target then invalidOp "bad target" else str.Replace(target,replacement)
     let delimit delimiter (values:#seq<string>) = String.Join(delimiter, Array.ofSeq values)
@@ -480,17 +501,6 @@ let lock (lockobj:obj) f =
   finally
     System.Threading.Monitor.Exit lockobj
 
-let (|InvariantEqualI|_|) (str:string) arg =
-   if String.Compare(str, arg, StringComparison.InvariantCultureIgnoreCase) = 0
-   then Some() else None
-
-let (|StartsWith|_|) (str:string) arg =
-    if str.StartsWith(arg) then Some() else None
-
-let (|OrdinalEqualI|_|) (str:string) arg =
-   if String.Compare(str, arg, StringComparison.OrdinalIgnoreCase) = 0
-   then Some() else None
-
 let buildCmdString fs arg i :string*string*obj =
     let applied = sprintf fs arg
     let replacement = (sprintf"{%i}" i)
@@ -502,8 +512,6 @@ let buildCmdString fs arg i :string*string*obj =
         |> replace "'%d'"
     applied,replaced, upcast arg
 
-let inline ActionInvoke2 (f:System.Action<_,_>) item1 item2 =
-        f.Invoke(item1,item2)
 
 let inline SetAndNotify eq setter notifier=
     if eq() then false
@@ -597,32 +605,25 @@ module Diagnostics =
             logEx (Some "error adding exception data") ex
 
 module Option = // https://github.com/fsharp/fsharp/blob/master/src/fsharp/FSharp.Core/option.fs
-//    [<AutoOpen>]
-    // Brandon
-//    module BReusable =
 
+    /// unsafe (Unchecked.defaultof<_>)
     let getValueOrDefault (n: 'a option) = match n with | Some x -> x | None -> Unchecked.defaultof<_>
 
     // the built-in exists, but the order here is more natural
-    //[<Obsolete("Use the built-in defaultArg n a")>]
     let getOrDefault (default': 'a) (n: 'a option) = match n with| Some x -> x | None -> default'
     let getOrDefault' (default': 'a Lazy) (n: 'a option) = match n with| Some x -> x | None -> default'.Force()
+
     // for types the compiler insists aren't nullable, but maybe C# is calling
     let ofUnsafeNonNullable x =
         match box x with
         | null -> None
         | _ -> Some x
+
+    // primarily for C# / wpf where the framework/ui are the only ones not accounting for this
     let toUnsafeObj x =
         match x with
         | Some x -> box x
         | None -> null
-
-    (* End Brandon *)
-    [<Obsolete("Use the built-in Option.ofNullable")>]
-    let fromNullable (n: _ Nullable) =
-        if n.HasValue
-            then Some n.Value
-            else None
 
 
 module Reflection =
@@ -671,6 +672,7 @@ module Reflection =
         elif t.IsGenericType && t.GetGenericTypeDefinition() = g then
             t.GetGenericArguments() |> Some
         else typeMatch (t.BaseType) g
+
     /// for when you need to see if something matches and expected Generic Type Definition ( you don't know "'t" but don't care)
     /// Sample (tested good) usage:
     /// match list with
@@ -747,6 +749,7 @@ module Reflection =
                     | _ -> None)
         |> (function | Some(csna) -> csna.SourceName | None -> mi.Name)
 
+    //currently this method is only called for diagnostic purposes
     let rec getAllDUCases fNonUnionArg t : obj list =
         let getAllDUCases = getAllDUCases fNonUnionArg
         // both of the following are taken from http://stackoverflow.com/questions/6497058/lazy-cartesian-product-of-multiple-sequences-sequence-of-sequences
@@ -757,9 +760,10 @@ module Reflection =
                 for y in sequence do
                 yield seq { yield! x; yield y}}
             Seq.fold step (Seq.singleton Seq.empty) sequences
-#else
+#else // TODO: F# 4.3 implementation 
             sequences |> ignore
             Array.empty
+// original from SO?
 //        let cartesian_product sequences =
 //            let step acc sequence = seq {
 //                for x in acc do
@@ -767,7 +771,7 @@ module Reflection =
 //                yield Seq.append x [y] }
 //            Seq.fold step (Seq.singleton Seq.empty) sequences
 #endif
-
+        // only works with no arg cases I bet
         let makeCaseTypes (fUnion:Type-> obj list) (fNonUnionArg:Type -> obj) (uc: UnionCaseInfo) : UnionCaseInfo*(obj list list) =
             let constructorArgs =
                 uc.GetFields()
@@ -819,6 +823,7 @@ module Reflection =
 
 open System.Linq.Expressions
 open Microsoft.FSharp.Quotations.Patterns
+// until we get the `nameof()` operator
 module QuotationHelpers =
     open Reflection
 
@@ -841,14 +846,17 @@ module QuotationHelpers =
         | Lambda(x,_expr) -> x.Type.Name
         | x -> failwithf "getTypeName failed for %A" x
 
+// this is unused, and it's value is questionable
 type Microsoft.FSharp.Core.Option<'t> with
     static member OfT (targetOptionType:Type) value =
         let someMethod = targetOptionType.GetMethod("Some")
         let wrappedValue = someMethod.Invoke(null, [| value |])
         wrappedValue
 
+// can't believe there's nothing built-in for this
 let (|NullableNull|NullableValue|) (x: _ Nullable) =
     if x.HasValue then NullableValue x.Value else NullableNull
+
 // Nullish covers actual null, NullableNull, and None
 let (|Nullish|NullableObj|SomeObj|GenericObj|NonNullObj|) (o:obj) =
     // consider including empty string in nullish?
@@ -869,8 +877,7 @@ let (|Nullish|NullableObj|SomeObj|GenericObj|NonNullObj|) (o:obj) =
                 SomeObj genericType
             else GenericObj genericType
 
-
-
+// this may not be even remotely useful, you can just |> Option.ofNullable
 module Nullable = //http://bugsquash.blogspot.com/2010/09/nullable-in-f.html also https://gist.github.com/mausch/571158
 //    [<AutoOpen>]
 //    module BReusable =
@@ -965,7 +972,7 @@ module Inpc =
         let propertyChanged = new Event<_, _>()
         let encapsulated = createInpc propertyChanged "Encapsulated" false
 
-        member x.Encapsulated
+        member __.Encapsulated
             with get() = encapsulated.Value
             and set v = if v <> encapsulated.Value then encapsulated.Value <- v
 
@@ -976,6 +983,7 @@ module Inpc =
         default x.RaisePropertyChanged(propertyName : string) = propertyChanged.Trigger(x, PropertyChangedEventArgs(propertyName))
         member x.PropertyChanged = propertyChanged
 
+// is this even remotely useful, when you have quotation helpers above?
 module ExpressionHelpers =
     open System.Reflection
     let maybeUnary (exp:Expression<_>) =
