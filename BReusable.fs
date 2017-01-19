@@ -7,7 +7,7 @@ module MatchHelpers =
     let (|IsTrue|_|) f x = if f x then Some() else None
 
 [<AutoOpen>]
-module FunctionalHelpersAuto = 
+module FunctionalHelpersAuto =
     let teeTuple f x = x, f x
     let tee f x = f x; x
     let flip f x y = f y x
@@ -32,13 +32,13 @@ module StringHelpersAuto =
     let containsIAnyOf (delimiters:string seq) (x:string) = delimiters |> Seq.exists(flip containsI x)
     let delimit (delimiter:string) (items:#seq<string>) = String.Join(delimiter,items)
     let endsWith (delimiter:string) (x:string) = x.EndsWith delimiter
-    let isNumeric (s:string)= not <| isNull s && s.Length > 0 && s |> String.forall Char.IsNumber 
+    let isNumeric (s:string)= not <| isNull s && s.Length > 0 && s |> String.forall Char.IsNumber
     let replace (target:string) (replacement) (str:string) = str.Replace (target,replacement)
     let splitLines(x:string) = x.Split([| "\r\n";"\n"|], StringSplitOptions.None)
     let startsWith (delimiter:string) (s:string) = s.StartsWith delimiter
     let startsWithI (delimiter:string) (s:string) = s.StartsWith(delimiter,String.defaultComparison)
     let trim (s:string) = s.Trim()
-//    let after (delimiter:string) (x:string) =  
+//    let after (delimiter:string) (x:string) =
 //        match x.IndexOf delimiter with
 //        | i when i < 0 -> failwithf "after called without matching substring in '%s'(%s)" x delimiter
 //        | i -> x.Substring(i + delimiter.Length)
@@ -46,12 +46,12 @@ module StringHelpersAuto =
     let before (delimiter:string) s = s|> String.subString2 0 (s.IndexOf delimiter)
     let afterOrSelf delimiter x = if x|> String.contains delimiter then x |> after delimiter else x
     let beforeOrSelf delimiter x = if x|> String.contains delimiter then x |> before delimiter else x
-    let afterLast delimiter x = 
+    let afterLast delimiter x =
         if x |> String.contains delimiter then failwithf "After last called with no match"
         x |> String.subString (x.LastIndexOf delimiter + delimiter.Length)
     let stringEqualsI s1 (toMatch:string)= not <| isNull toMatch && toMatch.Equals(s1, StringComparison.InvariantCultureIgnoreCase)
 
-    let (|NullString|Empty|WhiteSpace|ValueString|) (s:string) = 
+    let (|NullString|Empty|WhiteSpace|ValueString|) (s:string) =
         match s with
         | null -> NullString
         | "" -> Empty
@@ -59,13 +59,13 @@ module StringHelpersAuto =
         | _ -> ValueString s
 
 
-//    let (|StartsWithI|_|) (toMatch:string) (x:string) = 
+//    let (|StartsWithI|_|) (toMatch:string) (x:string) =
 //        if not <| isNull x && not <| isNull toMatch && toMatch.Length > 0 && x.StartsWith(toMatch, StringComparison.InvariantCultureIgnoreCase) then
-//            Some () 
+//            Some ()
 //        else None
 //    let (|StringEqualsI|_|) s1 (toMatch:string) = if stringEqualsI toMatch s1 then Some() else None
 //    let (|IsNumeric|_|) (s:string) = if isNumeric s then Some() else None
-//    let fooTest() = 
+//    let fooTest() =
 //        "xys"
 //        |> function
 //            | IsTrue (containsI "xy") -> true
@@ -78,21 +78,21 @@ module StringHelpersAuto =
     let dumpt (title:string) x = printfn "%s:%A" title x; x
 #endif
     let indent spacing (text:string) =
-        if String.IsNullOrEmpty(text) then 
-            String.Empty 
+        if String.IsNullOrEmpty(text) then
+            String.Empty
         else if trim text |> String.contains "\r\n" then
             "\r\n" +  text |> splitLines |> Seq.map (fun s -> spacing + s) |> delimit "\r\n"
         else text
 
 module Map =
-    let ofDictionary x = 
+    let ofDictionary x =
         x :> _ seq
         |> Seq.map (|KeyValue|)
         |> Map.ofSeq
 
 module PathHelpers=
     open System.IO
-    let findNewest path = 
+    let findNewest path =
         Directory.GetFiles path
         |> Seq.map File.GetLastWriteTime
         |> Seq.max
@@ -104,24 +104,24 @@ module Railways =
         | Success of 't
         | Failure of 'tError
     /// rail -> one track function lifted to pretend it is two track
-    let map f1to1 rx = 
+    let map f1to1 rx =
         match rx with
         | Success s -> f1to1 s |> Success
         | Failure x -> Failure x
-    /// rail -> one-in two out function -> outRail 
+    /// rail -> one-in two out function -> outRail
     let bind f1to2 x =
         match x with
         | Success s -> f1to2 s
         | Failure x -> Failure x
-    /// rail-in to two different functions that have the same return type     
-    let bind2 fSuccessToRail fFailure rx = 
-        match rx with 
+    /// rail-in to two different functions that have the same return type
+    let bind2 fSuccessToRail fFailure rx =
+        match rx with
         | Success s -> fSuccessToRail s
         | Failure x -> fFailure x
 
     let ofOption failure xOpt = match xOpt with |Some x -> Success x |None -> Failure failure
-//    let tryPick x fItems = 
-//        fItems 
+//    let tryPick x fItems =
+//        fItems
 //        |> Seq.tryPick (fun fAttempt -> match fAttempt x with |Success result -> Some result | Failure _ -> None)
 //        |> function | Some fResult -> Success fResult | None -> Failure [ "Could not find an item to pick"]
     let tryCatch f fEx x =
@@ -130,19 +130,19 @@ module Railways =
         with ex -> fEx |> Failure
     /// rail-in -> map both the success and failure types to new rail (id on both should work)
     let map2 fSuccess1to1 fFailure1to1 rx =
-        match rx with 
+        match rx with
         | Success s -> fSuccess1to1 s |> Success
         | Failure x -> fFailure1to1 x |> Failure
-        
+
     // exception paths must use the same types
-    
+
     let switch f1 f2 = f1 >> bind f2
     let isSuccess = function | Success _ -> true | _ -> false
     let toSuccessOption = function | Success s -> Some s |Failure _ -> None
     let toFailureOption = function | Success _ -> None | Failure s -> Some s
-    let forAllF fAll items = 
+    let forAllF fAll items =
         let items = items |> List.ofSeq
-        if items |> Seq.forall fAll then 
+        if items |> Seq.forall fAll then
             items |> Seq.choose toSuccessOption |> Success
         else items |> Seq.choose toFailureOption |> Failure
 
@@ -154,20 +154,20 @@ module Seq =
   /// A new group is started when the specified predicate holds about the element
   /// of the sequence (and at the beginning of the iteration).
   ///
-  /// For example: 
+  /// For example:
   ///    Seq.groupWhen isOdd [3;3;2;4;1;2] = seq [[3]; [3; 2; 4]; [1; 2]]
     let groupWhen f (input:seq<_>) = seq {
         use en = input.GetEnumerator()
         let running = ref true
-        
+
         // Generate a group starting with the current element. Stops generating
         // when it founds element such that 'f en.Current' is 'true'
-        let rec group() = 
+        let rec group() =
           [ yield en.Current
             if en.MoveNext() then
-              if not (f en.Current) then yield! group() 
+              if not (f en.Current) then yield! group()
             else running := false ]
-        
+
         if en.MoveNext() then
           // While there are still elements, start a new group
           while running.Value do
@@ -184,12 +184,12 @@ module Reflection =
     open System.Reflection
     open Microsoft.FSharp.Reflection
     // some parts of this may be a translation of BMore.linq
-    let (|TypeDefOf|_|) (_:'a) t = 
+    let (|TypeDefOf|_|) (_:'a) t =
         if t = typedefof<'a> then Some() else None
-    let (|TypeOf|_|) (_:'a) t = 
+    let (|TypeOf|_|) (_:'a) t =
         if t = typeof<'a> then Some ()
-        else 
-            //printfn "did not match %A to %A" typeof<'a> t ; 
+        else
+            //printfn "did not match %A to %A" typeof<'a> t ;
             None
 
     let isType<'a> = Unchecked.defaultof<'a>
@@ -198,10 +198,10 @@ module Reflection =
             let m = t.GetMethod(name)
             if not <| isNull m then
                 yield t,m
-            if recurse then 
+            if recurse then
                 yield! t.GetInterfaces() |> Seq.collect (getMethod recurse name)
         }
-    let rec getMethods recurse (t:Type) = 
+    let rec getMethods recurse (t:Type) =
         seq {
             yield (t,t.GetMethods())
             if recurse then
@@ -210,10 +210,10 @@ module Reflection =
 
     // via http://www.fssnip.net/2V author: Tomas Petricek http://stackoverflow.com/users/33518/tomas-petricek
     // let us access public or private properties or methods dynamically
-    // Various flags that specify what members can be called 
+    // Various flags that specify what members can be called
     // NOTE: Remove 'BindingFlags.NonPublic' if you want a version
     // that can call only public methods of classes
-    let staticFlags = BindingFlags.NonPublic ||| BindingFlags.Public ||| BindingFlags.Static 
+    let staticFlags = BindingFlags.NonPublic ||| BindingFlags.Public ||| BindingFlags.Static
     let instanceFlags = BindingFlags.NonPublic ||| BindingFlags.Public ||| BindingFlags.Instance
     let private ctorFlags = instanceFlags
     let inline asMethodBase(a:#MethodBase) = a :> MethodBase
@@ -229,11 +229,11 @@ module Reflection =
         // Construct an F# function as the result (and cast it to the
         // expected function type specified by 'R)
         FSharpValue.MakeFunction(typeof<'R>, fun args ->
-          
+
           // We treat elements of a tuple passed as argument as a list of arguments
           // When the 'o' object is 'System.Type', we call static methods
-          let methods, instance, args = 
-            let args = 
+          let methods, instance, args =
+            let args =
               // If argument is unit, we treat it as no arguments,
               // if it is not a tuple, we create singleton array,
               // otherwise we get all elements of the tuple
@@ -242,21 +242,21 @@ module Reflection =
               else FSharpValue.GetTupleFields(args)
 
             // Static member call (on value of type System.Type)?
-            if (typeof<System.Type>).IsAssignableFrom(o.GetType()) then 
+            if (typeof<System.Type>).IsAssignableFrom(o.GetType()) then
               let methods = (unbox<Type> o).GetMethods(staticFlags) |> Array.map asMethodBase
               let ctors = (unbox<Type> o).GetConstructors(ctorFlags) |> Array.map asMethodBase
               Array.concat [ methods; ctors ], null, args
-            else 
+            else
               o.GetType().GetMethods(instanceFlags) |> Array.map asMethodBase, o, args
-            
+
           // A simple overload resolution based on the name and the number of parameters only
           // TODO: This doesn't correctly handle multiple overloads with same parameter count
-          let methods = 
+          let methods =
             [ for m in methods do
                 if m.Name = name && m.GetParameters().Length = args.Length then yield m ]
-            
+
           // If we find suitable method or constructor to call, do it!
-          match methods with 
+          match methods with
           | [] -> failwithf "No method '%s' with %d arguments found" name args.Length
           | _::_::_ -> failwithf "Multiple methods '%s' with %d arguments found" name args.Length
           | [:? ConstructorInfo as c] -> c.Invoke(args)
@@ -265,19 +265,19 @@ module Reflection =
       else
         // The result type is not an F# function, so we're getting a property
         // When the 'o' object is 'System.Type', we access static properties
-        let typ, flags, instance = 
-          if (typeof<System.Type>).IsAssignableFrom(o.GetType()) 
+        let typ, flags, instance =
+          if (typeof<System.Type>).IsAssignableFrom(o.GetType())
             then unbox o, staticFlags, null
             else o.GetType(), instanceFlags, o
-          
+
         // Find a property that we can call and get the value
         let prop = typ.GetProperty(name, flags)
-        if prop = null && instance = null then 
+        if prop = null && instance = null then
           // The syntax can be also used to access nested types of a type
           let nested = typ.Assembly.GetType(typ.FullName + "+" + name)
           // Return nested type if we found one
-          if nested = null then 
-            failwithf "Property or nested type '%s' not found in '%s'." name typ.Name 
+          if nested = null then
+            failwithf "Property or nested type '%s' not found in '%s'." name typ.Name
           elif not ((typeof<'R>).IsAssignableFrom(typeof<System.Type>)) then
             let rname = (typeof<'R>.Name)
             failwithf "Cannot return nested type '%s' as a type '%s'." nested.Name rname
@@ -291,9 +291,9 @@ module Reflection =
 
 module Assemblies =
     // http://stackoverflow.com/a/28319367/57883
-    let getAssemblyFullPath (assembly:System.Reflection.Assembly) = 
+    let getAssemblyFullPath (assembly:System.Reflection.Assembly) =
         let codeBaseFailedAssert () = System.Diagnostics.Debug.Assert(false, "CodeBase evaluation failed! - Using Location as fallback.")
-        let fullPath = 
+        let fullPath =
             match assembly.CodeBase with
             | null -> codeBaseFailedAssert () ;assembly.Location
             | codeBasePseudoUrl ->
@@ -313,32 +313,15 @@ module Option =
     let getValueOrDefault (n: 'a option) = match n with | Some x -> x | None -> Unchecked.defaultof<_>
     let getOrDefault (default': 'a) (n: 'a option) = match n with| Some x -> x | None -> default'
     let getOrDefault' (default': 'a Lazy) (n: 'a option) = match n with| Some x -> x | None -> default'.Force()
-    let toNull =
-        function
-        | None -> null
-        | Some x -> x
-    // if something can be null, convert it to option
-    let ofNull = 
-        function
-        | null -> None
-        | x -> Some x
+
     // for types the compiler insists aren't nullable, but maybe C# is calling
-    let ofUnsafeNonNullable x = 
+    let ofUnsafeNonNullable x =
         match box x with
         | null -> None
         | _ -> Some x
     (* End Brandon *)
-    let fromNullable (n: _ Nullable) = 
-        if n.HasValue
-            then Some n.Value
-            else None
 
-    let toNullable =
-        function
-        | None -> Nullable()
-        | Some x -> Nullable x
 
- 
 let (|NullableNull|NullableValue|) (x: _ Nullable) =
     if x.HasValue then NullableValue x.Value else NullableNull
 
@@ -352,8 +335,6 @@ module Nullable = //http://bugsquash.blogspot.com/2010/09/nullable-in-f.html als
     let getOrElse (v: 'a Lazy) (n: 'a Nullable) = match n with NullableValue x -> x | _ -> v.Force()
 
     let get (x: _ Nullable) = x.Value
-    let fromOption = Option.toNullable
-    let toOption = Option.fromNullable
     let bind f x =
         match x with
         | NullableNull -> Nullable()
@@ -398,7 +379,7 @@ module Nullable = //http://bugsquash.blogspot.com/2010/09/nullable-in-f.html als
         if a.HasValue && b.HasValue
             then Nullable(op a.Value b.Value)
             else Nullable()
- 
+
     let mapBoolOp op a b =
         match a,b with
         | NullableValue x, NullableValue y -> op x y
