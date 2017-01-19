@@ -234,6 +234,73 @@ module StringPatterns =
             | ValueString -> true
             | _ -> false
 
+module Xml = 
+    open System.Xml.Linq
+    let nsNone = XNamespace.None
+    let toXName (ns:XNamespace) name =
+        ns + name
+    
+    let getElement1 n (e:XElement) =
+        e.Element n
+        |> Option.ofObj
+    // leaving out a 'getElement' as it will likely be (samples in code comments below):
+    //    let getElement = toXName nsNone >> getElement1
+    //    let getElement = toXName doc.Root.Name.Namespace >> getElement1
+    let getElements1 n (e:XElement) = e.Elements n
+    // point-free Seq.filter argument
+    let isNamed n (e:XElement) = e.Name = n
+    let getElementsAfter n (e:XElement) = 
+        e
+        |> getElements1 n
+        |> Seq.skipWhile (isNamed n >> not)
+        |> Seq.skip 1
+
+    let getAttribVal name (e:XElement) = 
+        nsNone + name
+        |> e.Attribute
+        |> Option.ofObj
+        |> Option.map (fun a -> a.Value)
+    let setAttribVal name value (e:XElement) = 
+        e.SetAttributeValue(nsNone + name, value)
+
+    let getDescendants n (e:XElement) = e.Descendants n
+
+    let attribValueIs name value e =
+        e
+        |> getAttribVal name
+        |> Option.toObj
+        |> (=) value
+    let isElement (e:XNode) = 
+        match e with
+        | :? XElement -> true
+        | _ -> false
+        
+    // when you |> string an XElement, normally it writes appends the namespace as an attribute, but this is normally covered by the root element
+    let stripNamespaces (e:XElement):XElement=
+        // if the node is not XElement, pass through
+        let rec stripNamespaces (n:XNode): XNode =
+            match n with
+            | :? XElement as x -> 
+                let contents = 
+                    x.Attributes() 
+                    // strips default namespace, but not other declared namespaces
+                    |> Seq.filter(fun xa -> xa.Name.LocalName <> "xmlns")
+                    |> Seq.cast<obj> 
+                    |> List.ofSeq 
+                    |> (@) (
+                        x.Nodes() 
+                        |> Seq.map stripNamespaces 
+                        |> Seq.cast<obj> 
+                        |> List.ofSeq
+                    )
+                XElement(nsNone + x.Name.LocalName, contents |> Array.ofList) :> XNode
+            | x -> x
+        stripNamespaces e :?> XElement
+
+        
+//        e.nodes
+//        XElement(nsNone + e.Name.LocalName, content = e.Nodes)
+    ()
 
 module Debug =
     open System.Collections.ObjectModel
