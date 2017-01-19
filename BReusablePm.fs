@@ -3,67 +3,236 @@ module Pm.Schema.BReusable
 open System
 open System.Collections.Generic
 open System.Diagnostics
-
+// for statically typed parameters in an active pattern see: http://stackoverflow.com/questions/7292719/active-patterns-and-member-constraint
 //consider pulling in useful functions from https://gist.github.com/ruxo/a9244a6dfe5e73337261
 
-// long pipe chains don't allow breakpoints anywhere inside
-// does this need anything to prevent the method from being inlined/optimized away?
-let breakpoint x = 
-    let result = x
-    result
-let breakpointf f x =
-    let result = f x
-    result
 
-// based on http://stackoverflow.com/a/2362114/57883
-// mimic the C# as keyword
-let castAs<'t> (o:obj): 't option =
-    match o with
-    | :? 't as x -> Some x
-    | _ -> None
+// things that assist with point-free style
+[<AutoOpen>]
+module FunctionalHelpersAuto = 
+    let teeTuple f x = x, f x
+    /// take a dead-end function and curry the input
+    let tee f x = f x; x
+    /// super handy with operators like (*) and (-)
+    /// take a function that expects 2 arguments and flips them before applying to the function
+    let inline flip f x y = f y x
+    /// take a tuple and apply the 2 arguments one at a time (from haskell https://www.haskell.org/hoogle/?hoogle=uncurry)
+    let uncurry f (x,y) = f x y
+    /// does not work with null x
+    let inline getType x = x.GetType()
+    // based on http://stackoverflow.com/a/2362114/57883
+    // mimic the C# as keyword
+    let castAs<'t> (o:obj): 't option =
+        match o with
+        | :? 't as x -> Some x
+        | _ -> None
+    // long pipe chains don't allow breakpoints anywhere inside
+    // does this need anything to prevent the method from being inlined/optimized away?
+    let breakpoint x = 
+        let result = x
+        result
+    let breakpointf f x =
+        let result = f x
+        result
 
-// active pattern, based on http://stackoverflow.com/a/25243799/57883
-//let (|As|) (p:'T) : 'U option =
-//    let p = p :> obj
-//    if p :? 'U then Some (p :?> 'U) else None
+module Tuple2 = // idea and most code taken from https://gist.github.com/ploeh/6d8050e121a5175fabb1d08ef5266cd7
+    let replicate x = x,x
+    // useful for Seq.mapi
+    let fromCurry x y = (x,y)
+    let curry f x y = f (x, y)
+    // calling already defined function from outer namespace, instead of duplicating the functionality for consistency with gist
+    let uncurry f (x, y) = uncurry f (x, y)
+    let swap (x, y) = (y, x)
+    let mapFst f (x, y) = f x, y
+    let mapSnd f (x, y) = x, f y
+    let extendFst f (x,y) = f (x,y), y
+    let extendSnd f (x,y) = x, f(x,y)
+    let optionOfFst f (x,y) =
+        match f x with
+        | Some x -> Some (x, y)
+        | None -> None
+    let optionOfSnd f (x,y) =
+        match f y with
+        | Some y -> Some (x,y)
+        | None -> None
+    // start Brandon additions
+    let mapBoth f (x,y) = f x, f y
 
-// for statically typed parameters in an active pattern see: http://stackoverflow.com/questions/7292719/active-patterns-and-member-constraint
+let private failNullOrEmpty paramName x = if String.IsNullOrEmpty x then raise <| ArgumentOutOfRangeException paramName else x
+type System.String with
+//        // no idea how to call this thing with a comparer
+//        static member indexOf (delimiter,?c:StringComparison) (x:string) = 
+//            match failNullOrEmpty "delimiter" delimiter,c with
+//            | d, Some c -> x.IndexOf(d,comparisonType=c)
+//            | d, None -> x.IndexOf d
+    static member indexOf delimiter (x:string) =
+        failNullOrEmpty "delimiter" delimiter
+        |> x.IndexOf
+    static member indexOfC delimiter c (x:string) =
+        x.IndexOf(failNullOrEmpty "delimiter" delimiter ,comparisonType=c)
+// couldn't get this guy to call the other guy, so... leaving him out too
+//        static member contains (delimiter, ?c:StringComparison) (x:string) = 
+//            match failNullOrEmpty "delimiter" delimiter, c with
+//            | d, Some c -> x.IndexOf(d, comparisonType=c) |> flip (>=) 0
+//            | d, None -> x.Contains d
+    static member contains delimiter (x:string) =
+        failNullOrEmpty "delimiter" delimiter
+        |> x.Contains
+    static member containsC delimiter c (x:string) = 
+        x
+        |> String.indexOfC (failNullOrEmpty "delimiter" delimiter) c
+        |> flip (>=) 0
+    static member substring i (x:string) = x.Substring i
+    static member substring2 i e (x:string)= x.Substring(i,e)
+    // the default insensitive comparison
+    static member defaultIComparison = StringComparison.InvariantCultureIgnoreCase
+    static member Null:string = null
+    static member trim (s:string) = match s with | null -> null | s -> s.Trim()
+    static member split (delims:string seq) (x:string) = x.Split(delims |> Array.ofSeq, StringSplitOptions.None)
+    static member splitO (items:string seq) options (x:string) = x.Split(items |> Array.ofSeq, options)
+    static member emptyToNull (x:string) = if String.IsNullOrEmpty x then null else x
+    static member equalsI (x:string) (x2:string) = not <| isNull x && not <| isNull x2 && x.Equals(x2, String.defaultIComparison)
+    static member startsWithI (toMatch:string) (x:string) = not <| isNull x && not <| isNull toMatch && toMatch.Length > 0 && x.StartsWith(toMatch, String.defaultIComparison)
+    static member isNumeric (x:string) = not <| isNull x && x.Length > 0 && x |> String.forall Char.IsNumber
+    static member splitLines(x:string) = x.Split([| "\r\n";"\n"|], StringSplitOptions.None)
+    static member beforeAnyOf (delimiters:string list) (x:string) =
+        let index, _ =
+            delimiters
+            |> Seq.map (fun delimiter -> x.IndexOf(delimiter),delimiter)
+            |> Seq.filter(fun (index,_) -> index >= 0)
+            |> Seq.minBy (fun (index, _) -> index)
+        x.Substring(0,index)
+    static member replace (target:string) (replacement) (str:string) = if String.IsNullOrEmpty target then invalidOp "bad target" else str.Replace(target,replacement)
+// comment/concern/critique auto-opening string functions may pollute (as there are so many string functions)
+// not having to type `String.` on at least the used constantly is a huge reduction in typing
+// also helps with point-free style
+module StringHelpers =
 
-/// super handy with operators like (*) and (-)
-/// take a function that expects 2 arguments and flips them before applying to the function
-let inline flip f x y = f y x
-/// take a tuple and apply the 2 arguments one at a time (from haskell https://www.haskell.org/hoogle/?hoogle=uncurry)
-let uncurry f (x,y) = f x y
-/// take a dead-end function and curry the input
-let inline tee f x = f x; x
-/// does not work with null x
-let inline getType x = x.GetType()
+    // I've been fighting/struggling with where to namespace/how to architect string functions, they are so commonly used, static members make it easier to find them
+    // since typing `String.` with this module open makes them all easy to find
+    // favor non attached methods for commonly used methods
 
-let inline isNullOrEmptyToOpt s =
-    if String.IsNullOrEmpty s then None else Some s
+//    let before (delimiter:string) (x:string) = x.Substring(0, x.IndexOf delimiter)
 
-// was toFormatString
-// with help from http://www.readcopyupdate.com/blog/2014/09/26/type-constraints-by-example-part1.html
-let inline toFormatString (f:string) (a:^a) = ( ^a : (member ToString:string -> string) (a,f))
+    let contains (delimiter:string) (x:string) = String.contains delimiter x
+    let containsI (delimiter:string) (x:string) = x |> String.containsC delimiter String.defaultIComparison
+    let substring i x = x |> String.substring i
+    let substring2 i length (x:string)  = x |> String.substring2 i length //x.Substring(i, length)
+    let before (delimiter:string) s = s |> String.substring2 0 (s.IndexOf delimiter)
+    let beforeOrSelf delimiter x = if x|> String.contains delimiter then x |> before delimiter else x
+    let after (delimiter:string) (x:string) =
+        failNullOrEmpty "x" x
+        |> tee (fun _ -> failNullOrEmpty "delimiter" delimiter |> ignore)
+        |> fun x -> 
+            match x.IndexOf delimiter with
+            | i when i < 0 -> failwithf "after called without matching substring in '%s'(%s)" x delimiter
+            | i -> x |> String.substring (i + delimiter.Length)
+    let afterI (delimiter:string) (x:string) = 
+        x
+        |> String.indexOfC delimiter String.defaultIComparison
+        |> (+) delimiter.Length
+        |> flip String.substring x
+    let afterOrSelf delimiter x = if x|> String.contains delimiter then x |> after delimiter else x
+    let afterOrSelfI (delimiter:string) (x:string) = if x |> String.containsC delimiter String.defaultIComparison then x |> afterI delimiter else x
+    let containsAnyOf (delimiters:string seq) (x:string) = delimiters |> Seq.exists(flip contains x)
+    let containsIAnyOf (delimiters:string seq) (x:string) = delimiters |> Seq.exists(flip containsI x)
+    let delimit (delimiter:string) (items:#seq<string>) = String.Join(delimiter,items)
 
-//if more is needed consider humanizer or inflector
-let toPascalCase s =
-    s
-    |> Seq.mapi (fun i l -> if i=0 && Char.IsLower l then Char.ToUpper l else l)
-    |> String.Concat
+    let endsWith (delimiter:string) (x:string) = x.EndsWith delimiter
+    let isNumeric (s:string)= not <| isNull s && s.Length > 0 && s |> String.forall Char.IsNumber 
+    let replace (target:string) (replacement) (str:string) = if String.IsNullOrEmpty target then invalidOp "bad target" else str.Replace(target,replacement)
+    let splitLines(x:string) = x.Split([| "\r\n";"\n"|], StringSplitOptions.None)
+    let startsWith (delimiter:string) (s:string) = s.StartsWith delimiter
+    let startsWithI (delimiter:string) (s:string) = s.StartsWith(delimiter,String.defaultIComparison)
+    let trim = String.trim
+//    let after (delimiter:string) (x:string) =  
+//        match x.IndexOf delimiter with
+//        | i when i < 0 -> failwithf "after called without matching substring in '%s'(%s)" x delimiter
+//        | i -> x.Substring(i + delimiter.Length)
 
-let humanize camel :string =
-    seq {
-        let pascalCased = toPascalCase camel
-        yield pascalCased.[0]
-        for l in  pascalCased |> Seq.skip 1 do
-            if System.Char.IsUpper l then
-                yield ' '
-                yield l
-            else
-                yield l
-    }
-    |> String.Concat
+    let afterLast delimiter x = 
+        if x |> String.contains delimiter then failwithf "After last called with no match"
+        x |> String.substring (x.LastIndexOf delimiter + delimiter.Length)
+    let stringEqualsI s1 (toMatch:string)= not <| isNull toMatch && toMatch.Equals(s1, StringComparison.InvariantCultureIgnoreCase)
+
+    let (|NullString|Empty|WhiteSpace|ValueString|) (s:string) = 
+        match s with
+        | null -> NullString
+        | "" -> Empty
+        | _ when String.IsNullOrWhiteSpace s -> WhiteSpace s
+        | _ -> ValueString s
+    let inline isNullOrEmptyToOpt s =
+        if String.IsNullOrEmpty s then None else Some s
+
+    // was toFormatString
+    // with help from http://www.readcopyupdate.com/blog/2014/09/26/type-constraints-by-example-part1.html
+    let inline toFormatString (f:string) (a:^a) = ( ^a : (member ToString:string -> string) (a,f))
+
+    //if more is needed consider humanizer or inflector
+    let toPascalCase s =
+        s
+        |> Seq.mapi (fun i l -> if i=0 && Char.IsLower l then Char.ToUpper l else l)
+        |> String.Concat
+
+    let humanize camel :string =
+        seq {
+            let pascalCased = toPascalCase camel
+            yield pascalCased.[0]
+            for l in  pascalCased |> Seq.skip 1 do
+                if System.Char.IsUpper l then
+                    yield ' '
+                    yield l
+                else
+                    yield l
+        }
+        |> String.Concat
+
+
+// I've also been struggling with the idea that Active patterns are frequently useful as just methods, so sometimes methods are duplicated as patterns
+[<AutoOpen>]
+module StringPatterns =
+    open StringHelpers
+    let (|NullString|Empty|WhiteSpace|ValueString|) (s:string) =
+        match s with
+        | null -> NullString
+        | "" -> Empty
+        | _ when String.IsNullOrWhiteSpace s -> WhiteSpace
+        | _ -> ValueString
+    let (|StartsWith|_|) (str:string) arg = if str.StartsWith(arg) then Some() else None
+    let (|StartsWithI|_|) s1 (toMatch:string) = if toMatch <> null && toMatch.StartsWith(s1, StringComparison.InvariantCultureIgnoreCase) then Some () else None
+    let (|StringEqualsI|_|) s1 (toMatch:string) = if String.equalsI toMatch s1 then Some() else None
+    let (|InvariantEqualI|_|) (str:string) arg =
+       if String.Compare(str, arg, StringComparison.InvariantCultureIgnoreCase) = 0
+       then Some() else None
+    let (|IsNumeric|_|) (s:string) = if not <| isNull s && s.Length > 0 && s |> String.forall Char.IsNumber then Some() else None
+
+    let (|OrdinalEqualI|_|) (str:string) arg =
+       if String.Compare(str, arg, StringComparison.OrdinalIgnoreCase) = 0
+       then Some() else None
+
+    let inline (|IsTOrTryParse|_|) (t,parser) (x:obj): 't option =
+        match x with
+        | v when v.GetType() = t -> Some (v :?> 't)
+        | :? string as p ->
+            match parser p with
+            | true, v -> Some v
+            | _, _ -> None
+        | _ -> None
+
+    let (|Int|_|) (x:obj) =
+        match x with
+        | :? string as p ->
+            let success,value = System.Int32.TryParse(p)
+            if success then
+                Some value
+            else None
+        | _ -> None
+
+    type System.String with
+        static member IsValueString =
+            function
+            | ValueString -> true
+            | _ -> false
 
 
 module Debug =
@@ -142,26 +311,6 @@ module Debug =
 //            else
 //                assert b
 
-module Tuple2 = // idea and most code taken from https://gist.github.com/ploeh/6d8050e121a5175fabb1d08ef5266cd7
-    let replicate x = x,x
-    // useful for Seq.mapi
-    let fromCurry x y = (x,y)
-    let curry f x y = f (x, y)
-    // calling already defined function from outer namespace, instead of duplicating the functionality for consistency with gist
-    let uncurry f (x, y) = uncurry f (x, y)
-    let swap (x, y) = (y, x)
-    let mapFst f (x, y) = f x, y
-    let mapSnd f (x, y) = x, f y
-    let extendFst f (x,y) = f (x,y), y
-    let extendSnd f (x,y) = x, f(x,y)
-    let optionOfFst f (x,y) =
-        match f x with
-        | Some x -> Some (x, y)
-        | None -> None
-    let optionOfSnd f (x,y) =
-        match f y with
-        | Some y -> Some (x,y)
-        | None -> None
 
 type System.Action with
     static member invoke (x:System.Action) () = x.Invoke()
@@ -176,13 +325,10 @@ type System.Func<'tResult> with
     static member invoke3 (x:System.Func<'t1,'t2,'t3,'tResult>) a b c = x.Invoke(a,b,c)
     static member invoke4 (x:System.Func<'t1, 't2, 't3, 't4, 'tResult>) a b c d = x.Invoke(a,b,c,d)
 
-//type System.Action<'t> with
-//    static member invoke (x:Action<'t>) (y:'t) = y |> x.Invoke
-
 //module Array =
 //    let ofOne x = [| x |]
 module Seq =
-    // Seq.take throws if there are no items
+    /// Seq.take throws if there are no items
     let takeLimit limit =
         let mutable count = 0
         Seq.takeWhile(fun _ ->
@@ -200,7 +346,7 @@ module Seq =
 
 
 module List =
-//    is this work having/keeping?
+//    is this worth having/keeping?
 //    let except toScrape items =
 //        let toScrape = Set.ofList toScrape
 //        let items = Set.ofList items
@@ -275,103 +421,6 @@ type System.Convert with
     static member ToGuid(o:obj) = o :?> Guid
     static member ToBinaryData(o:obj) = o :?> byte[] // http://stackoverflow.com/a/5371281/57883
 
-// I've been fighting/struggling with where to namespace/how to architect string functions, they are so commonly used, static members make it easier to find them
-// since typing `String.` with this module open makes them all easy to find
-type System.String with
-
-    static member trim (s:string) = match s with | null -> null | s -> s.Trim()
-    static member defaultComparison = StringComparison.InvariantCultureIgnoreCase
-    static member Null:string = null
-    static member emptyToNull (x:string) = if String.IsNullOrEmpty x then null else x
-    //let replace (target:string) (r:string) (x:string) = if String.IsNullOrEmpty target then invalidOp "bad target" else x.Replace(target,r)
-//    static member replace (target:string) (replacement) (str:string) = if String.IsNullOrEmpty target then invalidOp "bad target" else str.Replace(target,replacement)
-    static member equalsI (x:string) (x2:string) = not <| isNull x && not <| isNull x2 && x.Equals(x2, StringComparison.InvariantCultureIgnoreCase)
-//    static member contains (sub:string) (x:string) = if isNull x then false elif isNull sub || sub = "" then failwithf "bad contains call" else x.IndexOf(sub, String.defaultComparison) >= 0
-    static member startsWithI (toMatch:string) (x:string) = not <| isNull x && not <| isNull toMatch && toMatch.Length > 0 && x.StartsWith(toMatch, String.defaultComparison)
-    static member isNumeric (x:string) = not <| isNull x && x.Length > 0 && x |> String.forall Char.IsNumber
-//    static member before (delimiter:string) (x:string) = x.Substring(0, x.IndexOf delimiter)
-//    static member after (delimiter:string) (x:string) =
-//        match x.IndexOf delimiter with
-//        | i when i < 0 -> failwithf "after called without matching substring in '%s'(%s)" x delimiter
-//        | i -> x.Substring(i + delimiter.Length)
-    static member split (items:string seq) options (x:string) = x.Split(items |> Array.ofSeq, options)
-    static member splitLines(x:string) = x.Split([| "\r\n";"\n"|], StringSplitOptions.None)
-
-    static member beforeAnyOf (delimiters:string list) (x:string) =
-        let index, _ =
-            delimiters
-            |> Seq.map (fun delimiter -> x.IndexOf(delimiter),delimiter)
-            |> Seq.filter(fun (index,_) -> index >= 0)
-            |> Seq.minBy (fun (index, _) -> index)
-        x.Substring(0,index)
-
-// I've also been struggling with the idea that Active patterns are frequently useful as just methods, so sometimes methods are duplicated as patterns
-[<AutoOpen>]
-module StringPatterns =
-
-    let (|NullString|Empty|WhiteSpace|ValueString|) (s:string) =
-        match s with
-        | null -> NullString
-        | "" -> Empty
-        | _ when String.IsNullOrWhiteSpace s -> WhiteSpace
-        | _ -> ValueString
-    let (|StartsWith|_|) (str:string) arg = if str.StartsWith(arg) then Some() else None
-    let (|StartsWithI|_|) s1 (toMatch:string) = if toMatch <> null && toMatch.StartsWith(s1, StringComparison.InvariantCultureIgnoreCase) then Some () else None
-    let (|StringEqualsI|_|) s1 (toMatch:string) = if String.equalsI toMatch s1 then Some() else None
-    let (|InvariantEqualI|_|) (str:string) arg =
-       if String.Compare(str, arg, StringComparison.InvariantCultureIgnoreCase) = 0
-       then Some() else None
-    let (|IsNumeric|_|) (s:string) = if not <| isNull s && s.Length > 0 && s |> String.forall Char.IsNumber then Some() else None
-
-    let (|OrdinalEqualI|_|) (str:string) arg =
-       if String.Compare(str, arg, StringComparison.OrdinalIgnoreCase) = 0
-       then Some() else None
-
-    let inline (|IsTOrTryParse|_|) (t,parser) (x:obj): 't option =
-        match x with
-        | v when v.GetType() = t -> Some (v :?> 't)
-        | :? string as p ->
-            match parser p with
-            | true, v -> Some v
-            | _, _ -> None
-        | _ -> None
-
-    let (|Int|_|) (x:obj) =
-        match x with
-        | :? string as p ->
-            let success,value = System.Int32.TryParse(p)
-            if success then
-                Some value
-            else None
-        | _ -> None
-
-
-// not having to type `String.` on at least the used constantly is a huge reduction in typing
-// also helps with point-free style
-[<AutoOpen>]
-module StringHelpers =
-    open StringPatterns
-    let contains (sub:string) (x:string) = if isNull x then false elif isNull sub || sub = "" then failwithf "bad contains call" else x.IndexOf(sub, String.defaultComparison) >= 0
-    let containsI (sub:string) (x:string) = if isNull x then false elif isNull sub || sub = "" then failwithf "bad contains call" else x.IndexOf(sub, String.defaultComparison) >= 0
-    
-    let trim = String.trim
-    let replace (target:string) (replacement) (str:string) = if String.IsNullOrEmpty target then invalidOp "bad target" else str.Replace(target,replacement)
-    let delimit delimiter (values:#seq<string>) = String.Join(delimiter, Array.ofSeq values)
-    let after (delimiter:string) (x:string) =
-        match x.IndexOf delimiter with
-        | i when i < 0 -> failwithf "after called without matching substring in '%s'(%s)" x delimiter
-        | i -> x.Substring(i + delimiter.Length)
-    let before (delimiter:string) (x:string) = x.Substring(0, x.IndexOf delimiter)
-    let afterI (delimiter:string) (x:string) = x.Substring(x.IndexOf(delimiter, String.defaultComparison) + delimiter.Length)
-    let afterOrSelf (delimiter:string) (x:string) = if x |> contains delimiter then x|> after delimiter else x
-    let afterOrSelfI (delimiter:string) (x:string) = if x |> containsI delimiter then x |> afterI delimiter else x
-    let substring i (x:string) = x.Substring i
-    let substring2 i length (x:string)  = x.Substring(i, length)
-
-    let isValueString s =
-        match s with
-        | ValueString -> true
-        | _ -> false
 
 // based on http://stackoverflow.com/questions/15115050/f-type-constraints-on-enums
 type System.Enum with // I think enum<int> is the only allowed enum-ish constraint allowed in all of .net
@@ -504,7 +553,7 @@ let lock (lockobj:obj) f =
 let buildCmdString fs arg i :string*string*obj =
     let applied = sprintf fs arg
     let replacement = (sprintf"{%i}" i)
-    let replace target = replace target replacement
+    let replace target = StringHelpers.replace target replacement
     let replaced =
         fs.Value
         |> replace "'%s'"
@@ -532,6 +581,7 @@ let SetAndNotifyEqualityC (field:'a byref, value:'a, notifier:System.Action) =
         true
 
 module Diagnostics =
+    open StringHelpers
     open System.Diagnostics
     let tryAsyncCatch f =
         f
@@ -550,7 +600,7 @@ module Diagnostics =
         sprintf "DebugLog_%s_%s.txt" dt pid
 
     let fileLog filename (dt:DateTime) topic attrs s =
-        let attrs = (sprintf "dt=\"%A\"" dt)::attrs |> delimit " "
+        let attrs = (sprintf "dt=\"%A\"" dt)::attrs |> StringHelpers.delimit " "
         let topic = match topic with |Some t -> t |_ -> "Message"
         let msg = sprintf "<%s %s>%s</%s>%s" topic attrs s topic Environment.NewLine
         System.IO.File.AppendAllText(filename,msg)
@@ -945,6 +995,11 @@ module Nullable = //http://bugsquash.blogspot.com/2010/09/nullable-in-f.html als
 // things I'm not sure are a good idea but enable things that otherwise might not be possible
 // things that create a buttload of complexity one place, to reduce boilerplate or lessen complexity elsewhere
 module Ideas =
+    // active pattern, based on http://stackoverflow.com/a/25243799/57883
+    let (|As|) (p:'T) : 'U option =
+        let p = p :> obj
+        if p :? 'U then Some (p :?> 'U) else None
+
     ()
 
 // encapsulate INPC such that, fields can hold INPC values
