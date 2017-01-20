@@ -514,7 +514,10 @@ module DataModelToF =
             |> Seq.map (fun c -> sprintf "%s%s" c.ColumnName (if String.IsNullOrEmpty c.Measure then String.Empty else sprintf "<%s>" c.Measure))
             |> Seq.iter (appendLine' 1)
 
-            let templateProjectNamespace = manager.DefaultProjectNamespace
+            let templateProjectNamespace = 
+                try
+                    manager.DefaultProjectNamespace
+                with _ -> null
 
             match targetProjectFolder with
             | Some targetProjectFolder -> Path.Combine(targetProjectFolder,tableInfo.Name + ".generated.fs")

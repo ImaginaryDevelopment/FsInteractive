@@ -282,9 +282,14 @@ module MultipleOutputHelper =
                         }
                     wrapper 
                 static member WriteLnToOutputPane(dte:Dte) (s:string) =
-                    let window = dte.Windows.Item(EnvDTE.Constants.vsWindowKindOutput).Object :?> EnvDTE.OutputWindow
-                    window.ActivePane.Activate ()
-                    window.ActivePane.OutputString (s + Environment.NewLine)
+                    try
+                        let window = dte.Windows.Item(EnvDTE.Constants.vsWindowKindOutput).Object :?> EnvDTE.OutputWindow
+                        window.ActivePane.Activate ()
+                        window.ActivePane.OutputString (s + Environment.NewLine)
+                    with ex -> 
+                        let output = sprintf "Failed to writeLnToOutputPane: %s" s
+                        printfn "%s" output
+                        Diagnostics.Trace.WriteLine output
 
                 static member AddFileToDbSqlProj (dte:DteWrapper) (targetProject:EnvDTE.Project) fileName = 
                     dte.Log (sprintf "Attempting to add a file to a dbSqlProj: %s" fileName)
@@ -401,9 +406,17 @@ module MultipleOutputHelper =
                         dte.Log (sprintf "adding a file %s" fileName)
                         if isInCurrentProject fileName then
                             if not <| projectFiles.ContainsKey fileName then
-                                let newProjectItem = templateProjectItemOpt.Value.ProjectItems.AddFromFile fileName
-                                if isNull newProjectItem then
-                                    dte.Log(sprintf "add returned null newProjectItem for %s" fileName)
+                                try
+                                    templateProjectItemOpt
+                                    |> Option.map (fun tpi -> tpi.ProjectItems.AddFromFile fileName)
+                                    |> Option.iter (fun newProjectItem ->
+                                        if isNull newProjectItem then
+                                            dte.Log(sprintf "add returned null newProjectItem for %s" fileName)
+                                    )
+                                with ex -> 
+                                    let text = sprintf "failed to AddFromFile: %s, %A" fileName ex
+                                    dte.Log text
+//                                    raise <| InvalidOperationException(text, ex)
                         else
                             VsManager.AddFileToProject dte projects fileName
                         dte.Log "finished projectSync"
