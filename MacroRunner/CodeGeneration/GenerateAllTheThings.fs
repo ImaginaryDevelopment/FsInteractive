@@ -76,7 +76,8 @@ type TableInput() =
      member val Schema:string = Unchecked.defaultof<_> with get,set
      member val Columns:ColumnInput seq = Unchecked.defaultof<_> with get,set
 
-let runGeneration (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) manager targetSqlProjectName (cgsm: CodeGeneration.DataModelToF.CodeGenSettingMap) (toGen:TableInput list) additionalToCodeGenItems = 
+/// generatorId something to identify the generator with, in the .tt days it was the DefaultProjectNamespace the .tt was running from.
+let runGeneration generatorId (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) manager targetSqlProjectName (cgsm: CodeGeneration.DataModelToF.CodeGenSettingMap) (toGen:TableInput list) additionalToCodeGenItems = 
     match toGen |> Seq.tryFind(fun g -> g.Columns |> Seq.exists(fun c -> c.Type = typeof<obj>)) with
     | Some g -> 
         printfn "failing because of %s.%s" g.Schema g.Name
@@ -146,7 +147,7 @@ let runGeneration (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) manager target
         |> List.ofSeq
         |> fun items -> additionalToCodeGenItems@items
 
-    DataModelToF.generate 
+    DataModelToF.generate generatorId 
         pluralizer.Pluralize 
         pluralizer.Singularize 
         cgsm

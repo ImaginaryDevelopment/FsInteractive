@@ -44,6 +44,7 @@ module SimplifiedInput =
 
 //let dc = new TypedDataContext()
     // 't is a container type of some sort, in LinqPad it would be Table<_>
+    [<Obsolete("this doesn't work, typedefof<'t> isn't referring to a real arg")>]
     let extractTypeInfo (t:Type) =
         t
         |> fun t -> t.GetProperties()
@@ -51,6 +52,8 @@ module SimplifiedInput =
         |> Seq.filter (fun p -> p.PropertyType.IsGenericType && p.PropertyType.GetGenericTypeDefinition() = typedefof<'t> )
         |> Seq.map (fun p -> p.Name, p.PropertyType.GenericTypeArguments.[0])
         |> Seq.map (fun (name,t) -> name, t.Name, t.GetFields() |> Seq.map(fun f -> f.Name, f.FieldType))
+
+    [<Obsolete("this doesn't work")>]
     let extractInfo<'t> () = extractTypeInfo typeof<'t>
 
 //let generateFromType<'t>() = 
