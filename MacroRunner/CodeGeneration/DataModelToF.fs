@@ -651,14 +651,13 @@ module SqlProj =
 
 // impure! applied code, meant for specific scripts, not api
 module GenerationSample = 
-    open Microsoft.VisualStudio.TextTemplating
     open SqlMeta
     open DataModelToF
 
     type GenerationStrategy = 
         | UseMultipleOutputHelperCode
         | UseCustomManager
-    let generate generatorId connectionString hostDirectory= 
+    let _generate generatorId connectionString = 
         let sb = StringBuilder()
         let mutable currentFile:string = null
         let pluralizer = Macros.VsMacros.createPluralizer()
@@ -690,7 +689,8 @@ module GenerationSample =
                     { // should be [PaymentID]                     int             identity primary key,
                         Name="PaymentID"
                         Type = ColumnType.Other typeof<int>
-                        Attributes = ["identity";"primary key" ]
+                        Attributes = ["identity";"primary key"]
+                        IsUnique = false
                         AllowNull = NotNull
                         FKey = None
                         Comments = List.empty
@@ -702,17 +702,6 @@ module GenerationSample =
         let tablesToGen = [
             {Schema="dbo"; Name="Users"; GenerateFull =false}
         ]
-//         type CodeGenSettingMap = {
-//        TargetProjectName:string
-//        TargetNamespace: string
-//        CString:string
-//        UseOptionTypes:bool
-//        ColumnBlacklist:Map<string, string list>
-//        Measures: string list
-//        MeasuresBlacklist: string list
-//        IncludeNonDboSchemaInNamespace:bool
-//        GenerateValueRecords:bool
-//    }
         let _results = 
             let cgsm = {TargetProjectName= null; TargetNamespace="Pm.Schema"; CString=connectionString; UseOptionTypes=false; ColumnBlacklist = Map.empty;Measures=List.empty; MeasuresBlacklist= List.empty; IncludeNonDboSchemaInNamespace= false; GenerateValueRecords = false}
             DataModelToF.generate generatorId pluralizer.Pluralize pluralizer.Singularize cgsm (manager, sb, tablesToGen)

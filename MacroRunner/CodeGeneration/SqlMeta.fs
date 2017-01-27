@@ -31,6 +31,7 @@ type ColumnInfo =
         Type:ColumnType
         AllowNull:Nullability
         Attributes: string list
+        IsUnique: bool
         FKey:FKeyInfo option
         Comments: string list
         GenerateReferenceTable:bool
@@ -38,7 +39,9 @@ type ColumnInfo =
     }
     with
         static member Zero ct = 
-            {Name=null; Type = ct; AllowNull = NotNull; Attributes = List.empty; FKey = None; Comments = List.empty; GenerateReferenceTable = false; ReferenceValuesWithComment = null}
+            {Name=null; Type = ct; AllowNull = NotNull;IsUnique=false; Attributes = List.empty; FKey = None; Comments = List.empty; GenerateReferenceTable = false; ReferenceValuesWithComment = null}
+
+type TableIdentifier = {Schema:string; Table:string;}
 
 type TableInfo = { Name:string; Schema:string; Columns: ColumnInfo list}
 
@@ -67,7 +70,7 @@ let toColumnType (t:Type) length precision scale useMax =
 
 // SqlGeneration.ttinclude ~ 49
 let generateTable (manager:IManager) (generationEnvironment:StringBuilder) targetProjectFolderOpt (tableInfo:TableInfo) =
-    printfn "Generating a table into %A %s" targetProjectFolderOpt tableInfo.Name
+//    printfn "Generating a table into %A %s" targetProjectFolderOpt tableInfo.Name
     let targetFilename = Path.Combine(defaultArg targetProjectFolderOpt String.Empty, "Schema Objects", "Schemas", tableInfo.Schema, "Tables", tableInfo.Name + ".table.sql")
     manager.StartNewFile(targetFilename)
 
@@ -128,12 +131,13 @@ let generateTable (manager:IManager) (generationEnvironment:StringBuilder) targe
         
         let formatAttributes (attributes: string seq) hasCombinationPK fKey allowNull = 
             let isPk = not <| isNull attributes && Seq.contains "primary key" attributes
+            let unique = if not <| isNull attributes && Seq.contains "unique" attributes || ci.IsUnique then " CONSTRAINT UQ_" + tableInfo.Name + "_" + ci.Name + " UNIQUE" else String.Empty
             let needsStarter = allowNull || not isPk || hasCombinationPK
             let starter = (if allowNull then "null" elif needsStarter then "not null" else String.Empty) + (if needsStarter then " " else String.Empty)
             if isNull attributes then
                 starter + (if not <| isNull fKey then " " + fKey else null)
             else
-                let attribs = starter + (delimit " " (if hasCombinationPK && (not <| isNull attributes) then attributes |> Seq.except([| "primary key" |]) else attributes))
+                let attribs = starter + (delimit " " (if hasCombinationPK && (not <| isNull attributes) then attributes |> Seq.except([| "primary key" |]) else attributes)) + unique
                 if isNull fKey then
                     attribs
                 else attribs + " " + fKey
@@ -203,20 +207,29 @@ let generateReferenceInsert appendLine =
             appendLine String.Empty
         )
 
+type InsertsGenerationConfig = 
+    {
+        InsertTitling: string
+        // @"Scripts\Post-Deployment\TableInserts\Accounting1.5\AccountingInserts.sql";
+        // or @"Scripts\Post-Deployment\TableInserts\Accounting1.5\AccountingGeneratorInserts.sql";
+        TargetInsertRelativePath: string
+        AdditionalReferenceData: ReferenceData seq
+    }
 
-let generateInserts title appendLine (manager:IManager) targetProjectFolder (tables:#seq<_>) (addlRefData:seq<ReferenceData>) targetRelativePath =
+
+let generateInserts appendLine (manager:IManager) targetProjectFolder (tables:#seq<_>) igc =
     printfn "Starting inserts, template text length: %i" (manager.GetTextSize())
     // generate reference data
-    let addlRefData = addlRefData |> List.ofSeq
     let toGen = 
         tables.Where( fun t -> t.Columns.Any( fun c -> not <| isNull c.ReferenceValuesWithComment && c.ReferenceValuesWithComment.Any())).ToArray()
     printfn "Generating for %i parent tables (%A)" toGen.Length (toGen |> Seq.map (fun t -> t.Name) |> List.ofSeq)
-    if not <| Seq.any toGen && not <| Seq.any addlRefData then
+    if not <| Seq.any toGen && not <| Seq.any igc.AdditionalReferenceData then
         ()
     else
-        let targetFilename = Path.Combine(targetProjectFolder, targetRelativePath)
+        let targetFilename = Path.Combine(targetProjectFolder, igc.TargetInsertRelativePath)
         manager.StartNewFile targetFilename
         let refData = 
+            let addlRefData = igc.AdditionalReferenceData |> List.ofSeq
             toGen
             |> Seq.map (fun tbl ->
                 let refData =
@@ -237,7 +250,7 @@ let generateInserts title appendLine (manager:IManager) targetProjectFolder (tab
             |> List.ofSeq
             |> flip (@) addlRefData
 
-        generateReferenceInsert appendLine (TitledReferenceData (title, refData))
+        generateReferenceInsert appendLine (TitledReferenceData (igc.InsertTitling, refData))
         manager.EndBlock()
         printfn "Done with inserts, template text length: %i" (manager.GetTextSize())
 
@@ -257,11 +270,11 @@ let generateTablesAndReferenceTables(manager:IManager, generationEnvironment:Str
             generateTable manager generationEnvironment targeting table
         )
     )
-let makeStrFkey50 name fkey = {Name=name; Type=VarChar (Length 50); Attributes = List.empty; AllowNull = NotNull; FKey = Some fkey; Comments = List.empty; GenerateReferenceTable=false; ReferenceValuesWithComment=null}
-let makeIntFkey name fkey = {Name=name; Type=Other typeof<int>; Attributes = List.empty; AllowNull = NotNull; FKey=Some fkey; Comments = List.empty; GenerateReferenceTable=false; ReferenceValuesWithComment=null}
+let makeStrFkey50 name fkey = {Name=name; Type=VarChar (Length 50); IsUnique=false; Attributes = List.empty; AllowNull = NotNull; FKey = Some fkey; Comments = List.empty; GenerateReferenceTable=false; ReferenceValuesWithComment=null}
+let makeIntFkey name fkey = {Name=name; Type=Other typeof<int>; IsUnique=false; Attributes = List.empty; AllowNull = NotNull; FKey=Some fkey; Comments = List.empty; GenerateReferenceTable=false; ReferenceValuesWithComment=null}
 let makeNullable50 name = 
-    {Name=name; Type = VarChar (Length 50); AllowNull = AllowNull; Attributes = List.empty; FKey = None; Comments = List.empty; GenerateReferenceTable = false; ReferenceValuesWithComment = null}
+    {Name=name; Type = VarChar (Length 50); AllowNull = AllowNull; IsUnique=false; Attributes = List.empty; FKey = None; Comments = List.empty; GenerateReferenceTable = false; ReferenceValuesWithComment = null}
 let makeNonFKeyColumn name columnType allowNull = 
-    {Name=name; Type=columnType; AllowNull=allowNull; Comments = List.empty; GenerateReferenceTable = false; ReferenceValuesWithComment=null;FKey=None; Attributes = List.empty}
+    {Name=name; Type=columnType; AllowNull=allowNull; Comments = List.empty; GenerateReferenceTable = false; ReferenceValuesWithComment=null;FKey=None; IsUnique=false; Attributes = List.empty}
 
 // end sql generation module

@@ -55,19 +55,22 @@ type TableInput() =
      member val Schema:string = Unchecked.defaultof<_> with get,set
      member val Columns:ColumnInput seq = Unchecked.defaultof<_> with get,set
 
-type InsertsGenerationConfig = 
-    {
-        InsertTitling: string
-        // @"Scripts\Post-Deployment\TableInserts\Accounting1.5\AccountingInserts.sql";
-        TargetInsertRelativePath: string
-    }
+type SqlGenerationConfig = { TargetSqlProjectName: string; SqlItems: TableInput list; InsertionConfig: InsertsGenerationConfig option}
+
+// although InsertsGenerationConfig doesn't apply to TableGenerationInfo, let them be grouped for convenience
+//type SqlGenerationism =
+//    | Focused of InsertsGenerationConfig * (GenerationTarget list)
+//    | Multiple of (InsertsGenerationConfig * GenerationTarget list) list
+
 /// generatorId something to identify the generator with, in the .tt days it was the DefaultProjectNamespace the .tt was running from.
-let runGeneration insertsGenerationConfig addlRefData generatorId (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) manager targetSqlProjectName (cgsm: CodeGeneration.DataModelToF.CodeGenSettingMap) (toGen:TableInput list) additionalToCodeGenItems = 
-    match toGen |> Seq.tryFind(fun g -> g.Columns |> Seq.exists(fun c -> c.Type = typeof<obj>)) with
+let runGeneration generatorId (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) manager (cgsm: CodeGeneration.DataModelToF.CodeGenSettingMap) toGen dataModelOnlyItems = 
+    //guard columns having a Type = obj
+    match toGen |> Seq.map (fun g -> g.SqlItems) |> Seq.collect id |> Seq.tryFind(fun g -> g.Columns |> Seq.exists(fun c -> c.Type = typeof<obj>)) with
     | Some g -> 
         printfn "failing because of %s.%s" g.Schema g.Name
         failwithf "object found"
     | _ -> ()
+
     let pluralizer = Macros.VsMacros.createPluralizer()
     let projects = snd <| Macros.VsMacros.getSP dte // RecurseSolutionProjects(Dte)
     let appendLine text (sb:System.Text.StringBuilder) = 
@@ -79,41 +82,47 @@ let runGeneration insertsGenerationConfig addlRefData generatorId (sb:System.Tex
     projects
     |> Seq.iter (fun proj -> sb.AppendLine (sprintf "    %s" proj.Name) |> ignore)
 
-    let targetSqlProject = 
-        projects 
-        |> Seq.tryFind (fun p -> p.Name = targetSqlProjectName) 
-        |> function 
-            | Some p -> p 
-            | None -> failwithf "did not find project, names were %A" (projects |> Seq.map (fun p -> p.Name) |> List.ofSeq)
-
-    let targetSqlProjectFolder = Path.GetDirectoryName targetSqlProject.FullName
-    printfn "Going to generate into project %s via folder %s" targetSqlProject.Name targetSqlProjectFolder
     
-    let genMapped : TableInfo list = 
+    let genMapped = 
         let toColumnType t l p s u = SqlMeta.toColumnType t (Option.toNullable l) (Option.toNullable p) (Option.toNullable s) u
         toGen
-        |> Seq.map (fun tg ->
-            {   TableInfo.Name=tg.Name
-                Schema=tg.Schema
-                Columns=
-                    tg.Columns 
-                    |> Seq.map (fun ci ->
-                        try 
-                            {   ColumnInfo.Name= ci.Name
-                                Type= toColumnType ci.Type ci.Length ci.Precision ci.Scale ci.UseMax 
-                                AllowNull= ci.AllowNull
-                                Attributes = ci.Attributes
-                                FKey= ci.FKey //if isNull ci.FKey then None else {FKeyInfo.Schema = ci.FKey.Schema; Table= ci.FKey.Table; Column = ci.FKey.Column} |> Some
-                                Comments = ci.Comments
-                                GenerateReferenceTable = ci.GenerateReferenceTable
-                                ReferenceValuesWithComment = ci.ReferenceValuesWithComment
-                            }
-                        with _ -> 
-                            printfn "Failed to map %A for table %A" ci tg
-                            reraise()
-                    )
-                    |> List.ofSeq
-            }
+        |> Seq.map (fun t ->
+            let targetSqlProject = 
+                projects 
+                |> Seq.tryFind (fun p -> p.Name = t.TargetSqlProjectName) 
+                |> function 
+                    | Some p -> p 
+                    | None -> failwithf "did not find project, names were %A" (projects |> Seq.map (fun p -> p.Name) |> List.ofSeq)
+
+            let targetSqlProjectFolder = Path.GetDirectoryName targetSqlProject.FullName
+            printfn "Going to generate into project %s via folder %s" targetSqlProject.Name targetSqlProjectFolder
+            targetSqlProjectFolder, t, t.SqlItems
+                |> Seq.map (fun tg ->
+                    {   TableInfo.Name=tg.Name
+                        Schema=tg.Schema
+                        Columns=
+                            tg.Columns 
+                            |> Seq.map (fun ci ->
+                                try 
+                                    {   ColumnInfo.Name= ci.Name
+                                        Type= toColumnType ci.Type ci.Length ci.Precision ci.Scale ci.UseMax 
+                                        AllowNull= ci.AllowNull
+                                        Attributes = ci.Attributes
+                                        IsUnique= ci.IsUnique
+                                        FKey= ci.FKey //if isNull ci.FKey then None else {FKeyInfo.Schema = ci.FKey.Schema; Table= ci.FKey.Table; Column = ci.FKey.Column} |> Some
+                                        Comments = ci.Comments
+                                        GenerateReferenceTable = ci.GenerateReferenceTable
+                                        ReferenceValuesWithComment = ci.ReferenceValuesWithComment
+                                    }
+                                with _ -> 
+                                    printfn "Failed to map %A for table %A" ci tg
+                                    reraise()
+                            )
+                            |> List.ofSeq
+
+                    }
+                )
+                |> List.ofSeq
         )
         |> List.ofSeq
     printfn "%i tables to generate" genMapped.Length
@@ -122,15 +131,26 @@ let runGeneration insertsGenerationConfig addlRefData generatorId (sb:System.Tex
     let info = BReusable.Assemblies.getAssemblyFullPath(codeGenAsm)
     let fileInfo = new System.IO.FileInfo(info)
     sb |> appendLine (sprintf "Using CodeGeneration.dll from %O" fileInfo.LastWriteTime) |> ignore
-    SqlMeta.generateTablesAndReferenceTables(manager, sb, Some targetSqlProjectFolder, genMapped)
-    SqlMeta.generateInserts insertsGenerationConfig.InsertTitling (fun s -> appendLine s sb |> ignore) manager targetSqlProjectFolder genMapped addlRefData insertsGenerationConfig.TargetInsertRelativePath
+    genMapped
+    |> Seq.map (fun (targetSqlProjectFolder,sgi,items) ->
+        SqlMeta.generateTablesAndReferenceTables(manager, sb, Some targetSqlProjectFolder, items)
+        match sgi.InsertionConfig with
+        | Some ic -> 
+            SqlMeta.generateInserts 
+                (fun s -> appendLine s sb |> ignore) 
+                manager 
+                targetSqlProjectFolder 
+                items ic
+        | None -> ()
 
-    let mappedTables = 
-        genMapped
+        items 
         |> Seq.map (fun gm -> {Schema=gm.Schema; Name=gm.Name; GenerateFull= false})
         |> List.ofSeq
-        |> fun items -> additionalToCodeGenItems@items
-
+        |> fun items -> dataModelOnlyItems@items
+    )
+    |> Seq.collect id
+    |> List.ofSeq
+    |> fun mappedTables ->
     DataModelToF.generate generatorId 
         pluralizer.Pluralize 
         pluralizer.Singularize 
