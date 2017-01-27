@@ -243,26 +243,6 @@ module DataModelToF =
                 |"decimal" -> "ToDecimal"
                 |"float"  -> "ToDouble"
                 |_ -> if isNull type' then String.Empty else type'
-        // for now this can work, because we aren't representing most null-capable values as Options, just using actual null
-        let mapDefaultValue (cd:ColumnDescription) useOptions = 
-            let mapValueDefault x = if cd.Nullable && useOptions then "None" elif cd.Nullable then "Nullable()" else x
-            match cd.Type.ToLower() with
-                // we are mapping chars to strings
-                |"char"
-                |"nchar"
-                |"nvarchar"
-                |"xml"
-                |"varchar" -> "null"
-                |"bit" -> "false"
-                |"image" -> "null"
-                |"date"
-                |"datetime"
-                |"datetime2"
-                |"smalldatetime" -> mapValueDefault "DateTime.MinValue"
-                |"int" -> mapValueDefault "0"
-                |"decimal" -> mapValueDefault "0m"
-                |"float" -> mapValueDefault "0.0"
-                | _ -> "Unchecked.defaultof<_>"
 
         let nonNullables = ["string";"byte[]"]
 
@@ -270,6 +250,7 @@ module DataModelToF =
         appendLine 2 "{"
         for cd in columns do
             let mapped = mapSqlType(cd.Type,cd.Nullable,cd.Measure,useOptions)
+            
             let converter = mapConverter(cd.Type)
             appendLine 2 (cd.ColumnName + " = ")
             appendLine 3 <| sprintf "match f \"%s\" with // %s" cd.ColumnName mapped
@@ -281,7 +262,8 @@ module DataModelToF =
                 sprintf "|Some x -> x |> Convert.%s%s" converter measureType 
             |> appendLine 3
 
-            appendLine 3 (sprintf "|None -> %s" (mapDefaultValue cd useOptions))
+            let dv = getDefaultValue mapped cd.Measure
+            appendLine 3 (sprintf "|None -> %s" dv)
 
         appendLine 2 "}"
 
