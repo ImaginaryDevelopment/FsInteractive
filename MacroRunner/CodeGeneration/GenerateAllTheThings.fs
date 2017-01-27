@@ -163,35 +163,6 @@ sb
 |> ignore
 
 let makeManager (dte:EnvDTE.DTE) = 
-    let tHost = 
-        {
-        new ITextTemplatingEngineHost with
-            member __.GetHostOption(optionName: string): obj = failing "GetHostOption(%s):Not implemented yet" optionName
-            member __.LoadIncludeText(requestFileName: string, content: byref<string>, location: byref<string>): bool = 
-                failing "LoadIncludeText(%s, %s, %s):Not implemented yet" requestFileName (content) (location)
-            member __.LogErrors(errors: System.CodeDom.Compiler.CompilerErrorCollection): unit = 
-                failing "LogErrors(%A):Not implemented yet" errors
-            member __.ProvideTemplatingAppDomain(content: string): System.AppDomain = 
-                failing "ProvideTemplatingAppDomain(%s): Not implemented yet" content
-            member __.ResolveAssemblyReference(assemblyReference: string): string = 
-                failing "ResolveAssemblyReference(%s): Not implemented yet" assemblyReference
-            member __.ResolveDirectiveProcessor(processorName: string): System.Type = 
-                failing "ResolveDirectiveProcessor(%s): Not implemented yet" processorName
-            member __.ResolveParameterValue(directiveId: string, processorName: string, parameterName: string): string = 
-                failing "ResolveParameterValue(%s, %s, %s): Not implemented yet" directiveId processorName parameterName
-            member __.ResolvePath(path: string): string = 
-                failing "ResolvePath(%s): Not implemented yet" path
-            member __.SetFileExtension(extension: string): unit = 
-                failing "SetFileExtension(%s): Not implemented yet" extension
-            member __.SetOutputEncoding(encoding: System.Text.Encoding, fromOutputDirective: bool): unit = 
-                failing "SetOutputEncoding(%A, %A): Not implemented yet" encoding fromOutputDirective
-            member __.StandardAssemblyReferences: System.Collections.Generic.IList<string> = 
-                failwith "StandardAssemblyReferences: Not implemented yet"
-            member __.StandardImports: System.Collections.Generic.IList<string> = 
-                failwith "StandardImports: Not implemented yet"
-            member __.TemplateFile: string = "HelloTesting.fake.tt"
-        }
-
     // if this script is in the solution it is modifying, we need the EnvDTE.ProjectItem representing it, otherwise where does the main (non sub-file) output go?
     let scriptFullPath = Path.Combine(__SOURCE_DIRECTORY__,__SOURCE_FILE__)
     let templateProjectItem:EnvDTE.ProjectItem = dte.Solution.FindProjectItem(scriptFullPath)
@@ -199,4 +170,4 @@ let makeManager (dte:EnvDTE.DTE) =
     if not <| isNull templateProjectItem then
         printfn "ProjectItem= %A" (templateProjectItem.FileNames(0s))
     let dteWrapper = VsManager.WrapDte dte
-    MultipleOutputHelper.Managers.VsManager(tHost, dteWrapper, sb, templateProjectItem)
+    MultipleOutputHelper.Managers.VsManager(Some "HelloTesting.fake.tt", dteWrapper, sb, templateProjectItem)

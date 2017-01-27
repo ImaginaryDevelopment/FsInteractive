@@ -50,14 +50,24 @@ module MultipleOutputHelper =
         open System.Text
         open Microsoft.VisualStudio.TextTemplating
         open EnvDTE80
+        // of the interface features we are only using the TemplateFile property, and casting it to IServiceProvider
+        type TemplatingEngineHost =
+            | ServiceProvider of IServiceProvider * templateFileOpt:string option
+            | DteDirect of Dte * templateFileOpt: string option
+            | Legacy of ITextTemplatingEngineHost
+            with 
+                member x.GetTemplateFileOpt = 
+                    match x with
+                    | Legacy host -> Some host.TemplateFile
+                    | ServiceProvider(_,tfOpt)
+                    | DteDirect (_,tfOpt) -> tfOpt
 
-        type Manager (host,template) = 
+        type Manager (templateFilePathOpt,template) = 
         
             let mutable currentBlock:Block = null
             let files = List<Block>()
             let footer = Block()
             let header = Block()
-            let host : ITextTemplatingEngineHost = host
             let template : StringBuilder = template
             //protected List<String> generatedFileNames = new List<String>();
             let mutable generatedFileNames : string list = []
@@ -66,10 +76,9 @@ module MultipleOutputHelper =
             member __.StartNewFile name =
                 if isNull name then raise <| new ArgumentNullException("name")
                 printfn "Starting new file at %s" name
-//                let project = defaultArg project null
                 currentBlock <- new Block(Name=name,//Project=project, 
                     Start=template.Length)
-                
+
             member x.StartFooter () = x.CurrentBlock <- footer
             member x.StartHeader () = x.CurrentBlock <- header
             
@@ -104,24 +113,29 @@ module MultipleOutputHelper =
                 log "Hello debugger\r\n"
                 if split then
                     x.EndBlock()
+                    if isNull header then
+                        failwithf "header was null"
+                    if isNull footer then
+                        failwithf "footer was null"
+//                    if isNull host then
+//                        failwithf "host was null"
+//                    if isNull host.TemplateFile then
+//                        failwithf "host.TemplateFile was null"
                     let mutable pairs : (string*(CreateProcessResult*string)) list = List.empty
+
                     let tryGetByStartEnd s l = 
                         try
                             template.ToString(s,l)
                         with ex ->
                             raise <| InvalidOperationException(sprintf "could not access substring %i %i in length %i" s l template.Length, ex)
-                    if isNull header then
-                        failwithf "header was null"
-                    if isNull footer then
-                        failwithf "footer was null"
+                    if isNull files then failwithf "files was null"
                     let headerText = tryGetByStartEnd header.Start header.Length
                     let footerText = tryGetByStartEnd footer.Start footer.Length
-                    if isNull host then
-                        failwithf "host was null"
-                    if isNull host.TemplateFile then
-                        failwithf "host.TemplateFile was null"
-                    let outputPath = Path.GetDirectoryName(host.TemplateFile)
-                    if isNull files then failwithf "files was null"
+                    let outputPath = 
+                        match templateFilePathOpt with
+                        | Some templateFile -> Path.GetDirectoryName templateFile
+                        | None -> String.Empty // Path.Combine ignores string.empty, but throws on null
+                    log (sprintf "outputPath is: %s" outputPath)
                     files.Reverse()
                     let mutable i = 1
                     for block in files do
@@ -129,6 +143,7 @@ module MultipleOutputHelper =
                         log <| sprintf "Length is %i" template.Length
                         
                         let fileName = Path.Combine(outputPath, block.Name)
+                        sprintf "creating file at %s" fileName |> log
                         let content = headerText + (tryGetByStartEnd block.Start block.Length) + footerText
                         generatedFileNames <- fileName::generatedFileNames
                         let didCreate = x.CreateFile fileName content
@@ -174,14 +189,15 @@ module MultipleOutputHelper =
                         v.Start <- template.Length
                     currentBlock <- v
 
-            static member Create(host:ITextTemplatingEngineHost,template:StringBuilder) =
+            static member Create(host:TemplatingEngineHost,template:StringBuilder) =
                 let beforeConLength = template.Length
                 let manager = 
-                    match host with 
-                    | :? IServiceProvider -> VsManager(host,template) :> Manager
-                    | _ -> 
-                        failwithf "unable to get ahold of vsmanager"
-                        Manager(host,template)
+                    VsManager(host,template)
+//                    match host with 
+//                    | :? IServiceProvider -> VsManager(host,template) :> Manager
+//                    | _ -> 
+//                        failwithf "unable to get ahold of vsmanager"
+//                        Manager(host,template)
                 if beforeConLength > template.Length then failwithf "Someone touched me!"
                 manager
 
@@ -194,11 +210,11 @@ module MultipleOutputHelper =
                 override x.Process doMultiFile = x.Process doMultiFile
                 override x.DefaultProjectNamespace = x.DefaultProjectNamespace
                 override __.DteWrapperOpt = None
-                override __.TemplateFile = host.TemplateFile
+                override __.TemplateFile = templateFilePathOpt |> Option.getOrDefault String.Empty
                 override __.GeneratedFileNames = upcast generatedFileNames
 
-        and VsManager (host,dteWrapper:DteWrapper,template,templateProjectItem:EnvDTE.ProjectItem) =
-                inherit Manager(host,template)
+        and VsManager (templateFilePathOpt,dteWrapper:DteWrapper,template,templateProjectItem:EnvDTE.ProjectItem) =
+                inherit Manager(templateFilePathOpt,template)
                 let dteWrapper = 
                     {dteWrapper with Log = 
                                         fun s ->
@@ -247,15 +263,33 @@ module MultipleOutputHelper =
                     else false
 
                 //static member private x.CreateVsManager(
-                internal new(host:ITextTemplatingEngineHost , template:StringBuilder) =
-                    let hostServiceProvider = host :?> IServiceProvider
-                    if isNull hostServiceProvider then
-                        raise <| ArgumentNullException("Could not obtain IServiceProvider")
-                    let  dte = hostServiceProvider.GetService(typeof<Dte>) :?> Dte
-                    if isNull dte then
-                        raise <| ArgumentNullException("Could not obtain DTE from host")
-                    
-                    let templateProjectItem = dte.Solution.FindProjectItem(host.TemplateFile)
+                // this makes the necessary calls to get a Dte for you, as such, it should probably not exist here, rather be a code sample of a way to call this class
+                internal new(host:TemplatingEngineHost, template:StringBuilder) =
+                    printfn "internal new VsManager current use case does actuall use it?"
+                    let templateFileOpt,dte = 
+                        let getSpFromIsp (isp:IServiceProvider) =
+                                if isNull isp then
+                                    raise <| ArgumentNullException("Could not obtain IServiceProvider")
+                                isp.GetService(typeof<Dte>) :?> Dte
+                                |> fun dte -> 
+                                    if isNull dte then
+                                        raise <| ArgumentNullException("Could not obtain DTE from host")
+                                    dte
+                        match host with
+                        | Legacy host -> 
+                            Some host.TemplateFile,
+                                let isp = host :?> IServiceProvider
+                                getSpFromIsp isp 
+                        |DteDirect (dte,tfOpt) -> tfOpt,dte
+                        |ServiceProvider (sp,tfOpt) -> tfOpt, getSpFromIsp sp
+
+
+                    // can dte.Solution even work when given String.Empty?
+                    let templateProjectItem = 
+                        templateFileOpt
+                        |> Option.getOrDefault String.Empty
+                        |> dte.Solution.FindProjectItem
+
                     if isNull templateProjectItem then failwithf "VsManager.new: templateProjectItem is null"
                     let getProjects() = 
                         dte|> Macros.VsMacros.getSP |> snd 
@@ -270,7 +304,7 @@ module MultipleOutputHelper =
                         GetProjects = getProjects
                         Log = VsManager.WriteLnToOutputPane dte
                         }
-                    VsManager(host,wrapper,template,templateProjectItem)
+                    VsManager(templateFileOpt,wrapper,template,templateProjectItem)
 
                 static member WrapDte(dte:Dte) = 
                     let wrapper = {

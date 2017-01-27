@@ -7,35 +7,6 @@ open System.Text
 open CodeGeneration.SqlMeta
 open System.Diagnostics
 
-let tHost = 
-    {
-    new ITextTemplatingEngineHost with
-        member __.GetHostOption(optionName: string): obj = failwithf "GetHostOption(%s):Not implemented yet" optionName
-        member __.LoadIncludeText(requestFileName: string, content: byref<string>, location: byref<string>): bool = 
-            failwithf "LoadIncludeText(%s, %s, %s):Not implemented yet" requestFileName (content) (location)
-        member __.LogErrors(errors: System.CodeDom.Compiler.CompilerErrorCollection): unit = 
-            failwithf "LogErrors(%A):Not implemented yet" errors
-        member __.ProvideTemplatingAppDomain(content: string): System.AppDomain = 
-            failwithf "ProvideTemplatingAppDomain(%s): Not implemented yet" content
-        member __.ResolveAssemblyReference(assemblyReference: string): string = 
-            failwithf "ResolveAssemblyReference(%s): Not implemented yet" assemblyReference
-        member __.ResolveDirectiveProcessor(processorName: string): System.Type = 
-            failwithf "ResolveDirectiveProcessor(%s): Not implemented yet" processorName
-        member __.ResolveParameterValue(directiveId: string, processorName: string, parameterName: string): string = 
-            failwithf "ResolveParameterValue(%s, %s, %s): Not implemented yet" directiveId processorName parameterName
-        member __.ResolvePath(path: string): string = 
-            failwithf "ResolvePath(%s): Not implemented yet" path
-        member __.SetFileExtension(extension: string): unit = 
-            failwithf "SetFileExtension(%s): Not implemented yet" extension
-        member __.SetOutputEncoding(encoding: System.Text.Encoding, fromOutputDirective: bool): unit = 
-            failwithf "SetOutputEncoding(%A, %A): Not implemented yet" encoding fromOutputDirective
-        member __.StandardAssemblyReferences: System.Collections.Generic.IList<string> = 
-            failwith "StandardAssemblyReferences: Not implemented yet"
-        member __.StandardImports: System.Collections.Generic.IList<string> = 
-            failwith "StandardImports: Not implemented yet"
-        member __.TemplateFile: string = "HelloTesting.fake.tt"
-    }
-
 let projects = [
         "PracticeManagement.Foundation"
         "PracticeManagement.UI.Localization"
@@ -121,7 +92,7 @@ let testSqlGenerator () =
     // translate SqlGenerator.tt to call into SqlMeta
     let sb = StringBuilder()
 //    let manager = MacroRunner.MultipleOutputHelper.Managers.Manager.Create(tHost, sb)
-    let manager = MacroRunner.MultipleOutputHelper.Managers.Manager(tHost,sb)
+    let manager = MacroRunner.MultipleOutputHelper.Managers.Manager(Some "HelloTesting.fake.tt",sb)
 //    let targetProjectName = "ApplicationDatabase"
 //    let targetInsertRelativePath = @"Scripts\Post-Deployment\TableInserts\Accounting1.5\AccountingInserts.sql"
     generateTablesAndReferenceTables(manager,sb, None, SqlGeneratorReferenceData.toGen |> Seq.take 1)

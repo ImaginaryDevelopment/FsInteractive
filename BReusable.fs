@@ -179,6 +179,20 @@ module Seq =
             while enumerator.MoveNext() do
                 toPopulate.Add(enumerator.Current)
 
+    /// assumes you will iterate the entire sequence, otherwise not disposed
+    /// probably not ok for infinite sequences
+    let ofIEnumerator (en:System.Collections.IEnumerator) = 
+        let unfolder () = 
+            if en.MoveNext() then
+                Some(en.Current, ())
+            else
+                // sequence iterated, if it is disposable dispose it
+                match en with
+                | :? IDisposable as d -> d.Dispose()
+                | _ -> ()
+                None
+        Seq.unfold unfolder ()
+
 module Reflection =
     open System
     open System.Reflection

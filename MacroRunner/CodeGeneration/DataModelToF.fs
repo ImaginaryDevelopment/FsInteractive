@@ -29,7 +29,7 @@ module DataModelToF =
         else Some x
 
     // WIP: actual usage of isPrimaryKey (it's never populated and the checking part needs converted from the .ttinclude
-    // isidentity may not be populated/checked in the right places
+    // isIdentity may not be populated/checked in the right places
     type ColumnDescription = {ColumnName:string; Measure:string; Type:string; Length:int; Nullable:bool; IsPrimaryKey:bool; IsIdentity:bool}
     type TableGenerationInfo = {Schema:string; Name:string; GenerateFull:bool}
 
@@ -160,7 +160,7 @@ module DataModelToF =
         appendLine 0 String.Empty
         appendLine 1 "static member Zero () = "
         appendLine 2 "{"
-    
+
         for cd in columns do
             let mapped = mapSqlType(cd.Type, cd.Nullable, cd.Measure, useOptions)
             try
@@ -186,10 +186,10 @@ module DataModelToF =
             else 
                 camelCase
 
+    /// generate the helper module
     let generateModule (typeName:string, columns:ColumnDescription seq, schemaName:string, tableName:string, appendLine:int -> string -> unit, useOptions:bool ) =
         let camelType = toCamel typeName
         appendLine 0 ("module " + typeName + "Helpers =")
-//        appendLine 1 "open Microsoft.FSharp.Core.Operators.Unchecked"
         appendLine 1 String.Empty
         appendLine 1 "module Meta = "
         if not <| String.IsNullOrEmpty schemaName then
@@ -199,7 +199,6 @@ module DataModelToF =
         columns
         |> Seq.map (fun c -> c.ColumnName, c.ColumnName)
         |> Seq.iter (uncurry (sprintf "let %s = \"%s\"") >> appendLine 2)
-//        |> Seq.iter (fun c -> appendLine 2 <| sprintf "let %s = \"%s\"" c.ColumnName c.ColumnName)
         appendLine 0 String.Empty
 
         appendLine 1 <| sprintf "let ToRecord (i%s:I%s) =" typeName typeName
@@ -223,8 +222,7 @@ module DataModelToF =
         // start the fromF series
         appendLine 0 String.Empty
 
-
-
+        // Convert.ToWhat? what method off the Convert class should we use? What's the overhead for using convert instead of cast? what are the advantages?
         let mapConverter(type' : string) = 
             match type'.ToLower() with 
                 |"char"
@@ -686,29 +684,7 @@ module GenerationSample =
         let getManager strat : IManager = 
             match strat with 
             |UseMultipleOutputHelperCode -> // WIP - generates a file, just to the wrong dir
-            
-                let host = 
-                    let assRefs = List<string>()
-                    let currentDir = hostDirectory // Path.Combine(Environment.ExpandEnvironmentVariables "%devroot%","PracticeManagement","dev","PracticeManagement", "PracticeManagement.Foundation") //Path.GetDirectory(Host.TemplateFile)
-                    printfn "CurrentDirectory was %s" Environment.CurrentDirectory
-                    Environment.CurrentDirectory <- currentDir
-                    {new ITextTemplatingEngineHost
-                        with
-                            override __.GetHostOption optionName = printfn "Option requested:%s" optionName; null 
-                            override __.LoadIncludeText (x,y,z) = printfn "LoadIncludetext:%A" (x,y,z); false
-                            override __.LogErrors errors =printfn "loggedErrors: %A" (errors); Unchecked.defaultof<_>
-                            override __.ProvideTemplatingAppDomain content = printfn "ProvideTemplatingAppDomain:%A" content; AppDomain.CreateDomain content
-                            override __.ResolveAssemblyReference _ = printfn "ResolveAssemblyReference" ;Unchecked.defaultof<_>
-                            override __.ResolveDirectiveProcessor _ = printfn "ResolveDirectiveProcessor"; Unchecked.defaultof<_>
-                            override __.ResolveParameterValue (_,_,_) = printfn "ResolveParameterValue" ; Unchecked.defaultof<_>
-                            override __.ResolvePath _ = printfn "ResolvePath"; Unchecked.defaultof<_>
-                            override __.SetFileExtension _ = ()
-                            override __.SetOutputEncoding (_, _) = ()
-                            override __.StandardAssemblyReferences with get() = printfn "getting assRefs";  upcast assRefs 
-                            override __.StandardImports with get() = printfn "getting StandardImports"; upcast assRefs
-                            override __.TemplateFile with get() =printfn "GettingTemplateFile"; "DataModels.tt" //Path.Combine(currentDir,"DataModels.tt")
-                    }
-                upcast MacroRunner.MultipleOutputHelper.Managers.Manager(host,sb)
+                upcast MacroRunner.MultipleOutputHelper.Managers.Manager(Some "DataModels.tt",sb)
             | UseCustomManager -> 
                 let generatedFileNames = List<string>()
                 { new IManager
