@@ -44,7 +44,7 @@ module SqlGeneratorReferenceData =
         {Schema="dbo";Name="Payment"; 
             Columns=
                 [
-                    {Name="PaymentID"; Type=Other typeof<int>; Attributes = pkeyIdent; AllowNull=NotNull; FKey=None ; Comments = List.empty;GenerateReferenceTable=false; ReferenceValuesWithComment=null}
+                    {Name="PaymentID"; Type=Other typeof<int>; Attributes = pkeyIdent; AllowNull=NotNull; FKey=None; Comments = List.empty;GenerateReferenceTable=false; ReferenceValuesWithComment=null}
                     {makeIntFkey "AppointmentId" {FKeyInfo.Schema="dbo"; Table="PaymentItemStatus"; Column="AppointmentId"} with AllowNull = AllowNull }
 //                    createFKeyedColumn typeof<int> "AppointmentId" {FKeyInfo.Schema="dbo"; Table="PaymentItemStatus"; Column="AppointmentId"} true null
                     // from line 47
@@ -66,7 +66,7 @@ module SqlGeneratorReferenceData =
                         GenerateReferenceTable = true
                         ReferenceValuesWithComment = ["New";"Partial";"Complete"] |> Seq.map (fun n -> n,null) |> dict }
                     {   Name="TotalAmount"; 
-                        Type=Decimal (Some {Precision=12; Scale=2});Attributes = List.empty; AllowNull = NotNull; FKey=None; 
+                        Type=Decimal (Some {Precision=12; Scale=2});Attributes = List.empty; AllowNull = NotNull; FKey=None;
                         GenerateReferenceTable=false
                         ReferenceValuesWithComment=null
                         Comments = ["was amount (18,2)"] }

@@ -166,7 +166,7 @@ let generateInserts title appendLine (manager:IManager) targetProjectFolder (tab
         ()
     else
         let targetFilename = Path.Combine(targetProjectFolder, targetRelativePath)
-        manager.StartNewFile(targetFilename)
+        manager.StartNewFile targetFilename
     appendLine "-- Generated file, DO NOT edit directly"
     appendLine "SET ANSI_NULLS ON"
     appendLine "GO"
@@ -175,15 +175,16 @@ let generateInserts title appendLine (manager:IManager) targetProjectFolder (tab
     appendLine (sprintf "PRINT 'Starting %s Synchronization'" title)
     appendLine "GO"
     for tbl in toGen do
-    for column in tbl.Columns.Where( fun c -> Seq.any c.ReferenceValuesWithComment).ToArray() do
+    for column in tbl.Columns.Where( fun c -> isNull c.ReferenceValuesWithComment |> not && Seq.any c.ReferenceValuesWithComment).ToArray() do
         let schema, table, columnName = 
             match column.FKey with
             | Some fKey -> 
                 fKey.Schema, fKey.Table, if isNull fKey.Column then column.Name else fKey.Column
             | None -> failwithf "ReferenceValuesWithComment existed but no fkey"
+        let cteName = sprintf "CTE_%s" table
         appendLine "---------------------------------------------------"
-        appendLine (sprintf "PRINT 'Synchronizing [%s.%s]'" schema table)
-        appendLine "WITH CTE AS"
+        appendLine (sprintf "PRINT 'Synchronizing [%s.%s]';" schema table)
+        appendLine (sprintf "WITH %s(%s) AS" cteName columnName)
         appendLine "("
         appendLine (sprintf "    SELECT [%s]" columnName)
         appendLine "    FROM (VALUES"
@@ -193,18 +194,18 @@ let generateInserts title appendLine (manager:IManager) targetProjectFolder (tab
             let comment = match column.ReferenceValuesWithComment.[k] with
                             |null -> String.Empty
                             |k -> " -- " + k
-            appendLine (sprintf "        ('%s'%s)%s" (k.Replace("'","''")) (if i < valueCount - 1 then "," else ")" ) comment )
+            appendLine (sprintf "        ('%s')%s%s" (k |> replace "'" "''") (if i < valueCount - 1 then "," else ")" ) comment )
             i <- i + 1
         appendLine (sprintf "        AS SOURCE([%s])" columnName)
         appendLine ")"
         appendLine (sprintf "MERGE INTO [%s].[%s] AS TARGET" schema table)
-        appendLine "USING CTE"
-        appendLine (sprintf "ON CTE.[%s] = TARGET.[%s]" columnName columnName )
+        appendLine (sprintf  "USING %s" cteName)
+        appendLine (sprintf "ON %s.[%s] = TARGET.[%s]" cteName columnName columnName )
         appendLine "WHEN NOT MATCHED BY TARGET THEN"
         appendLine (sprintf "    INSERT([%s])" columnName)
         appendLine (sprintf "    VALUES([%s]);" columnName)
         appendLine String.Empty
-        appendLine (sprintf "PRINT 'Done Synchronizing [%s.%s]'" schema table)
+        appendLine (sprintf "PRINT 'Done Synchronizing [%s.%s]';" schema table)
         appendLine "GO"
         appendLine String.Empty
         

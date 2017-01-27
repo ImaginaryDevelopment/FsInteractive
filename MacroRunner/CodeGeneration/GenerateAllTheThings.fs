@@ -17,27 +17,6 @@ let failing s=
         Debugger.Log(1,"fail", s)
         Debugger.Break()
     failwith s
-//
-//let dte = 
-//    Macros.VsMacros.getWindowNames()
-//    |> Seq.find(fun wn -> wn.Contains("PracticeManagement"))
-//    |> Macros.VsMacros.getDteByWindowName
-//    //System.Runtime.InteropServices.Marshal.GetActiveObject("VisualStudio.DTE") :?> EnvDTE.DTE
-//let activeDocumentFullName = dte.ActiveDocument.FullName
-//printfn "activeDocument is %s" activeDocumentFullName
-//printfn "Got dte for solution %s" dte.Solution.FileName
-//let doMultiFile = true
-//let targetSqlProjectName = "ApplicationDatabase"
-//let targetCodeProjectName = "Pm.Schema"
-//let targetInsertRelativePath = @"Scripts\Post-Deployment\TableInserts\Accounting1.5\AccountingInserts.sql"
-//let refData : ReferenceData list = [
-//            //type ReferenceData = {Schema:string; Table:string; Column:string; ValuesWithComments: IDictionary<string,string>}
-//            {ReferenceData.Schema="dbo";Table="GuarantorTypes";Column="GuarantorTypeId"; ValuesWithComments= dict[
-//                                                                                                                "SELF",null
-//                                                                                                                "THIRD PARTY", null
-//                                                                                                                "Insurance & Self", null ]
-//            }
-//]
 
 type ColumnInput = {
         Name:string
@@ -76,8 +55,14 @@ type TableInput() =
      member val Schema:string = Unchecked.defaultof<_> with get,set
      member val Columns:ColumnInput seq = Unchecked.defaultof<_> with get,set
 
+type InsertsGenerationConfig = 
+    {
+        InsertTitling: string
+        // @"Scripts\Post-Deployment\TableInserts\Accounting1.5\AccountingInserts.sql";
+        TargetInsertRelativePath: string
+    }
 /// generatorId something to identify the generator with, in the .tt days it was the DefaultProjectNamespace the .tt was running from.
-let runGeneration generatorId (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) manager targetSqlProjectName (cgsm: CodeGeneration.DataModelToF.CodeGenSettingMap) (toGen:TableInput list) additionalToCodeGenItems = 
+let runGeneration insertsGenerationConfig generatorId (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) manager targetSqlProjectName (cgsm: CodeGeneration.DataModelToF.CodeGenSettingMap) (toGen:TableInput list) additionalToCodeGenItems = 
     match toGen |> Seq.tryFind(fun g -> g.Columns |> Seq.exists(fun c -> c.Type = typeof<obj>)) with
     | Some g -> 
         printfn "failing because of %s.%s" g.Schema g.Name
@@ -138,6 +123,8 @@ let runGeneration generatorId (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) ma
     let fileInfo = new System.IO.FileInfo(info)
     sb |> appendLine (sprintf "Using CodeGeneration.dll from %O" fileInfo.LastWriteTime) |> ignore
     SqlMeta.generateTablesAndReferenceTables(manager, sb, Some targetSqlProjectFolder, genMapped)
+    //let generateInserts title appendLine (manager:IManager) targetProjectFolder (tables:#seq<_>) targetRelativePath =
+    SqlMeta.generateInserts insertsGenerationConfig.InsertTitling (fun s -> appendLine s sb |> ignore) manager targetSqlProjectFolder genMapped insertsGenerationConfig.TargetInsertRelativePath
     // TODO: convert SqlGeneration.ttinclude -> GenerateAccountingInserts
 
     // type TableGenerationInfo = {Schema:string; Name:string; GenerateFull:bool}
