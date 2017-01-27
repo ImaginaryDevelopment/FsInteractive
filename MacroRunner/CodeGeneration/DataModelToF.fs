@@ -1,4 +1,5 @@
-﻿namespace CodeGeneration
+﻿// file focus is on creating F# types from either a coded spec, or a sql connection (with whitelist/mapping data)
+namespace CodeGeneration
 open System
 open System.Collections.Generic
 open System.Globalization
@@ -33,9 +34,6 @@ module DataModelToF =
     type TableGenerationInfo = {Schema:string; Name:string; GenerateFull:bool}
 
     let mapNullableType(targetType:string, nullable:bool, measureType:string, useOptions:bool ) = 
-        
-//        return targetType + (string.IsNullOrEmpty(measure)? string.Empty : "<" + measure + ">") + (nullable ? (useOptions ? " option" : " Nullable") : string.Empty);
-//        return targetType + measureType + nullability);
         let nullability = 
             match nullable, useOptions with
             | true,true -> " option"
@@ -48,6 +46,7 @@ module DataModelToF =
 
         sprintf "%s%s%s" targetType measureType nullability
     
+    // take the sql type and give back what .net type we're using
     let mapSqlType(type' : string, nullable:bool, measureType:string, useOptions:bool) = 
         match type'.ToLower() with
             |"char"
@@ -66,7 +65,7 @@ module DataModelToF =
             |"decimal" -> mapNullableType("decimal", nullable, measureType, useOptions)
             |"float" -> mapNullableType("float", nullable, measureType, useOptions)
             |_ -> if isNull type' then String.Empty else type'
-    
+
     let generateColumnComment (cd:ColumnDescription) = 
         let typeName = if isNull cd.Type then "null" else cd.Type
         let suffixes = 
@@ -82,7 +81,7 @@ module DataModelToF =
         sprintf "/// %s (%i) %s%s" typeName cd.Length nullability suffix
 
     let generateTypeComment columnCount = sprintf "/// %i properties" columnCount
-    
+
     type InterfaceGeneratorArgs = { Writeable:bool; UseOptions:bool}
     let generateInterface (typeName:string, columns: ColumnDescription seq, appendLine:int -> string -> unit, interfaceGeneratorArgs ) =
         appendLine 0 <| sprintf "// typeName:%s writeable:%A useOptions:%A" typeName interfaceGeneratorArgs.Writeable interfaceGeneratorArgs.UseOptions
@@ -90,7 +89,7 @@ module DataModelToF =
         appendLine 0 ("type I" + typeName + (if interfaceGeneratorArgs.Writeable  then "RW" else String.Empty) + " =")
         if interfaceGeneratorArgs.Writeable then
             appendLine 1 ("inherit I" + typeName)
-            
+
         columns
         |> Seq.iter (fun cd -> 
             appendLine 1 (generateColumnComment cd)
@@ -221,12 +220,12 @@ module DataModelToF =
             appendLine 3 (cd.ColumnName + " = " + camelType + "." + cd.ColumnName)
     
         appendLine 2 "}"
+        // start the fromF series
         appendLine 0 String.Empty
-    
-        appendLine 1 "let FromF (camelTypeF:Func<string,obj option>) ="
-        appendLine 2 "{"
-    
-        let mapConverter(type' : string , _nullable: bool, _useOptions:bool) = 
+
+
+
+        let mapConverter(type' : string) = 
             match type'.ToLower() with 
                 |"char"
                 |"nchar"
@@ -234,35 +233,64 @@ module DataModelToF =
                 |"xml"
                 |"varchar" -> "ToString"
                 |"bit" -> "ToBoolean"
+                // from BReusable
                 |"image" -> "ToBinaryData"
                 |"date"
                 |"datetime"
                 |"datetime2"
                 |"smalldatetime" -> "ToDateTime"
+                // from BReusable
                 |"uniqueidentifier" -> "ToGuid" // invalid
                 |"int" -> "ToInt32"
                 |"decimal" -> "ToDecimal"
                 |"float"  -> "ToDouble"
                 |_ -> if isNull type' then String.Empty else type'
-    
+        // for now this can work, because we aren't representing most null-capable values as Options, just using actual null
+        let mapDefaultValue (cd:ColumnDescription) useOptions = 
+            let mapValueDefault x = if cd.Nullable && useOptions then "None" elif cd.Nullable then "Nullable()" else x
+            match cd.Type.ToLower() with
+                // we are mapping chars to strings
+                |"char"
+                |"nchar"
+                |"nvarchar"
+                |"xml"
+                |"varchar" -> "null"
+                |"bit" -> "false"
+                |"image" -> "null"
+                |"date"
+                |"datetime"
+                |"datetime2"
+                |"smalldatetime" -> mapValueDefault "DateTime.MinValue"
+                |"int" -> mapValueDefault "0"
+                |"decimal" -> mapValueDefault "0m"
+                |"float" -> mapValueDefault "0.0"
+                | _ -> "Unchecked.defaultof<_>"
+
         let nonNullables = ["string";"byte[]"]
+
+        appendLine 1 "let fromf (f:string -> obj option) = " 
+        appendLine 2 "{"
         for cd in columns do
             let mapped = mapSqlType(cd.Type,cd.Nullable,cd.Measure,useOptions)
-            let converter = mapConverter(cd.Type,cd.Nullable,useOptions)
+            let converter = mapConverter(cd.Type)
             appendLine 2 (cd.ColumnName + " = ")
-            appendLine 3 <| sprintf "match camelTypeF.Invoke \"%s\" with // %s" cd.ColumnName mapped
+            appendLine 3 <| sprintf "match f \"%s\" with // %s" cd.ColumnName mapped
             let measureType = if String.IsNullOrEmpty cd.Measure || stringEqualsI mapped "string" then String.Empty else sprintf " |> (*) 1<%s>" cd.Measure
     
             if cd.Nullable && nonNullables |> Seq.exists (stringEqualsI mapped) |> not then//(mapped <> typeof<string>.Name) && stringEqualsI mapped "string" |> not  then
-                sprintf "|Some x -> Nullable (Convert.%s x%s)" converter measureType
+                sprintf "|Some x -> x |> Convert.%s%s |> Nullable" converter measureType
             else
-                sprintf "|Some x -> Convert.%s x%s" converter measureType
+                sprintf "|Some x -> x |> Convert.%s%s" converter measureType 
             |> appendLine 3
 
-            appendLine 3 "|None -> Unchecked.defaultof<_>"
-    
+            appendLine 3 (sprintf "|None -> %s" (mapDefaultValue cd useOptions))
+
         appendLine 2 "}"
-    
+
+        appendLine 0 String.Empty
+
+        appendLine 1 "let FromF (camelTypeF:Func<string,obj option>) = fromf (Func<_>.invoke1 camelTypeF)"
+
         appendLine 0 String.Empty
     
         appendLine 1 ("let inline toRecordStp (" + camelType + ": ^a) =")

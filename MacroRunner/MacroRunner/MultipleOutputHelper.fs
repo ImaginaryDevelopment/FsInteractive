@@ -350,8 +350,6 @@ module MultipleOutputHelper =
                     // only one this appears to be skipping in a solutionfolder
                     let unloadedProject = "{67294A52-A4F0-11D2-AA88-00C04F688DDE}";
                     dte.Log (sprintf "AddFileToProject: %s" fileName)
-                    let canReadProjects = projects |> Seq.filter (fun p -> p.Kind <> unloadedProject && p.Kind <> EnvDTE80.ProjectKinds.vsProjectKindSolutionFolder) |> List.ofSeq
-                    dte.Log "Finished checking the project kinds, and getting the list of readable projects"
                     let tryGetKind (p:EnvDTE.Project) =
                         try
                             p.Kind |> Some
@@ -362,6 +360,13 @@ module MultipleOutputHelper =
                                 with _ -> None
                             dte.Log (sprintf "Failed to read project Kind:%A" nameOpt)
                             None
+                    let canReadProjects = 
+                        projects 
+                        |> Seq.filter (fun p -> 
+                            tryGetKind p |> Option.map (fun k -> k <> unloadedProject && k <> EnvDTE80.ProjectKinds.vsProjectKindSolutionFolder) |> Option.getOrDefault false 
+                            )
+                        |> List.ofSeq
+                    dte.Log "Finished checking the project kinds, and getting the list of readable projects"
                     // line 224
                     canReadProjects
                     |> Seq.tryFind (fun p -> //.FirstOrDefault(p => 
