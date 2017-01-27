@@ -62,7 +62,7 @@ type InsertsGenerationConfig =
         TargetInsertRelativePath: string
     }
 /// generatorId something to identify the generator with, in the .tt days it was the DefaultProjectNamespace the .tt was running from.
-let runGeneration insertsGenerationConfig generatorId (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) manager targetSqlProjectName (cgsm: CodeGeneration.DataModelToF.CodeGenSettingMap) (toGen:TableInput list) additionalToCodeGenItems = 
+let runGeneration insertsGenerationConfig addlRefData generatorId (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) manager targetSqlProjectName (cgsm: CodeGeneration.DataModelToF.CodeGenSettingMap) (toGen:TableInput list) additionalToCodeGenItems = 
     match toGen |> Seq.tryFind(fun g -> g.Columns |> Seq.exists(fun c -> c.Type = typeof<obj>)) with
     | Some g -> 
         printfn "failing because of %s.%s" g.Schema g.Name
@@ -123,11 +123,8 @@ let runGeneration insertsGenerationConfig generatorId (sb:System.Text.StringBuil
     let fileInfo = new System.IO.FileInfo(info)
     sb |> appendLine (sprintf "Using CodeGeneration.dll from %O" fileInfo.LastWriteTime) |> ignore
     SqlMeta.generateTablesAndReferenceTables(manager, sb, Some targetSqlProjectFolder, genMapped)
-    //let generateInserts title appendLine (manager:IManager) targetProjectFolder (tables:#seq<_>) targetRelativePath =
-    SqlMeta.generateInserts insertsGenerationConfig.InsertTitling (fun s -> appendLine s sb |> ignore) manager targetSqlProjectFolder genMapped insertsGenerationConfig.TargetInsertRelativePath
-    // TODO: convert SqlGeneration.ttinclude -> GenerateAccountingInserts
+    SqlMeta.generateInserts insertsGenerationConfig.InsertTitling (fun s -> appendLine s sb |> ignore) manager targetSqlProjectFolder genMapped addlRefData insertsGenerationConfig.TargetInsertRelativePath
 
-    // type TableGenerationInfo = {Schema:string; Name:string; GenerateFull:bool}
     let mappedTables = 
         genMapped
         |> Seq.map (fun gm -> {Schema=gm.Schema; Name=gm.Name; GenerateFull= false})

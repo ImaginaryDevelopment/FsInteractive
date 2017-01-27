@@ -159,57 +159,87 @@ let generateTable (manager:IManager) (generationEnvironment:StringBuilder) targe
     appendLine ");"
     manager.EndBlock()
 
-let generateInserts title appendLine (manager:IManager) targetProjectFolder (tables:#seq<_>) targetRelativePath =
+type TitledReferenceData = 
+    | TitledReferenceData of title:string* (ReferenceData list)
+let generateReferenceInsert appendLine = 
+    function
+    | TitledReferenceData(title, referenceData) ->
+        appendLine "-- Generated file, DO NOT edit directly"
+        appendLine "SET ANSI_NULLS ON"
+        appendLine "GO"
+        appendLine "SET QUOTED_IDENTIFIER ON"
+        appendLine "GO"
+        appendLine (sprintf "PRINT 'Starting %s Synchronization'" title)
+        appendLine "GO"
+        referenceData
+        |> Seq.iter (fun rd -> 
+            printfn "Starting table %s" rd.Table 
+            let cteName = sprintf "CTE_%s" rd.Table
+            appendLine "---------------------------------------------------"
+            appendLine (sprintf "PRINT 'Synchronizing [%s.%s]';" rd.Schema rd.Table)
+            appendLine (sprintf "WITH %s(%s) AS" cteName rd.Column)
+            appendLine "("
+            appendLine (sprintf "    SELECT [%s]" rd.Column)
+            appendLine "    FROM (VALUES"
+            let mutable i = 0
+            let valueCount = rd.ValuesWithComments.Keys.Count
+            for k in rd.ValuesWithComments.Keys do
+                let comment = match rd.ValuesWithComments.[k] with
+                                |null -> String.Empty
+                                |k -> " -- " + k
+                appendLine (sprintf "        ('%s')%s%s" (k |> replace "'" "''") (if i < valueCount - 1 then "," else ")" ) comment )
+                i <- i + 1
+            appendLine (sprintf "        AS SOURCE([%s])" rd.Column)
+            appendLine ")"
+            appendLine (sprintf "MERGE INTO [%s].[%s] AS TARGET" rd.Schema rd.Table)
+            appendLine (sprintf  "USING %s" cteName)
+            appendLine (sprintf "ON %s.[%s] = TARGET.[%s]" cteName rd.Column rd.Column )
+            appendLine "WHEN NOT MATCHED BY TARGET THEN"
+            appendLine (sprintf "    INSERT([%s])" rd.Column)
+            appendLine (sprintf "    VALUES([%s]);" rd.Column)
+            appendLine String.Empty
+            appendLine (sprintf "PRINT 'Done Synchronizing [%s.%s]';" rd.Schema rd.Table)
+            appendLine "GO"
+            appendLine String.Empty
+        )
+
+
+let generateInserts title appendLine (manager:IManager) targetProjectFolder (tables:#seq<_>) (addlRefData:seq<ReferenceData>) targetRelativePath =
+    printfn "Starting inserts, template text length: %i" (manager.GetTextSize())
     // generate reference data
-    let toGen = tables.Where( fun t -> t.Columns.Any( fun c -> not <| isNull c.ReferenceValuesWithComment && c.ReferenceValuesWithComment.Any())).ToArray()
-    if not <| Seq.any toGen then
+    let addlRefData = addlRefData |> List.ofSeq
+    let toGen = 
+        tables.Where( fun t -> t.Columns.Any( fun c -> not <| isNull c.ReferenceValuesWithComment && c.ReferenceValuesWithComment.Any())).ToArray()
+    printfn "Generating for %i parent tables (%A)" toGen.Length (toGen |> Seq.map (fun t -> t.Name) |> List.ofSeq)
+    if not <| Seq.any toGen && not <| Seq.any addlRefData then
         ()
     else
         let targetFilename = Path.Combine(targetProjectFolder, targetRelativePath)
         manager.StartNewFile targetFilename
-    appendLine "-- Generated file, DO NOT edit directly"
-    appendLine "SET ANSI_NULLS ON"
-    appendLine "GO"
-    appendLine "SET QUOTED_IDENTIFIER ON"
-    appendLine "GO"
-    appendLine (sprintf "PRINT 'Starting %s Synchronization'" title)
-    appendLine "GO"
-    for tbl in toGen do
-    for column in tbl.Columns.Where( fun c -> isNull c.ReferenceValuesWithComment |> not && Seq.any c.ReferenceValuesWithComment).ToArray() do
-        let schema, table, columnName = 
-            match column.FKey with
-            | Some fKey -> 
-                fKey.Schema, fKey.Table, if isNull fKey.Column then column.Name else fKey.Column
-            | None -> failwithf "ReferenceValuesWithComment existed but no fkey"
-        let cteName = sprintf "CTE_%s" table
-        appendLine "---------------------------------------------------"
-        appendLine (sprintf "PRINT 'Synchronizing [%s.%s]';" schema table)
-        appendLine (sprintf "WITH %s(%s) AS" cteName columnName)
-        appendLine "("
-        appendLine (sprintf "    SELECT [%s]" columnName)
-        appendLine "    FROM (VALUES"
-        let mutable i = 0
-        let valueCount = column.ReferenceValuesWithComment.Keys.Count
-        for k in column.ReferenceValuesWithComment.Keys do
-            let comment = match column.ReferenceValuesWithComment.[k] with
-                            |null -> String.Empty
-                            |k -> " -- " + k
-            appendLine (sprintf "        ('%s')%s%s" (k |> replace "'" "''") (if i < valueCount - 1 then "," else ")" ) comment )
-            i <- i + 1
-        appendLine (sprintf "        AS SOURCE([%s])" columnName)
-        appendLine ")"
-        appendLine (sprintf "MERGE INTO [%s].[%s] AS TARGET" schema table)
-        appendLine (sprintf  "USING %s" cteName)
-        appendLine (sprintf "ON %s.[%s] = TARGET.[%s]" cteName columnName columnName )
-        appendLine "WHEN NOT MATCHED BY TARGET THEN"
-        appendLine (sprintf "    INSERT([%s])" columnName)
-        appendLine (sprintf "    VALUES([%s]);" columnName)
-        appendLine String.Empty
-        appendLine (sprintf "PRINT 'Done Synchronizing [%s.%s]';" schema table)
-        appendLine "GO"
-        appendLine String.Empty
-        
-    manager.EndBlock()
+        let refData = 
+            toGen
+            |> Seq.map (fun tbl ->
+                let refData =
+                    tbl.Columns
+                    |> Seq.filter(fun c -> isNull c.ReferenceValuesWithComment |> not && c.ReferenceValuesWithComment |> Seq.any)
+                    |> Seq.map (fun c -> 
+                        let schema, table, columnName = 
+                            match c.FKey with
+                            | Some fKey -> 
+                                fKey.Schema, fKey.Table, if isNull fKey.Column then c.Name else fKey.Column
+                            | None -> failwithf "ReferenceValuesWithComment existed but no fkey"
+                        { ReferenceData.Schema = schema; Table=table; Column = columnName; ValuesWithComments = c.ReferenceValuesWithComment}
+                    )
+                    |> List.ofSeq
+                refData
+            )
+            |> Seq.collect id
+            |> List.ofSeq
+            |> flip (@) addlRefData
+
+        generateReferenceInsert appendLine (TitledReferenceData (title, refData))
+        manager.EndBlock()
+        printfn "Done with inserts, template text length: %i" (manager.GetTextSize())
 
     //feature desired: auto-name primary keys
     // adjustment desired: put all reference values comment (when on the reference table, above the column instead of beside it

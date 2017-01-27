@@ -45,6 +45,7 @@ module MultipleOutputHelper =
         abstract member Process: doMultiFile:bool -> IDictionary<string,CreateProcessResult*string>
         abstract member DefaultProjectNamespace: string with get
         abstract member GeneratedFileNames : string seq with get
+        abstract member GetTextSize: unit -> int
 
     module Managers = 
         open System.Text
@@ -212,6 +213,7 @@ module MultipleOutputHelper =
                 override __.DteWrapperOpt = None
                 override __.TemplateFile = templateFilePathOpt |> Option.getOrDefault String.Empty
                 override __.GeneratedFileNames = upcast generatedFileNames
+                override x.GetTextSize() = template.Length
 
         and VsManager (templateFilePathOpt,dteWrapper:DteWrapper,template,templateProjectItem:EnvDTE.ProjectItem) =
                 inherit Manager(templateFilePathOpt,template)
@@ -348,7 +350,7 @@ module MultipleOutputHelper =
 //                            foreach(let td in toDescend.Take(toDescend.Length - 1))
                     |> Seq.take (toDescend.Length - 1)
                     |> Seq.iter (fun td ->
-                        dte.Log ("Descending into \"" + td + "\"")
+//                        dte.Log ("Descending into \"" + td + "\"")
                         let childProjectItemOpt = 
                             !projectItems
                             |> Seq.cast<EnvDTE.ProjectItem>

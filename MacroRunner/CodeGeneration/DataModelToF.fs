@@ -696,6 +696,7 @@ module GenerationSample =
                         override __.DteWrapperOpt = None
                         override __.TemplateFile with get() = "DataModels.tt"
                         override __.GeneratedFileNames = upcast generatedFileNames
+                        override __.GetTextSize() = sb.Length
                 }
 
         let manager = getManager UseMultipleOutputHelperCode
