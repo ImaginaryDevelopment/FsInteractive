@@ -289,7 +289,7 @@ module DataModelToF =
         appendLine 2 "{"
 
         columns
-        |> Seq.iter(fun (cd,measureText)->
+        |> Seq.iter(fun (cd,measureText) ->
             let mapped = mapSqlType(cd.Type,cd.Nullable,measureText,useOptions)
             let measureType = 
                 match String.IsNullOrEmpty measureText || stringEqualsI mapped "string", cd.Nullable with
@@ -307,7 +307,14 @@ module DataModelToF =
             appendLine 0 String.Empty
             // idea: put what running the .Zero() record against this function would generate in a comment
             let insertStart = sprintf "insert into %s.%s(%s) values (%s)" schemaName tableName 
-            appendLine 1 <| sprintf "//%s" (insertStart String.Empty String.Empty)
+            columns
+            |> Seq.map (fun (cd,mt) -> cd.ColumnName, mapSqlType(cd.Type, cd.Nullable, mt, useOptions) |> flip getDefaultValue null)
+            |> List.ofSeq
+            |> fun s -> s |> Seq.map fst, s |> Seq.map snd
+            |> fun (names,values) ->
+                insertStart (names |> delimit ",") (values |> delimit ",")
+                |> sprintf "//%s"
+                |> appendLine 1
             appendLine 1 ("let createInsert blacklist (r:I" + typeName + ") =")
             let needsQuoted (c:ColumnDescription) = ["varchar"; "char"; "nvarchar"; "nchar";"datetime";"xml";"datetime2"] |> Seq.tryFind (fun n -> match c.Type with |IsTrue (containsI n) -> true | _ -> false)
             
