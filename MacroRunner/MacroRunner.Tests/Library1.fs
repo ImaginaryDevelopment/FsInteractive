@@ -3,6 +3,7 @@ open System
 open System.Text
 open global.Xunit
 open global.Xunit.Abstractions
+open Macros.SqlMacros
 open CodeGeneration
 open BReusable
 
@@ -27,7 +28,6 @@ module CodeGeneration =
                  Type = "string"
                  Length = 1
                  Nullable = false
-                 Measure = null
                  IsPrimaryKey = false
                  IsIdentity = false}
             ]

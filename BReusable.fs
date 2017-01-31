@@ -14,6 +14,29 @@ module FunctionalHelpersAuto =
     let uncurry f (x,y) = f x y
     let inline getType x = x.GetType()
 
+module Tuple2 = // idea and most code taken from https://gist.github.com/ploeh/6d8050e121a5175fabb1d08ef5266cd7
+    let replicate x = x,x
+    // useful for Seq.mapi
+    let fromCurry x y = (x,y)
+    let curry f x y = f (x, y)
+    // calling already defined function from outer namespace, instead of duplicating the functionality for consistency with gist
+    let uncurry f (x, y) = uncurry f (x, y)
+    let swap (x, y) = (y, x)
+    let mapFst f (x, y) = f x, y
+    let mapSnd f (x, y) = x, f y
+    let extendFst f (x,y) = f (x,y), y
+    let extendSnd f (x,y) = x, f(x,y)
+    let optionOfFst f (x,y) =
+        match f x with
+        | Some x -> Some (x, y)
+        | None -> None
+    let optionOfSnd f (x,y) =
+        match f y with
+        | Some y -> Some (x,y)
+        | None -> None
+    // start Brandon additions
+    let mapBoth f (x,y) = f x, f y
+
 [<AutoOpen>]
 module StringHelpersAuto =
     type System.String with
@@ -51,6 +74,18 @@ module StringHelpersAuto =
         x |> String.subString (x.LastIndexOf delimiter + delimiter.Length)
     let stringEqualsI s1 (toMatch:string)= not <| isNull toMatch && toMatch.Equals(s1, StringComparison.InvariantCultureIgnoreCase)
 
+    let toCamel s = // https://github.com/ayoung/Newtonsoft.Json/blob/master/Newtonsoft.Json/Utilities/StringUtils.cs
+        if String.IsNullOrEmpty s then
+            s
+        elif not <| Char.IsUpper s.[0] then
+            s
+        else
+            let ci = System.Globalization.CultureInfo.InvariantCulture
+            let camelCase = Char.ToLower(s.[0], ci).ToString(ci)
+            if (s.Length > 1) then
+                camelCase + (s.Substring 1)
+            else 
+                camelCase
     let (|NullString|Empty|WhiteSpace|ValueString|) (s:string) =
         match s with
         | null -> NullString

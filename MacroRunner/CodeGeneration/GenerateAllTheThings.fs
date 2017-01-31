@@ -8,6 +8,7 @@ open Microsoft.VisualStudio.TextTemplating
 open MacroRunner
 open MacroRunner.DteWrap
 open MacroRunner.MultipleOutputHelper.Managers
+open Macros.SqlMacros
 open CodeGeneration
 open CodeGeneration.SqlMeta
 open CodeGeneration.DataModelToF
@@ -18,6 +19,8 @@ let failing s=
         Debugger.Break()
     failwith s
 
+
+// differences: UseMax, Scale, Precision added (base would be ColumnGenerationInfo<Type>)
 type ColumnInput = {
         Name:string
         Type:Type
@@ -27,28 +30,28 @@ type ColumnInput = {
         UseMax: bool
         AllowNull: Nullability
         Attributes:string list
-        FKey:FKeyInfo option
+        FKey:FKey option
         Comments: string list
-        GenerateReferenceTable: bool
-        ReferenceValuesWithComment: IDictionary<string,string>
+//        GenerateReferenceTable: bool
+//        ReferenceValuesWithComment: IDictionary<string,string>
         IsUnique: bool
-    } with 
-        static member create name columnType = 
-            {Name=name; Type=columnType; Length= None; Precision=None;Scale=None;UseMax=false; AllowNull=Nullability.NotNull; Attributes=list.Empty; FKey= None; Comments = List.empty; GenerateReferenceTable=false; ReferenceValuesWithComment = null; IsUnique=false}
-        static member createFKeyedColumn<'T> name fkeyInfo = 
-            ColumnInput.create name typeof<'T>
-            |> fun x -> {x with FKey = Some fkeyInfo }
-        static member createFKeyedNColumn<'T> name fkeyInfo =
-            ColumnInput.createFKeyedColumn<'T> name fkeyInfo
-            |> fun x -> { x with AllowNull = Nullability.AllowNull}
-        static member createPatientIdColumn prefix allowNull comments = 
-            ColumnInput.createFKeyedColumn<int> (prefix + "PatientID") {Schema="dbo"; Table="Patients"; Column ="PatientID"}
-            |> fun x -> {x with Comments = comments; AllowNull = allowNull}
-        static member createUserIdColumn prefix allowNull comment = 
-            ColumnInput.createFKeyedColumn<int> (prefix + "UserID") {Schema="dbo"; Table="Users";Column="UserID" }
-            |> fun x -> {x with Comments = comment; AllowNull= allowNull}
-        static member makeNullable50 name = 
-            {Name=name; Type=typeof<string>; Length=Some 50; Precision=None; Scale=None; UseMax=false; AllowNull = Nullability.AllowNull; Attributes=List.empty; FKey = None;Comments = List.empty; GenerateReferenceTable=false; ReferenceValuesWithComment=null; IsUnique=false }
+    } with
+    static member create name columnType = 
+        {Name=name; Type=columnType; Length= None; Precision=None;Scale=None;UseMax=false; AllowNull=Nullability.NotNull; Attributes=list.Empty; FKey= None; Comments = List.empty; IsUnique=false}
+    static member createFKeyedColumn<'T> name fkeyInfo = 
+        ColumnInput.create name typeof<'T>
+        |> fun x -> {x with FKey = Some fkeyInfo }
+    static member createFKeyedNColumn<'T> name fkeyInfo =
+        ColumnInput.createFKeyedColumn<'T> name fkeyInfo
+        |> fun x -> { x with AllowNull = Nullability.AllowNull}
+    static member createPatientIdColumn prefix allowNull comments = 
+        ColumnInput.createFKeyedColumn<int> (prefix + "PatientID") (FKeyIdentifier {Table={Schema="dbo"; Name="Patients"}; Column ="PatientID"})
+        |> fun x -> {x with Comments = comments; AllowNull = allowNull}
+    static member createUserIdColumn prefix allowNull comment = 
+        ColumnInput.createFKeyedColumn<int> (prefix + "UserID") (FKeyIdentifier {Table={Schema="dbo"; Name="Users"}; Column="UserID" })
+        |> fun x -> {x with Comments = comment; AllowNull= allowNull}
+    static member makeNullable50 name = 
+        {Name=name; Type=typeof<string>; Length=Some 50; Precision=None; Scale=None; UseMax=false; AllowNull = Nullability.AllowNull; Attributes=List.empty; FKey = None;Comments = List.empty; IsUnique=false }
 
 type TableInput() = 
      member val Name:string = Unchecked.defaultof<_> with get,set
@@ -62,8 +65,9 @@ type SqlGenerationConfig = { TargetSqlProjectName: string; SqlItems: TableInput 
 //    | Focused of InsertsGenerationConfig * (GenerationTarget list)
 //    | Multiple of (InsertsGenerationConfig * GenerationTarget list) list
 
+type ColumnGenerationInfo = ColumnGenerationInfo<Type>
 /// generatorId something to identify the generator with, in the .tt days it was the DefaultProjectNamespace the .tt was running from.
-let runGeneration generatorId (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) manager (cgsm: CodeGeneration.DataModelToF.CodeGenSettingMap) toGen dataModelOnlyItems = 
+let runGeneration generatorId (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) manager (cgsm: CodeGeneration.DataModelToF.CodeGenSettingMap) toGen (dataModelOnlyItems:TableIdentifier list) = 
     //guard columns having a Type = obj
     match toGen |> Seq.map (fun g -> g.SqlItems) |> Seq.collect id |> Seq.tryFind(fun g -> g.Columns |> Seq.exists(fun c -> c.Type = typeof<obj>)) with
     | Some g -> 
@@ -98,21 +102,22 @@ let runGeneration generatorId (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) ma
             printfn "Going to generate into project %s via folder %s" targetSqlProject.Name targetSqlProjectFolder
             targetSqlProjectFolder, t, t.SqlItems
                 |> Seq.map (fun tg ->
-                    {   TableInfo.Name=tg.Name
-                        Schema=tg.Schema
+                    {   TableGenerationInfo.Id = {Name=tg.Name; Schema=tg.Schema}
                         Columns=
                             tg.Columns 
                             |> Seq.map (fun ci ->
                                 try 
-                                    {   ColumnInfo.Name= ci.Name
+                                    {   ColumnGenerationInfo.Name= ci.Name
                                         Type= toColumnType ci.Type ci.Length ci.Precision ci.Scale ci.UseMax 
                                         AllowNull= ci.AllowNull
                                         Attributes = ci.Attributes
                                         IsUnique= ci.IsUnique
-                                        FKey= ci.FKey //if isNull ci.FKey then None else {FKeyInfo.Schema = ci.FKey.Schema; Table= ci.FKey.Table; Column = ci.FKey.Column} |> Some
+                                        FKey= ci.FKey
                                         Comments = ci.Comments
-                                        GenerateReferenceTable = ci.GenerateReferenceTable
-                                        ReferenceValuesWithComment = ci.ReferenceValuesWithComment
+//                                            if isNull ci.fk
+//                                            ci.FKey //if isNull ci.FKey then None else {FKeyInfo.Schema = ci.FKey.Schema; Table= ci.FKey.Table; Column = ci.FKey.Column} |> Some
+//                                            GenerateReferenceTable = ci.GenerateReferenceTable
+//                                            ReferenceValuesWithComment = ci.ReferenceValuesWithComment
                                     }
                                 with _ -> 
                                     printfn "Failed to map %A for table %A" ci tg
@@ -144,7 +149,7 @@ let runGeneration generatorId (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) ma
         | None -> ()
 
         items 
-        |> Seq.map (fun gm -> {Schema=gm.Schema; Name=gm.Name; GenerateFull= false})
+        |> Seq.map (fun gm -> gm.Id)
         |> List.ofSeq
         |> fun items -> dataModelOnlyItems@items
     )

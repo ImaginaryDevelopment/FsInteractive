@@ -4,6 +4,7 @@ open global.Xunit
 open global.Xunit.Abstractions
 open Microsoft.VisualStudio.TextTemplating
 open System.Text
+open Macros.SqlMacros
 open CodeGeneration.SqlMeta
 open System.Diagnostics
 
@@ -25,7 +26,7 @@ let projects = [
     ]
 module SqlGeneratorReferenceData = 
     let refData= [
-            {ReferenceData.Schema="dbo";Table="GuarantorTypes";Column="GuarantorTypeId"; ValuesWithComments = 
+            {ReferenceData.FKeyId = {Table={Schema="dbo";Name="GuarantorTypes"};Column="GuarantorTypeId"}; GenerateReferenceTable = false; ValuesWithComment = 
                 dict [
                 "SELF",null
                 "THIRD PARTY", null
@@ -36,42 +37,46 @@ module SqlGeneratorReferenceData =
     let vOrnonValueStringToList s = if String.IsNullOrEmpty s then List.empty else [s]
 
     let makeUserIdColumn prefix allowNull comment = 
-        { makeIntFkey (prefix + "UserID") {FKeyInfo.Schema="dbo"; Table="Users"; Column="UserID"} with AllowNull = allowNull; Comments= vOrnonValueStringToList comment}
+        let fkey = FKey.FKeyIdentifier {Table={Schema="dbo"; Name="Users"}; Column="UserID"}
+        { makeIntFkey (prefix + "UserID") fkey with AllowNull = allowNull; Comments= vOrnonValueStringToList comment}
     let makePatientIdColumn prefix allowNull comment = 
-        {makeIntFkey (prefix+"PatientID") {FKeyInfo.Schema="dbo";Table="Patients"; Column="PatientID"} with AllowNull = allowNull; Comments=vOrnonValueStringToList comment}
+        let fkey = FKey.FKeyIdentifier {Table={Schema="dbo";Name="Patients"; };Column="PatientID"}
+        {makeIntFkey (prefix+"PatientID") fkey with AllowNull = allowNull; Comments=vOrnonValueStringToList comment}
 
     let toGen = [
-        {Schema="dbo";Name="Payment"; 
+        {   TableGenerationInfo.Id = {Schema="dbo";Name="Payment"}
             Columns=
                 [
-                    {Name="PaymentID"; Type=Other typeof<int>; Attributes = pkeyIdent; IsUnique=false; AllowNull=NotNull; FKey=None; Comments = List.empty;GenerateReferenceTable=false; ReferenceValuesWithComment=null}
-                    {makeIntFkey "AppointmentId" {FKeyInfo.Schema="dbo"; Table="PaymentItemStatus"; Column="AppointmentId"} with AllowNull = AllowNull }
+                    {ColumnGenerationInfo.Name="PaymentID"; Type=ColumnType.Other typeof<int>; Attributes = pkeyIdent; IsUnique=false; AllowNull=Nullability.NotNull; FKey=None; Comments = List.empty}
+                    {makeIntFkey "AppointmentId" (FKey.FKeyIdentifier {Table ={Schema="dbo"; Name="PaymentItemStatus"}; Column="AppointmentId"}) with AllowNull = AllowNull }
 //                    createFKeyedColumn typeof<int> "AppointmentId" {FKeyInfo.Schema="dbo"; Table="PaymentItemStatus"; Column="AppointmentId"} true null
                     // from line 47
-                    {makeStrFkey50 "PaymentTypeId" {Schema="Accounts";Table="PaymentType";Column="PaymentTypeId"} with 
-                        GenerateReferenceTable = true
-                        ReferenceValuesWithComment = [ "Patient";"ThirdParty";"Era"] |> Seq.map (fun n -> n,null) |> dict
-                        Comments = [
-                                    "|Patient of PatientIdentifier * PatientPayment |ThirdParty of PayerIdentifier * ThirdPartyPayment |Era of PayerIdentifier * EraPaymentMethod"
+
+                    {makeStrRefFkey50 "PaymentTypeId" 
+                        {   ReferenceData.FKeyId = {Table = {Schema = "Accounts"; Name = "PaymentType"}; Column = "PaymentTypeId"} 
+                            GenerateReferenceTable = true
+                            ValuesWithComment = dict ["Patient", null; "ThirdParty", null; "Era", null]}
+                        with
+                            Comments = [ "|Patient of PatientIdentifier * PatientPayment |ThirdParty of PayerIdentifier * ThirdPartyPayment |Era of PayerIdentifier * EraPaymentMethod"
                         ] }
                     // from line 60
-                    {makeStrFkey50 "PaymentMethodId" {Schema="Accounts"; Table="PaymentType"; Column="PaymentMethodId"} with
-                        GenerateReferenceTable = true
-                        ReferenceValuesWithComment = 
-                            dict[
-                                "Cash",null;"CC",null;"Check",null;"Ach",null;"Fsa",null;"Other","for when Era amount is 0 or a catch-all"
-                        ] }
+                    makeStrRefFkey50 "PaymentMethodId" 
+                        {   ReferenceData.FKeyId = {Table = {Schema="Accounts"; Name="PaymentType"}; Column="PaymentMethodId"}
+                            GenerateReferenceTable = true
+                            ValuesWithComment = 
+                                dict[
+                                    "Cash",null;"CC",null;"Check",null;"Ach",null;"Fsa",null;"Other","for when Era amount is 0 or a catch-all"
+                            ] }
                     // from line 69
-                    {makeStrFkey50 "PaymentStatusId" {Schema="Accounts"; Table="PaymentStatus"; Column= "PaymentStatusId"} with
-                        GenerateReferenceTable = true
-                        ReferenceValuesWithComment = ["New";"Partial";"Complete"] |> Seq.map (fun n -> n,null) |> dict }
+                    makeStrRefFkey50 "PaymentStatusId" 
+                        {   ReferenceData.FKeyId = {Table ={Schema="Accounts"; Name="PaymentStatus"}; Column= "PaymentStatusId"} 
+                            GenerateReferenceTable = true
+                            ValuesWithComment = ["New";"Partial";"Complete"] |> Seq.map (fun n -> n,null) |> dict }
                     {   Name="TotalAmount"; 
                         Type=Decimal (Some {Precision=12; Scale=2}); IsUnique=false; Attributes = List.empty; AllowNull = NotNull; FKey=None;
-                        GenerateReferenceTable=false
-                        ReferenceValuesWithComment=null
                         Comments = ["was amount (18,2)"] }
                     makeUserIdColumn null AllowNull "null to allow system inserts/adjustments that aren't done by a user"
-                    {makeIntFkey "PayerID" {Schema="dbo";Table="Payers";Column="PayerID"} with AllowNull=AllowNull}
+                    {makeIntFkey "PayerID" (FKeyIdentifier {Table={Schema="dbo";Name="Payers"};Column="PayerID"}) with AllowNull=AllowNull}
                     makePatientIdColumn null AllowNull null
                     // change comment after testing to 'name was timestamp'
                     { makeNonFKeyColumn "Created" (Other typeof<DateTime>) AllowNull with Comments = ["was timestamp"]}
@@ -79,7 +84,7 @@ module SqlGeneratorReferenceData =
                     { makeNonFKeyColumn "TransactionNumber" (VarChar (Length 30)) AllowNull with Comments = ["was checkNumber now will store check number or ACH number (when applicable)"]}
                     { makeNonFKeyColumn "Rcd" (Other typeof<DateTime>) AllowNull with Comments = ["Payment Recvd"]}
                     makeNonFKeyColumn "IsElectronic" (Other typeof<bool>) NotNull
-                    { makeIntFkey "CCItemID" {Schema="dbo";Table="Accounts";Column="CCItem"} with AllowNull=AllowNull}
+                    { makeIntFkey "CCItemID" (FKeyIdentifier {Table={Schema="dbo";Name="Accounts"};Column="CCItem"}) with AllowNull=AllowNull}
                     makeNonFKeyColumn "Comments" (VarChar Max) AllowNull
             ]
         }

@@ -18,6 +18,7 @@ module ProcessMacros =
         let p = Process.Start(targetFile)
         printfn "Started textfile %s with id %i @ %s" titling p.Id targetFile
 
+    // consider switching this to use F#'s event Observables
     let private setupRunProc filename args startDir fBothOpt outF errorF =
         let timer = System.Diagnostics.Stopwatch.StartNew()
         let procStartInfo =
@@ -39,6 +40,9 @@ module ProcessMacros =
 
         let p = new Process(StartInfo = procStartInfo)
         let filterS f s = if not (String.IsNullOrEmpty s) then f s
+//        p.OutputDataReceived
+//        |> Observable.map(fun d-> d.Data)
+//        |> Observable.add (outputHandler false >> filterS outF)
 
         p.OutputDataReceived.AddHandler(DataReceivedEventHandler (outputHandler false (filterS outF)))
         p.ErrorDataReceived.AddHandler(DataReceivedEventHandler (outputHandler true (filterS errorF)))
