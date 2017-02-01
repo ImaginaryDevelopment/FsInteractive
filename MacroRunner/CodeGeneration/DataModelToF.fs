@@ -379,7 +379,7 @@ module DataModelToF =
             appendLine 2 ("member x." + cd.ColumnName + " with get () = x." + cd.ColumnName + " and set v = x." + cd.ColumnName + " <- v")
 
         appendLine 0 String.Empty
-        appendLine 1 (sprintf "member x.MakeRecord () = x :> %s |> toRecord" interfaceName)
+        appendLine 1 (sprintf "member x.MakeRecord () = x :> %s |> %sHelpers.toRecord" interfaceName typeName)
 
         appendLine 0 String.Empty
     
