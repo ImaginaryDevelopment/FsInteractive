@@ -40,6 +40,7 @@ module DataModelToF =
         // not functional yet, right?
         GenerateValueRecords:bool
         GenerateSprocInputRecords: bool
+        UseCliMutable:bool
     }
 
     let mapNullableType(targetType:string, nullable:bool, measureType:string, useOptions:bool ) =
@@ -516,9 +517,9 @@ module DataModelToF =
 
             generateInterface (typeName, columns, appendLine', {iga with Writeable=true})
             if cgsm.GenerateValueRecords then
-                generateRecord(typeName, columns, appendLine', cgsm.UseOptionTypes, true)
+                generateRecord cgsm.UseCliMutable typeName (columns, appendLine', cgsm.UseOptionTypes, true)
 
-            generateRecord(typeName, columns, appendLine', cgsm.UseOptionTypes, false)
+            generateRecord cgsm.UseCliMutable typeName (columns, appendLine', cgsm.UseOptionTypes, false)
             generateModule(typeName, columns, tableInfo.Schema, tableInfo.Name, appendLine', cgsm.UseOptionTypes)
             generateINotifyClass(typeName, columns |> Seq.map fst, appendLine', cgsm.UseOptionTypes)
 
@@ -527,12 +528,12 @@ module DataModelToF =
 
 //    // purpose: make an alias to the 'generate' method that is more C# friendly
 //    // would having C# to construct the type directly with null values in the delegates, then letting this translate only those be a better option?
-    let Generate generatorId (columnBlacklist:IDictionary<string, string seq>) (manager:MacroRunner.MultipleOutputHelper.IManager, generationEnvironment:StringBuilder, targetProjectName:string, tables, cString:string) useOptions generateValueRecords (measures: string seq) (measureBlacklist: string seq) includeNonDboSchemaInNamespace targetNamespace generateSprocInputRecords (pluralizer:Func<_,_>,singularizer:Func<_,_>) =
+    let Generate generatorId useCliMutable (columnBlacklist:IDictionary<string, string seq>) (manager:MacroRunner.MultipleOutputHelper.IManager, generationEnvironment:StringBuilder, targetProjectName:string, tables, cString:string) useOptions generateValueRecords (measures: string seq) (measureBlacklist: string seq) includeNonDboSchemaInNamespace targetNamespace generateSprocInputRecords (pluralizer:Func<_,_>,singularizer:Func<_,_>) =
         let columnBlacklist =
             columnBlacklist |> Map.ofDictionary |> Map.toSeq |> Seq.map (fun (k,v) -> KeyValuePair(k, v |> List.ofSeq))
             |> Map.ofDictionary
 
-        let cgsm = {TargetProjectName= targetProjectName; TargetNamespace=targetNamespace; CString=cString; UseOptionTypes=useOptions; ColumnBlacklist = columnBlacklist; Measures=measures |> List.ofSeq; MeasuresBlacklist= measureBlacklist |> List.ofSeq; IncludeNonDboSchemaInNamespace= includeNonDboSchemaInNamespace; GenerateValueRecords=generateValueRecords; GenerateSprocInputRecords= generateSprocInputRecords}
+        let cgsm = {TargetProjectName= targetProjectName; TargetNamespace=targetNamespace; CString=cString; UseOptionTypes=useOptions; ColumnBlacklist = columnBlacklist; Measures=measures |> List.ofSeq; MeasuresBlacklist= measureBlacklist |> List.ofSeq; IncludeNonDboSchemaInNamespace= includeNonDboSchemaInNamespace; GenerateValueRecords=generateValueRecords; GenerateSprocInputRecords= generateSprocInputRecords; UseCliMutable=useCliMutable}
         generate generatorId
             pluralizer.Invoke
             singularizer.Invoke
@@ -690,6 +691,7 @@ module GenerationSample =
                 IncludeNonDboSchemaInNamespace= false
                 GenerateValueRecords = false
                 GenerateSprocInputRecords = false
+                UseCliMutable = false
             }
 
             DataModelToF.generate generatorId pluralizer.Pluralize pluralizer.Singularize cgsm (manager, sb, tablesToGen)
