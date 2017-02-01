@@ -178,5 +178,5 @@ let makeManager (dte:EnvDTE.DTE) =
     printfn "Script is at %s" scriptFullPath
     if not <| isNull templateProjectItem then
         printfn "ProjectItem= %A" (templateProjectItem.FileNames(0s))
-    let dteWrapper = VsManager.WrapDte dte
+    let dteWrapper = wrapDte dte
     MultipleOutputHelper.Managers.VsManager(Some "HelloTesting.fake.tt", dteWrapper, sb, templateProjectItem)

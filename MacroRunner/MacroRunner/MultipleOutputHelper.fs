@@ -7,12 +7,29 @@ open BReusable
 module DteWrap =
     type Dte = EnvDTE.DTE
     type Project = EnvDTE.Project
+    type ProjectItem = EnvDTE.ProjectItem
     type SourceControlWrapper = {
         GetIsItemUnderSC: string -> bool
         GetIsItemCheckedOut: string -> bool
         CheckOutItem:string -> bool
     }
+
+    // leaking: GetProjectItems
+    type ProjectWrapper = {
+        GetProjectItems: unit -> EnvDTE.ProjectItems
+        GetFullName: unit -> string
+        GetName: unit -> string
+        GetKind: unit -> string
+    } with 
+        static member FromProject (p:Project) =
+            {   GetProjectItems= fun () -> p.ProjectItems
+                GetFullName= fun () -> p.FullName
+                GetName= fun () -> p.Name
+                GetKind= fun () -> p.Kind
+            }
+
     // abstract away any specific needs the manager has to interact with DTE
+    // leaking: GetProjects method
     type DteWrapper = {
         FindProjectItemPropertyValue: string -> string -> string
         GetSourceControl: unit -> SourceControlWrapper option
@@ -21,13 +38,13 @@ module DteWrap =
         }
     let unloadedProject = "{67294A52-A4F0-11D2-AA88-00C04F688DDE}"
 
-    let tryGetKind logOpt (p:Project) =
+    let tryGetKind logOpt (p:ProjectWrapper) =
         try
-            p.Kind |> Some
+            p.GetKind() |> Some
         with _ ->
             let nameOpt =
                 try
-                    p.Name |> Some
+                    p.GetName() |> Some
                 with _ -> None
             logOpt
             |> Option.iter (fun f ->f <| sprintf "Failed to read project Kind:%A" nameOpt)
@@ -41,6 +58,7 @@ module DteWrap =
             let output = sprintf "Failed to writeLnToOutputPane: %s with exception %A" s ex
             printfn "%s" output
             Diagnostics.Trace.WriteLine output
+
     let wrapDte (dte:Dte) =
         let wrapper = {
             FindProjectItemPropertyValue= fun s p -> dte.Solution.FindProjectItem(s).Properties.Item(p).Value |> string
@@ -56,10 +74,56 @@ module DteWrap =
             }
         wrapper
 
+    // leaky, project is in EnvDTE namespace
+    let addFileToDbSqlProj logger (targetProject:ProjectWrapper) fileName =
+        logger <| sprintf "Attempting to add a file to a dbSqlProj: %s" fileName
+        let fullName = targetProject.GetFullName()
+        let projectItems = ref (targetProject.GetProjectItems())
+        let trim1 d (s:string) = d |> Array.ofSeq |> s.Trim
+        let toDescend =
+            fullName
+            |> Path.GetDirectoryName
+            |> String.length
+            |> flip String.subString fileName
+            |> trim1 ['\\']
+            |> trim1 ['/']
+            |> String.split ["\\";"/"]
+        toDescend
+        |> Seq.take (toDescend.Length - 1)
+        |> Seq.iter (fun td ->
+            let childProjectItemOpt =
+                !projectItems
+                |> Seq.cast<ProjectItem>
+                |> Seq.tryFind (fun pi ->
+                    let isMatch = Path.GetFileName(pi.get_FileNames 0s) = td
+                    isMatch
+                )
+
+            match childProjectItemOpt with
+            | None ->
+                logger <| "Failed to find \"" + td + "\""
+                !projectItems
+                |> Seq.cast<ProjectItem>
+                |> Seq.map (fun pi -> pi.get_FileNames 0s)
+                |> Seq.iter(fun pi ->
+                    logger <| "\tWe did however find \"" + pi + "\""
+                )
+            | Some childProjectItem ->
+                logger <| sprintf "OutputPane:Appears we found \"%s\" and it has projectItems:%A" td (not <| isNull childProjectItem.ProjectItems)
+                if not <| isNull childProjectItem.ProjectItems then
+                    projectItems := childProjectItem.ProjectItems
+        )
+
+        logger <| "OutputPane: Generating \"" + fileName + "\" into " + fullName
+
+        let projectItem =
+            !projectItems
+            |> fun pi -> pi.AddFromFile fileName
+        logger <| "AddFromFile put it @" + projectItem.get_FileNames 0s
+
 // MultipleOutputHelper.ttinclude
 module MultipleOutputHelper =
     open DteWrap
-    type ProjectItem = EnvDTE.ProjectItem
 
     [<AllowNullLiteral>]
     type Block () =
@@ -98,7 +162,7 @@ module MultipleOutputHelper =
                     | DteDirect (_,tfOpt) -> tfOpt
 
 
-        let getReadableProjects logOpt (projects: Project seq) = 
+        let getReadableProjects logOpt (projects: ProjectWrapper seq) = 
             projects
             |> Seq.choose(fun p ->
                 match tryGetKind logOpt p with
@@ -110,9 +174,9 @@ module MultipleOutputHelper =
             )
             |> List.ofSeq
 
-        let getIsParentProject (project:Project) filename =
-            filename
-            |> startsWith (System.IO.Path.GetDirectoryName project.FullName)
+        let getIsParentProject (project:ProjectWrapper) =
+            let projectDir = project.GetFullName() |> System.IO.Path.GetDirectoryName
+            startsWith projectDir
 
         type Manager (templateFilePathOpt,sb) =
 
@@ -345,53 +409,9 @@ module MultipleOutputHelper =
                         }
                     VsManager(templateFileOpt,wrapper,sb,templateProjectItem)
 
-                static member AddFileToDbSqlProj (dte:DteWrapper) (targetProject:Project) fileName =
-                    dte.Log <| sprintf "Attempting to add a file to a dbSqlProj: %s" fileName
-                    let projectItems = ref targetProject.ProjectItems
-                    let trim1 d (s:string) = d |> Array.ofSeq |> s.Trim
-                    let toDescend =
-                        targetProject.FullName
-                        |> Path.GetDirectoryName
-                        |> String.length
-                        |> flip String.subString fileName
-                        |> trim1 ['\\']
-                        |> trim1 ['/']
-                        |> String.split ["\\";"/"]
-                    toDescend
-                    |> Seq.take (toDescend.Length - 1)
-                    |> Seq.iter (fun td ->
-                        let childProjectItemOpt =
-                            !projectItems
-                            |> Seq.cast<ProjectItem>
-                            |> Seq.tryFind (fun pi ->
-                                let isMatch = Path.GetFileName(pi.get_FileNames 0s) = td
-                                isMatch
-                            )
-
-                        match childProjectItemOpt with
-                        | None ->
-                            dte.Log <| "Failed to find \"" + td + "\""
-                            !projectItems
-                            |> Seq.cast<ProjectItem>
-                            |> Seq.map (fun pi -> pi.get_FileNames 0s)
-                            |> Seq.iter(fun pi ->
-                                dte.Log <| "\tWe did however find \"" + pi + "\""
-                            )
-                        | Some childProjectItem ->
-                            dte.Log <| sprintf "OutputPane:Appears we found \"%s\" and it has projectItems:%A" td (not <| isNull childProjectItem.ProjectItems)
-                            if not <| isNull childProjectItem.ProjectItems then
-                                projectItems := childProjectItem.ProjectItems
-                    )
-
-                    dte.Log <| "OutputPane: Generating \"" + fileName + "\" into " + targetProject.FullName
-
-                    let projectItem =
-                        !projectItems
-                        |> fun pi -> pi.AddFromFile fileName
-                    dte.Log <| "AddFromFile put it @" + projectItem.get_FileNames 0s
 
 
-                static member FindParentProject logger (readableProjects:(string*Project) seq) childFileName = 
+                static member FindParentProject logger (readableProjects:(string*ProjectWrapper) seq) childFileName = 
                     readableProjects
                     |> Seq.tryFind (fun (k,p) ->
                         // let it sail past projects it could not read, if none of them match, we are throwing in the next step of the pipeline
@@ -403,14 +423,14 @@ module MultipleOutputHelper =
                             try
                                 logger <| "failing to read project with kind= " + k
                             with _ -> ()
-                            logger <| "hi! my name is " + p.Name
+                            logger <| "hi! my name is " + (p.GetName())
                             reraise()
                         )
                     |> Option.map snd 
 
                 // from line to 221..298
                 // does this always try to add, not check and see if it needs to be added? is this always called for each file?
-                static member AddFileToProject (dte:DteWrapper) (projects: Project seq) (fileName:string) =
+                static member AddFileToProject (dte:DteWrapper) (projects: ProjectWrapper seq) (fileName:string) =
                     // only one this appears to be skipping in a solutionfolder
                     dte.Log <| sprintf "AddFileToProject: %s" fileName
                     let canReadProjects = getReadableProjects (Some dte.Log) projects
@@ -421,35 +441,36 @@ module MultipleOutputHelper =
                     |> Seq.tryFind (fun (k,p) ->
                         // let it sail past projects it could not read, if none of them match, we are throwing in the next step of the pipeline
                         try
-                            fileName.StartsWith <| System.IO.Path.GetDirectoryName p.FullName
+                            getIsParentProject p fileName
                         with _ ->
                             dte.Log <| "expected kind= " + ProjectKinds.vsProjectKindSolutionFolder
                             // what if the exception was thrown trying to read p.Kind?
                             try
                                 dte.Log <| "failing to read project with kind= " + k
                             with _ -> ()
-                            dte.Log <| "hi! my name is " + p.Name
+                            dte.Log <| "hi! my name is " + (p.GetName())
                             reraise()
                         )
                     |> Option.map snd
                     |> function
                             | None ->
-                                sprintf "%s, could not find in (%i) projects. %s" fileName (Seq.length projects) (canReadProjects |> Seq.map (fun (_,p) -> p.FullName) |> delimit ",")
+                                sprintf "%s, could not find in (%i) projects. %s" fileName (Seq.length projects) (canReadProjects |> Seq.map (fun (_,p) -> p.GetFullName()) |> delimit ",")
                                 |> invalidOp
                             | Some (targetProject) ->
-                                dte.Log <| sprintf "found targetProject, checking extension %s" targetProject.Name
+                                dte.Log <| sprintf "found targetProject, checking extension %s" (targetProject.GetName())
+                                let fullName = targetProject.GetFullName()
                                 // line 263
                                 // normal adding, traversing, expanding view did not work at all.
-                                if targetProject.FullName.EndsWith ".dbproj" || targetProject.FullName.EndsWith ".sqlproj" then
-                                    VsManager.AddFileToDbSqlProj dte targetProject fileName
+                                if fullName.EndsWith ".dbproj" || fullName.EndsWith ".sqlproj" then
+                                    addFileToDbSqlProj dte.Log targetProject fileName
                                 // line 299
                                 else
-                                    dte.Log <| sprintf @"Generating ""%s"" into %s" fileName targetProject.FullName
-                                    let projectItem = targetProject.ProjectItems.AddFromFile fileName
+                                    dte.Log <| sprintf @"Generating ""%s"" into %s" fileName fullName
+                                    let projectItem = targetProject.GetProjectItems().AddFromFile fileName
                                     try
                                         dte.Log <| "AddFromFile put it @" + projectItem.get_FileNames 0s
                                     with _ ->
-                                        dte.Log <| "get_FileNames(0) failed for " + fileName + " into " + targetProject.Name
+                                        dte.Log <| "get_FileNames(0) failed for " + fileName + " into " + (targetProject.GetName())
                 // templateProjectItem is just the item to use as a parent if any (may only function in C# projects?) can be null
                 static member ProjectSyncScriptWrapped (dte:DteWrapper) (templateProjectItemOpt: ProjectItem) (keepFileNames: string seq) =
                     let log txt = 
@@ -479,7 +500,7 @@ module MultipleOutputHelper =
                         pair.Value.Delete()
                     )
                     log "finished removing unused items"
-                    let projects = dte.GetProjects()
+                    let projects = dte.GetProjects() |> List.map ProjectWrapper.FromProject
                     let isInCurrentProject (fileName:string) = match templateProjectDirectoryOpt with | Some d -> fileName.StartsWith d | None -> false
                     // Add missing files to the project(s)
                     keepFileNameSet
@@ -515,7 +536,7 @@ module MultipleOutputHelper =
                     let project = templateProjectItem.Collection.ContainingProject
                     writeLnToOutputPane dte <| "Starting ProjectSync for t4 in " + project.Name + "\\" + templateProjectItem.Name
                     let templateProjectDirectory = Path.GetDirectoryName project.FullName
-                    let _sol,projects = Macros.VsMacros.getSP dte
+                    let projects = Macros.VsMacros.getSP dte |> snd |> List.map ProjectWrapper.FromProject
                     let inline isInCurrentProject (fileName:string) =  fileName.StartsWith templateProjectDirectory
                     let originalFilePrefix = Path.GetFileNameWithoutExtension(templateProjectItem.get_FileNames 0s) + "."
                     if not <| isNull templateProjectItem.ProjectItems then
