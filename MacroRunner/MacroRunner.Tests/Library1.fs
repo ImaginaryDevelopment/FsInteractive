@@ -8,7 +8,7 @@ open CodeGeneration
 open BReusable
 
 
-type MyFirstTests() = 
+type MyFirstTests() =
     [<Fact>] // fact methods are not allowed to have parameters
     member __.MyFirstFact () = Assert.True(1 = 1)
     [<Theory>]// theory methods are required to have input attributes
@@ -21,8 +21,8 @@ module CodeGeneration =
     open System.Diagnostics
 
     [<Fact>]
-    let ``generateINotifyClass Foo generates a FooN type``() = 
-        let columns = 
+    let ``generateINotifyClass Foo generates a FooN type``() =
+        let columns =
             [
                 {ColumnDescription.ColumnName="Bar";
                  Type = "string"
@@ -32,7 +32,7 @@ module CodeGeneration =
                  IsIdentity = false}
             ]
         let sb = StringBuilder()
-        let appendIndented indentLevel text = 
+        let appendIndented indentLevel text =
             List.replicate (4*indentLevel) " " |> delimit String.Empty
             |> flip (sprintf "%s%s") text
             |> sb.AppendLine
@@ -44,7 +44,7 @@ module CodeGeneration =
 
 //
 ///// 1 properties
-//type FooN (model:FooRecord) = 
+//type FooN (model:FooRecord) =
 //
 //    let propertyChanged = new Event<_, _>()
 //
@@ -88,7 +88,7 @@ module CodeGeneration =
 //    /// string (1) not null
 //    member x.Bar
 //        with get() = bar
-//        and set v = 
+//        and set v =
 //            bar <- v
 //            x.RaisePropertyChanged "Bar"
 //

@@ -24,22 +24,22 @@ let projects = [
         "CodedUITestProject1"
         "Miscellaneous Files"
     ]
-module SqlGeneratorReferenceData = 
+module SqlGeneratorReferenceData =
     let refData= [
-            {ReferenceData.FKeyId = {Table={Schema="dbo";Name="GuarantorTypes"};Column="GuarantorTypeId"}; GenerateReferenceTable = false; ValuesWithComment = 
+            {ReferenceData.FKeyId = {Table={Schema="dbo";Name="GuarantorTypes"};Column="GuarantorTypeId"}; GenerateReferenceTable = false; ValuesWithComment =
                 dict [
                 "SELF",null
                 "THIRD PARTY", null
                 "Insurance & Self", null
                 ]
             }]
-    let pkeyIdent =[ "identity"; "primary key" ] 
+    let pkeyIdent =[ "identity"; "primary key" ]
     let vOrnonValueStringToList s = if String.IsNullOrEmpty s then List.empty else [s]
 
-    let makeUserIdColumn prefix allowNull comment = 
+    let makeUserIdColumn prefix allowNull comment =
         let fkey = FKey.FKeyIdentifier {Table={Schema="dbo"; Name="Users"}; Column="UserID"}
         { makeIntFkey (prefix + "UserID") fkey with AllowNull = allowNull; Comments= vOrnonValueStringToList comment}
-    let makePatientIdColumn prefix allowNull comment = 
+    let makePatientIdColumn prefix allowNull comment =
         let fkey = FKey.FKeyIdentifier {Table={Schema="dbo";Name="Patients"; };Column="PatientID"}
         {makeIntFkey (prefix+"PatientID") fkey with AllowNull = allowNull; Comments=vOrnonValueStringToList comment}
 
@@ -52,27 +52,27 @@ module SqlGeneratorReferenceData =
 //                    createFKeyedColumn typeof<int> "AppointmentId" {FKeyInfo.Schema="dbo"; Table="PaymentItemStatus"; Column="AppointmentId"} true null
                     // from line 47
 
-                    {makeStrRefFkey50 "PaymentTypeId" 
-                        {   ReferenceData.FKeyId = {Table = {Schema = "Accounts"; Name = "PaymentType"}; Column = "PaymentTypeId"} 
+                    {makeStrRefFkey50 "PaymentTypeId"
+                        {   ReferenceData.FKeyId = {Table = {Schema = "Accounts"; Name = "PaymentType"}; Column = "PaymentTypeId"}
                             GenerateReferenceTable = true
                             ValuesWithComment = dict ["Patient", null; "ThirdParty", null; "Era", null]}
                         with
                             Comments = [ "|Patient of PatientIdentifier * PatientPayment |ThirdParty of PayerIdentifier * ThirdPartyPayment |Era of PayerIdentifier * EraPaymentMethod"
                         ] }
                     // from line 60
-                    makeStrRefFkey50 "PaymentMethodId" 
+                    makeStrRefFkey50 "PaymentMethodId"
                         {   ReferenceData.FKeyId = {Table = {Schema="Accounts"; Name="PaymentType"}; Column="PaymentMethodId"}
                             GenerateReferenceTable = true
-                            ValuesWithComment = 
+                            ValuesWithComment =
                                 dict[
                                     "Cash",null;"CC",null;"Check",null;"Ach",null;"Fsa",null;"Other","for when Era amount is 0 or a catch-all"
                             ] }
                     // from line 69
-                    makeStrRefFkey50 "PaymentStatusId" 
-                        {   ReferenceData.FKeyId = {Table ={Schema="Accounts"; Name="PaymentStatus"}; Column= "PaymentStatusId"} 
+                    makeStrRefFkey50 "PaymentStatusId"
+                        {   ReferenceData.FKeyId = {Table ={Schema="Accounts"; Name="PaymentStatus"}; Column= "PaymentStatusId"}
                             GenerateReferenceTable = true
                             ValuesWithComment = ["New";"Partial";"Complete"] |> Seq.map (fun n -> n,null) |> dict }
-                    {   Name="TotalAmount"; 
+                    {   Name="TotalAmount";
                         Type=Decimal (Some {Precision=12; Scale=2}); IsUnique=false; Attributes = List.empty; AllowNull = NotNull; FKey=None;
                         Comments = ["was amount (18,2)"] }
                     makeUserIdColumn null AllowNull "null to allow system inserts/adjustments that aren't done by a user"
@@ -92,7 +92,7 @@ module SqlGeneratorReferenceData =
 
 
 [<Fact>]
-let testSqlGenerator () = 
+let testSqlGenerator () =
 
     // translate SqlGenerator.tt to call into SqlMeta
     let sb = StringBuilder()

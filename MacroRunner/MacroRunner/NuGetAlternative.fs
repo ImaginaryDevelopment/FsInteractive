@@ -9,7 +9,7 @@ open System.IO //open it again, since it has changed
 #I __SOURCE_DIRECTORY__
 #endif
 // not really needed if not interactive ( you can just add a project nuget reference )
-module NugetAlternative = 
+module NugetAlternative =
 
     let srcDir = __SOURCE_DIRECTORY__
     let srcFile = __SOURCE_FILE__
@@ -24,20 +24,20 @@ module NugetAlternative =
     let combine3 basePath segment1 segment2 segment3 = Path.Combine(basePath,segment1,segment2,segment3)
     let packagesTemp = combine (Path.GetTempPath()) (Path.GetFileNameWithoutExtension srcFile)
 
-    type PackageLocation = 
+    type PackageLocation =
         | ById of string
         | ByIdVer of string * string
         | NameAndUrl of string * string
 
     let getPackage packageLocation = //http://stackoverflow.com/a/14895173/57883
-        let filename,url = 
+        let filename,url =
             match packageLocation with
             | ById packageId -> sprintf "%s.zip" packageId, sprintf "https://www.nuget.org/api/v2/package/%s/" packageId
             | ByIdVer (packageId,ver) -> sprintf "%s.%s.zip" packageId ver,sprintf "https://www.nuget.org/api/v2/package/%s/%s" packageId ver
             | NameAndUrl (name,loc) -> name, loc
         if Directory.Exists packagesTemp = false then
             Directory.CreateDirectory packagesTemp |> ignore
-        let targetPath = combine packagesTemp filename 
+        let targetPath = combine packagesTemp filename
         printfn "targetPath for package is %s" targetPath
         if File.Exists(targetPath) = false then
             printfn "downloading package from %s" url
@@ -47,7 +47,7 @@ module NugetAlternative =
             printfn "downloaded package to %s" targetPath
         targetPath
 
-    let extractPackage fullPath = 
+    let extractPackage fullPath =
         printfn "extractPackage from %s" fullPath
         if Path.IsPathRooted fullPath = false then
             failwithf "unrooted path passed to extract package: %s" fullPath
@@ -66,7 +66,7 @@ module NugetAlternative =
             failwithf "Extraction occurred but did not create dir: %s" target
         printfn "extracted to %s" target
 
-    let copyPackageDll packageFullPath dllRelPath (dll:string) = 
+    let copyPackageDll packageFullPath dllRelPath (dll:string) =
         if Path.IsPathRooted packageFullPath = false then
             failwithf "packagePath must be absolute and rooted:%s" packageFullPath
         let dll = if dll.EndsWith(".dll") then dll else dll + ".dll"

@@ -3,9 +3,9 @@ open System
 
 // some parts of this may be from a translation of BMore.linq
 [<AutoOpen>]
-module TypeMapper = 
+module TypeMapper =
     open BReusable.Reflection
-    let mapTypeToF = 
+    let mapTypeToF =
         function
         | TypeOf(isType:int) -> "int"
         | TypeOf(isType:string) -> "string"
@@ -18,12 +18,12 @@ module TypeMapper =
 module StringAssembler = //Abstract Data Type
     open System.Text
 
-    type Sb = 
-        private 
+    type Sb =
+        private
             { SB:StringBuilder}
         with
             override x.ToString() = x.SB.ToString()
-            
+
     [<CompilationRepresentation (CompilationRepresentationFlags.ModuleSuffix)>]
     module Sb =
         let startAssembler() = {SB = StringBuilder()}
@@ -56,63 +56,63 @@ module SimplifiedInput =
     [<Obsolete("this doesn't work")>]
     let extractInfo<'t> () = extractTypeInfo typeof<'t>
 
-//let generateFromType<'t>() = 
+//let generateFromType<'t>() =
 
-module ModelGenerator = 
-    type GenerationStyle = 
+module ModelGenerator =
+    type GenerationStyle =
         |Readonly
         |Writable
-        
+
     type GenerationType =
         |Value
         |Entity
-    
+
     let generateInterface gs sb (indent:string) (name:string) (props:seq<string*Type>) =
-        
-        let addProps i sb = 
+
+        let addProps i sb =
             let suffix = match gs with |Readonly -> String.Empty |Writable -> " with get,set"
-            props 
-            |> Seq.map (fun (name,t) -> 
+            props
+            |> Seq.map (fun (name,t) ->
                 sprintf "/// %s" t.FullName, sprintf "abstract member %s:%s%s" name (mapTypeToF t) suffix
                 )
-            |> Seq.iter (fun (comment,text) -> 
+            |> Seq.iter (fun (comment,text) ->
                 sb
                 |> Sb.appendLine i comment
-                |> Sb.appendLine i text 
+                |> Sb.appendLine i text
                 |> ignore
                 )
             sb
-            
+
         let iname = match gs with |Readonly -> "" |Writable -> "RW"
-        
-        sb 
+
+        sb
         |> Sb.appendLine 0 String.Empty
         |> Sb.appendLine 1 (sprintf "type I%s%s =" iname name)
         |> addProps 2
     #if LINQPAD
-    let getTypeToGen() = Util.Cache(fun () -> dc.GetType()) 
+    let getTypeToGen() = Util.Cache(fun () -> dc.GetType())
     let dumpt (t:string) x = x.Dump(t); x
     #else
-    type private User () = 
+    type private User () =
         member val UserId = 0 with get,set
-    and private Table<'t>() = 
+    and private Table<'t>() =
         member val TableId = 0 with get,set
-    and private SampleType() = 
+    and private SampleType() =
         member val Users:Table<User> = Unchecked.defaultof<_>
     let getTypeToGen() = typeof<SampleType>
     let dumpt (t:string) x = printfn "%s:%A" t x; x
     #endif
 
-//let generateRecord typeName 
-    let sampleGeneratorCall() = 
+//let generateRecord typeName
+    let sampleGeneratorCall() =
         let limit = 5
         let sb = Sb.startAssembler()
-        let types = 
+        let types =
             getTypeToGen()
             |> SimplifiedInput.extractTypeInfo
             |> Seq.take 5
             |> Array.ofSeq
-            
+
     #if LINQPAD
         Newtonsoft.Json.JsonConvert.SerializeObject(types).Dump("shape input")
     #endif
@@ -126,7 +126,7 @@ module ModelGenerator =
             |> dumpt "typeInfo"
             |> ignore
 
-let sampleShapeInput = 
+let sampleShapeInput =
     """[
   {
     "Item1": "Accidents",

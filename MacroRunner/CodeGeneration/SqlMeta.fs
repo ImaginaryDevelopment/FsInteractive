@@ -1,6 +1,6 @@
 ﻿module CodeGeneration.SqlMeta // translation of SqlGeneration.ttinclude
 
-//module SqlGeneration = 
+//module SqlGeneration =
 open System
 open System.Collections.Generic
 open System.Text
@@ -15,13 +15,13 @@ open System.Data
 open System.Diagnostics
 
 type ReferenceData = {FKeyId:FKeyIdentifier; GenerateReferenceTable:bool; ValuesWithComment: IDictionary<string,string>}
-type FKey = 
+type FKey =
     |FKeyIdentifier of FKeyIdentifier
     |FKeyWithReference of ReferenceData
 
-type ColumnGenerationInfo<'T> = 
-    { 
-        Name:string; 
+type ColumnGenerationInfo<'T> =
+    {
+        Name:string;
         Type: 'T
         AllowNull:Nullability
         Attributes: string list
@@ -30,14 +30,14 @@ type ColumnGenerationInfo<'T> =
         Comments: string list
     }
     with
-        static member Zero ct = 
+        static member Zero ct =
             {Name=null; Type = ct; AllowNull = NotNull;IsUnique=false; Attributes = List.empty; FKey = None; Comments = List.empty}
 
 type ColumnGenerationInfo = ColumnGenerationInfo<ColumnType>
 //type TableInfo = { Id:TableIdentifier; Columns: ColumnInfo list}
 type TableGenerationInfo = {Id:TableIdentifier; Columns: ColumnGenerationInfo list}
 
-let getParms conn procName = 
+let getParms conn procName =
     use cmd = new SqlCommand(procName, conn)
     cmd.CommandType <- CommandType.StoredProcedure
     if conn.State = ConnectionState.Closed then
@@ -51,22 +51,22 @@ let getTableGenerationData appendLine fSingularizer cn (ti:TableIdentifier) =
     let (ti, pks,columns,identities) = getTableData cn ti
     ti, typeName, pks, columns, identities
 
-let toColumnType (t:Type) length precision scale useMax = 
+let toColumnType (t:Type) length precision scale useMax =
     match t with
     | TypeOf (isType:bool) -> ColumnType.Other typeof<bool>
-    | TypeOf (isType:decimal) -> 
+    | TypeOf (isType:decimal) ->
         match precision,scale with
         | NullableValue p, NullableValue s ->
             {Precision=p; Scale = s}
             |> Some
             |> ColumnType.Decimal
         | _ -> ColumnType.Decimal None
-    |TypeOf (isType:string) -> 
+    |TypeOf (isType:string) ->
         match useMax,length with
         | true, _ -> Max
         | _, NullableValue length -> Length length
         | _ -> failwithf "mismatched for %A " (useMax,length)
-        |> ColumnType.VarChar 
+        |> ColumnType.VarChar
     | _ -> Other t
 
 // SqlGeneration.ttinclude ~ 49
@@ -85,8 +85,8 @@ let generateTable doDiag (manager:IManager) (generationEnvironment:StringBuilder
     appendLine (sprintf "CREATE TABLE [%s].[%s] (" tableInfo.Id.Schema tableInfo.Id.Name)
     // SqlGeneration.ttinclude ~ 165
     let mapTypeToSql ct =
-        let mapLength = 
-            function 
+        let mapLength =
+            function
             | Max -> "MAX"
             | Length l -> string l
 
@@ -97,7 +97,7 @@ let generateTable doDiag (manager:IManager) (generationEnvironment:StringBuilder
         | NVarChar cl -> sprintf "nvarchar(%s)" (mapLength cl)
         | Char cl -> sprintf "char(%s)" (mapLength cl)
         | NChar cl -> sprintf "nchar(%s)" (mapLength cl)
-        | Other t -> 
+        | Other t ->
             match t with
             | TypeOf(isType:int) -> "int"
             | TypeOf(isType:bool) -> "bit"
@@ -114,24 +114,24 @@ let generateTable doDiag (manager:IManager) (generationEnvironment:StringBuilder
         | _ -> None
 
     tableInfo.Columns
-    |> Seq.iter (fun ci -> 
-        let fKeyTextOpt = 
-            ci.FKey 
+    |> Seq.iter (fun ci ->
+        let fKeyTextOpt =
+            ci.FKey
             |> Option.map (
-                function 
+                function
                 |FKeyIdentifier fk -> fk
                 | FKeyWithReference rd -> rd.FKeyId
                 >> formatFKey tableInfo.Id.Name ci.Name
-             ) 
+             )
              |> Option.getOrDefault null
 
         let multipleComments = ci.Comments.Length > 1
         if multipleComments then
             appendLine String.Empty
-            ci.Comments 
+            ci.Comments
             |> Seq.map (fun c -> "-- " + c)
             |> delimit "\r\n"
-            |> appendLine' 1 
+            |> appendLine' 1
         let comment =
             match ci.Comments with
             | [comment] -> " -- " + comment |> Some
@@ -146,7 +146,7 @@ let generateTable doDiag (manager:IManager) (generationEnvironment:StringBuilder
             |> Option.getOrDefault String.Empty
 
 
-        let formatAttributes (attributes: string seq) hasCombinationPK fKey allowNull = 
+        let formatAttributes (attributes: string seq) hasCombinationPK fKey allowNull =
             let isPk = not <| isNull attributes && Seq.contains "primary key" attributes
             let unique = if not <| isNull attributes && Seq.contains "unique" attributes || ci.IsUnique then " CONSTRAINT UQ_" + tableInfo.Id.Name + "_" + ci.Name + " UNIQUE" else String.Empty
             let needsStarter = allowNull || not isPk || hasCombinationPK
@@ -161,11 +161,11 @@ let generateTable doDiag (manager:IManager) (generationEnvironment:StringBuilder
 
         let result =
             // %-32s is padRight 32chars ' '
-            sprintf "%-32s%-16s%s%s%s%s" 
+            sprintf "%-32s%-16s%s%s%s%s"
                 (sprintf "[%s]" ci.Name)
-                (mapTypeToSql ci.Type) 
+                (mapTypeToSql ci.Type)
                 (formatAttributes ci.Attributes hasCombinationPK fKeyTextOpt (match ci.AllowNull with |AllowNull -> true | NotNull -> false))
-                (if i < columnCount - 1 || hasCombinationPK then "," else String.Empty) 
+                (if i < columnCount - 1 || hasCombinationPK then "," else String.Empty)
                 (if multipleComments then Environment.NewLine else String.Empty)
                 comment
         if doDiag then
@@ -178,18 +178,18 @@ let generateTable doDiag (manager:IManager) (generationEnvironment:StringBuilder
         i <- i + 1
     )
     if hasCombinationPK then
-        let columns = 
+        let columns =
             tableInfo.Columns.Where(fun ci -> ci.Attributes.Contains("primary key")).Select(fun ci -> ci.Name)
             |> delimit ","
-        
+
         sprintf "CONSTRAINT PK_%s PRIMARY KEY (%s)" tableInfo.Id.Name columns
         |> appendLine' 1
     appendLine ");"
     manager.EndBlock()
 
-type TitledReferenceData = 
+type TitledReferenceData =
     | TitledReferenceData of title:string* (ReferenceData list)
-let generateReferenceInsert appendLine = 
+let generateReferenceInsert appendLine =
     function
     | TitledReferenceData(title, referenceData) ->
         appendLine "-- Generated file, DO NOT edit directly"
@@ -200,8 +200,8 @@ let generateReferenceInsert appendLine =
         appendLine (sprintf "PRINT 'Starting %s Synchronization'" title)
         appendLine "GO"
         referenceData
-        |> Seq.iter (fun rd -> 
-            printfn "Starting table %s" rd.FKeyId.Table.Name 
+        |> Seq.iter (fun rd ->
+            printfn "Starting table %s" rd.FKeyId.Table.Name
             let cteName = sprintf "CTE_%s" rd.FKeyId.Table.Name
             appendLine "---------------------------------------------------"
             appendLine (sprintf "PRINT 'Synchronizing [%s.%s]';" rd.FKeyId.Table.Schema rd.FKeyId.Table.Name)
@@ -231,7 +231,7 @@ let generateReferenceInsert appendLine =
             appendLine String.Empty
         )
 
-type InsertsGenerationConfig = 
+type InsertsGenerationConfig =
     {
         InsertTitling: string
         // @"Scripts\Post-Deployment\TableInserts\Accounting1.5\AccountingInserts.sql";
@@ -244,7 +244,7 @@ type InsertsGenerationConfig =
 let generateInserts appendLine (manager:IManager) targetProjectFolder (tables:#seq<_>) igc =
     printfn "Starting inserts, template text length: %i" (manager.GetTextSize())
     // generate reference data
-    let toGen = 
+    let toGen =
         tables
         |> Seq.filter(fun t ->
             t.Columns
@@ -263,7 +263,7 @@ let generateInserts appendLine (manager:IManager) targetProjectFolder (tables:#s
     else
         let targetFilename = Path.Combine(targetProjectFolder, igc.TargetInsertRelativePath)
         manager.StartNewFile targetFilename
-        let refData = 
+        let refData =
             let addlRefData = igc.AdditionalReferenceData |> List.ofSeq
             toGen
             |> Seq.map (fun tbl ->
@@ -271,7 +271,7 @@ let generateInserts appendLine (manager:IManager) targetProjectFolder (tables:#s
                     tbl.Columns
                     |> Seq.choose(fun c -> match c.FKey with | Some(FKeyWithReference rd) -> Some(c.Name, rd) | _ -> None)
                     |> Seq.filter (fun (cName,rd) -> rd.ValuesWithComment |> isNull |> not && rd.ValuesWithComment |> Seq.any )
-                    |> Seq.map (fun (cName,rd) -> 
+                    |> Seq.map (fun (cName,rd) ->
                         if rd.FKeyId.Column |> isNull then
                             {rd with FKeyId = {rd.FKeyId with Column = cName}}
                         else rd
@@ -294,19 +294,19 @@ let generateTablesAndReferenceTables(manager:IManager, generationEnvironment:Str
     |> Seq.iter(fun ti ->
         generateTable false manager generationEnvironment targeting ti
         ti.Columns
-        |> Seq.choose(fun ci-> 
-            match ci.FKey with 
-            | Some (FKeyWithReference rd) when rd.GenerateReferenceTable -> 
-                Some (rd, {ci with FKey = None}) 
+        |> Seq.choose(fun ci->
+            match ci.FKey with
+            | Some (FKeyWithReference rd) when rd.GenerateReferenceTable ->
+                Some (rd, {ci with FKey = None})
             | _ -> None
         )
         // iterate reference table columns
-        |> Seq.iter(fun (fKey,childCi) -> 
+        |> Seq.iter(fun (fKey,childCi) ->
             try
-                let refPKComment = 
+                let refPKComment =
                     if childCi.Comments.Length > 0 then
                         childCi.Comments
-                    elif fKey.ValuesWithComment |> isNull |> not && fKey.ValuesWithComment.Count > 0 then [fKey.ValuesWithComment.Keys |> delimit"," ] 
+                    elif fKey.ValuesWithComment |> isNull |> not && fKey.ValuesWithComment.Count > 0 then [fKey.ValuesWithComment.Keys |> delimit"," ]
                     else []
                 let pkeyColumn = {childCi with Attributes = ["primary key"]; AllowNull = NotNull; FKey=None; Comments= refPKComment}
                 let tId = fKey.FKeyId.Table
@@ -325,7 +325,7 @@ let makeStrRefFkey50 name fkey = {ColumnGenerationInfo.Name=name; Type=VarChar (
 let makeIntFkey name fkey = {ColumnGenerationInfo.Name=name; Type=Other typeof<int>; IsUnique=false; Attributes = List.empty; AllowNull = NotNull; FKey=Some fkey; Comments = List.empty}
 let makeNullable50 name =
     {Name=name; Type = VarChar (Length 50); AllowNull = AllowNull; IsUnique=false; Attributes = List.empty; FKey = None; Comments = List.empty}
-let makeNonFKeyColumn name columnType allowNull = 
+let makeNonFKeyColumn name columnType allowNull =
     {Name=name; Type=columnType; AllowNull=allowNull; Comments = List.empty; FKey=None; IsUnique=false; Attributes = List.empty}
 
 // end sql generation module
