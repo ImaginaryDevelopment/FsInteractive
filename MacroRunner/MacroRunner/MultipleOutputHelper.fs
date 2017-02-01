@@ -33,7 +33,7 @@ module DteWrap =
     type DteWrapper = {
         FindProjectItemPropertyValue: string -> string -> string
         GetSourceControl: unit -> SourceControlWrapper option
-        GetProjects: unit -> Project list
+        GetProjects: unit -> ProjectWrapper list
         Log: string -> unit
         }
     let unloadedProject = "{67294A52-A4F0-11D2-AA88-00C04F688DDE}"
@@ -69,7 +69,7 @@ module DteWrap =
                     else
                         Some {SourceControlWrapper.CheckOutItem = dte.SourceControl.CheckOutItem; GetIsItemUnderSC= dte.SourceControl.IsItemUnderSCC; GetIsItemCheckedOut= dte.SourceControl.IsItemCheckedOut}
 
-            GetProjects = fun () -> Macros.VsMacros.getSP dte |> snd
+            GetProjects = fun () -> Macros.VsMacros.getSP dte |> snd |> List.map ProjectWrapper.FromProject
             Log = writeLnToOutputPane dte
             }
         wrapper
@@ -192,7 +192,7 @@ module MultipleOutputHelper =
             member __.GeneratedFileNames with get() = generatedFileNames
             member __.StartNewFile name =
                 if isNull name then raise <| ArgumentNullException("name")
-                printfn "Starting new file. destination: %s" name
+                printfn "Starting new block. destination: %s" name
                 currentBlock <- new Block(Name=name,
                     Start=sb.Length)
 
@@ -394,19 +394,8 @@ module MultipleOutputHelper =
                         |> dte.Solution.FindProjectItem
 
                     if isNull templateProjectItem then failwithf "VsManager.new: templateProjectItem is null"
-                    let getProjects() =
-                        dte|> Macros.VsMacros.getSP |> snd
-                    let wrapper = {
-                        FindProjectItemPropertyValue= fun s p -> dte.Solution.FindProjectItem(s).Properties.Item(p).Value |> string
-                        GetSourceControl=
-                            fun () ->
-                                if isNull dte.SourceControl then
-                                    None
-                                else
-                                    Some {SourceControlWrapper.CheckOutItem = dte.SourceControl.CheckOutItem; GetIsItemUnderSC= dte.SourceControl.IsItemUnderSCC; GetIsItemCheckedOut= dte.SourceControl.IsItemCheckedOut}
-                        GetProjects = getProjects
-                        Log = writeLnToOutputPane dte
-                        }
+                    let wrapper = wrapDte dte
+                    
                     VsManager(templateFileOpt,wrapper,sb,templateProjectItem)
 
 
@@ -500,7 +489,7 @@ module MultipleOutputHelper =
                         pair.Value.Delete()
                     )
                     log "finished removing unused items"
-                    let projects = dte.GetProjects() |> List.map ProjectWrapper.FromProject
+                    let projects = dte.GetProjects()
                     let isInCurrentProject (fileName:string) = match templateProjectDirectoryOpt with | Some d -> fileName.StartsWith d | None -> false
                     // Add missing files to the project(s)
                     keepFileNameSet
