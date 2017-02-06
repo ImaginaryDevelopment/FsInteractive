@@ -199,7 +199,7 @@ module StringPatterns =
         | _ when String.IsNullOrWhiteSpace s -> WhiteSpace
         | _ -> ValueString
     let (|StartsWith|_|) (str:string) arg = if str.StartsWith(arg) then Some() else None
-    let (|StartsWithI|_|) s1 (toMatch:string) = if toMatch <> null && toMatch.StartsWith(s1, StringComparison.InvariantCultureIgnoreCase) then Some () else None
+    let (|StartsWithI|_|) s1 (toMatch:string) = if not <| isNull toMatch && toMatch.StartsWith(s1, StringComparison.InvariantCultureIgnoreCase) then Some () else None
     let (|StringEqualsI|_|) s1 (toMatch:string) = if String.equalsI toMatch s1 then Some() else None
     let (|InvariantEqualI|_|) (str:string) arg =
        if String.Compare(str, arg, StringComparison.InvariantCultureIgnoreCase) = 0
@@ -496,7 +496,7 @@ type System.Enum with // I think enum<int> is the only allowed enum-ish constrai
     static member fromString<'t when 't:enum<int>> x = Enum.parse<'t> x :?> 't
     static member getName<'t when 't : enum<int>> x = Enum.GetName(typeof<'t>,x)
     static member getAll<'t when 't : enum<int>>() =
-        Enum.GetValues(typeof<'t>)
+        Enum.GetValues typeof<'t>
         |> Seq.cast<int>
         |> Seq.map (fun x -> Enum.getName<'t> x)
         |> Seq.map (fun x -> Enum.parse<'t> x :?> 't)
@@ -656,32 +656,33 @@ module Diagnostics =
         |> Async.Ignore
         |> Async.Start
 
-    let filename (dt:DateTime) =
-        let pid =
+    let makeDatedFilename (dt:DateTime) =
+        let dt = dt.ToString("yyyyMMdd")
+        sprintf "DebugLog_%s.txt" dt
+
+    let logToFile filename (dt:DateTime) topic attrs s =
+        let pid,sessionId =
             try
                 let proc = System.Diagnostics.Process.GetCurrentProcess()
-                sprintf "%i_%i" proc.Id proc.SessionId
+                proc.Id, proc.SessionId
 
-            with _ -> "0_0"
-        let dt = dt.ToString("yyyyMMdd")
-        sprintf "DebugLog_%s_%s.txt" dt pid
+            with _ -> 0,0
 
-    let fileLog filename (dt:DateTime) topic attrs s =
-        let attrs = (sprintf "dt=\"%A\"" dt)::attrs |> StringHelpers.delimit " "
+        let attrs = [sprintf "dt=\"%A\"" dt;sprintf "pid=\"%i\"" pid; sprintf "sId=\"%i\"" sessionId]@attrs |> StringHelpers.delimit " "
         let topic = match topic with |Some t -> t |_ -> "Message"
         let msg = sprintf "<%s %s>%s</%s>%s" topic attrs s topic Environment.NewLine
         System.IO.File.AppendAllText(filename,msg)
 
     let logS topic attrs s =
-        if String.IsNullOrEmpty s = false then
+        if not <| String.IsNullOrEmpty s then
             printfn "%s" s
             Debug.WriteLine s
 
         let dt = DateTime.Now
-        let filename = filename(dt)
-        let fileLog'= fileLog filename dt topic attrs
+        let filename = makeDatedFilename(dt)
+        let fileLog= logToFile filename dt topic attrs
         try
-            fileLog' s
+            fileLog s
         with |ex ->
             printfn "Exception attemping to log:%A" ex
 
