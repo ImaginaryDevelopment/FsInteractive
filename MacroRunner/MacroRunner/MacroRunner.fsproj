@@ -74,6 +74,7 @@
     </Compile>
     <Compile Include="MultipleOutputHelper.fs" />
     <Compile Include="NuGetAlternative.fs" />
+    <Compile Include="Schema.fs" />
     <Compile Include="Program.fs" />
     <None Include="Script.fsx" />
   </ItemGroup>

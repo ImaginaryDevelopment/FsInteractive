@@ -14,6 +14,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		appveyor.yml = appveyor.yml
 	EndProjectSection
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "BMeffers", "BMeffers\BMeffers.fsproj", "{D71D00E0-447E-4C74-8163-E9BB309657EB}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -46,6 +48,14 @@ Global
 		{F23A76D2-5876-494C-9F14-5FD4CF63BDA6}.Release|Any CPU.Build.0 = Release|Any CPU
 		{F23A76D2-5876-494C-9F14-5FD4CF63BDA6}.Release|x86.ActiveCfg = Release|Any CPU
 		{F23A76D2-5876-494C-9F14-5FD4CF63BDA6}.Release|x86.Build.0 = Release|Any CPU
+		{D71D00E0-447E-4C74-8163-E9BB309657EB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D71D00E0-447E-4C74-8163-E9BB309657EB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D71D00E0-447E-4C74-8163-E9BB309657EB}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{D71D00E0-447E-4C74-8163-E9BB309657EB}.Debug|x86.Build.0 = Debug|Any CPU
+		{D71D00E0-447E-4C74-8163-E9BB309657EB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D71D00E0-447E-4C74-8163-E9BB309657EB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D71D00E0-447E-4C74-8163-E9BB309657EB}.Release|x86.ActiveCfg = Release|Any CPU
+		{D71D00E0-447E-4C74-8163-E9BB309657EB}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
