@@ -4,6 +4,8 @@ open System
 open System.Management
 open Microsoft.FSharp.Reflection
 open BReusable
+open BReusable.StringHelpers
+
 // http://www.iislogs.com/articles/12/
 // usage: http://stackoverflow.com/a/26111634/57883
 

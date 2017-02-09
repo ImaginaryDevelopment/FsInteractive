@@ -75,6 +75,7 @@
     <Compile Include="MultipleOutputHelper.fs" />
     <Compile Include="NuGetAlternative.fs" />
     <Compile Include="Schema.fs" />
+    <Compile Include="AdoHelper.fs" />
     <Compile Include="Program.fs" />
     <None Include="Script.fsx" />
   </ItemGroup>
@@ -105,6 +106,7 @@
     <Reference Include="Microsoft.TeamFoundation.Build.Client, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a" />
     <Reference Include="Microsoft.TeamFoundation.Common, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a" />
     <Reference Include="System.Drawing" />
+    <Reference Include="System.Transactions" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xaml" />
     <Reference Include="System.Xml" />

@@ -2,6 +2,7 @@
 open System
 open System.IO
 open BReusable
+open BReusable.StringHelpers
 
 type PathF = |PathF of string
 type Code = |Code of (PathF option) * string

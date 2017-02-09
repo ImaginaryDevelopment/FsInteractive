@@ -5,14 +5,14 @@ open System
 open System.Collections.Generic
 open System.Text
 open System.Linq
-open BReusable
-open BReusable.Reflection
-open MacroRunner.MultipleOutputHelper
-open Macros.SqlMacros
 open System.IO
 open System.Data.SqlClient
 open System.Data
-open System.Diagnostics
+open BReusable
+open BReusable.Reflection
+open BReusable.StringHelpers
+open MacroRunner.MultipleOutputHelper
+open Macros.SqlMacros
 
 type ReferenceData = {FKeyId:FKeyIdentifier; GenerateReferenceTable:bool; ValuesWithComment: IDictionary<string,string>}
 type FKey =

@@ -5,6 +5,7 @@ open Microsoft.CodeAnalysis.CSharp
 open Microsoft.CodeAnalysis.CSharp.Syntax
 open PureCodeGeneration
 open BReusable
+open BReusable.StringHelpers
 
 
 module FieldConversion =

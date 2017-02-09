@@ -143,7 +143,7 @@ module ProcessMacros =
 
 module MsBuild =
     open System.IO
-    open System.Diagnostics
+    open BReusable.StringHelpers
 
     let msbuild targetProject buildArgs fBothOpt fOutputOpt fErrorOpt =
         let targetFolder = Path.GetDirectoryName targetProject

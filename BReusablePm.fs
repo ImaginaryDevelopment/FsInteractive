@@ -550,7 +550,7 @@ type System.TimeSpan with
 module DateTime =
     let getAgeDisplay now dob = DateTime.getAgeDisplay now dob
 
-// Railway Oriented Programming
+// Railway Oriented
 type Rail<'tSuccess,'tFailure> =
     |Happy of 'tSuccess
     |Unhappy of 'tFailure
@@ -1086,6 +1086,7 @@ module Inpc =
             and set v =
                 field <- v
                 fNotifier()
+        member __.Notify() = fNotifier()
 
     // instead of using a parent/base class: use this method!
     let createInpc event name defaultValue = InpcWrapper(triggerPropChanged event name, defaultValue)

@@ -6,6 +6,8 @@ open System.Globalization
 open System.Text
 
 open BReusable
+open BReusable.StringHelpers
+open MacroRunner.AdoHelper
 
 type Path = System.IO.Path
 type IManager = MacroRunner.MultipleOutputHelper.IManager
@@ -273,9 +275,9 @@ module DataModelToF =
             let converter = mapConverter(cd.Type)
             appendLine 2 (cd.ColumnName + " = ")
             appendLine 3 <| sprintf "match f \"%s\" with // %s" cd.ColumnName mapped
-            let measureType = if String.IsNullOrEmpty measureText || stringEqualsI mapped "string" then String.Empty else sprintf " |> (*) 1<%s>" measureText
+            let measureType = if String.IsNullOrEmpty measureText || equalsI mapped "string" then String.Empty else sprintf " |> (*) 1<%s>" measureText
 
-            if cd.Nullable && nonNullables |> Seq.exists (stringEqualsI mapped) |> not then//(mapped <> typeof<string>.Name) && stringEqualsI mapped "string" |> not  then
+            if cd.Nullable && nonNullables |> Seq.exists (equalsI mapped) |> not then//(mapped <> typeof<string>.Name) && equalsI mapped "string" |> not  then
                 sprintf "|Some x -> x |> Convert.%s%s |> Nullable" converter measureType
             else
                 sprintf "|Some x -> x |> Convert.%s%s" converter measureType
@@ -300,7 +302,7 @@ module DataModelToF =
         |> Seq.iter(fun (cd,measureText) ->
             let mapped = mapSqlType(cd.Type,cd.Nullable,measureText,useOptions)
             let measureType =
-                match String.IsNullOrEmpty measureText || stringEqualsI mapped "string", cd.Nullable with
+                match String.IsNullOrEmpty measureText || equalsI mapped "string", cd.Nullable with
                 | true, _ -> String.Empty
                 | false, true -> sprintf "|> Nullable.map((*) 1<%s>)" measureText
                 | false, false -> sprintf " * 1<%s>" measureText
@@ -456,13 +458,13 @@ module DataModelToF =
         //let sol,projects = Macros.VsMacros.getSP dte //EnvDteHelper.recurseSolutionProjects dte
         let projects = manager.DteWrapperOpt |> Option.map (fun dte -> dte.GetProjects()) //(Macros.VsMacros.getSP>>snd) // was dte
         let targetProjectFolder =
-            projects |> Option.map (Seq.find (fun p -> p.Name = cgsm.TargetProjectName))
-            |> Option.map (fun tp -> tp.FullName |> Path.GetDirectoryName)
+            projects |> Option.map (Seq.find (fun p -> p.GetName() = cgsm.TargetProjectName))
+            |> Option.map (fun tp -> tp.GetFullName() |> Path.GetDirectoryName)
 
         appendLine "Projects"
 
         projects |> Option.iter (Seq.iter (fun p ->
-                appendLine' 1 (p.Name + " " + p.FullName)
+                appendLine' 1 (p.GetName() + " " + p.GetFullName())
             )
         )
         appendEmpty()
@@ -475,13 +477,13 @@ module DataModelToF =
         appendEmpty()
         getSqlMeta appendLine cgsm tables fSingularizer
         |> Seq.iter (fun (tableInfo, typeName, pks, identities, columns) ->
-            let startNewFile path = manager.StartNewFile(path)
+            let startNewFile path = manager.StartNewFile path
             let columns =
                 let fIncludeColumn (c:ColumnDescription) : bool = isNull (box cgsm.ColumnBlacklist) || cgsm.ColumnBlacklist |> Map.containsKey tableInfo.Name |> not || cgsm.ColumnBlacklist.[tableInfo.Name] |> Seq.contains c.ColumnName |> not
                 columns
                 |> Seq.filter (fst >> fIncludeColumn)
                 |> Seq.map (Tuple2.mapFst (fun c -> if identities.Contains(c.ColumnName) then {c with IsIdentity = true} else c))
-                |> Seq.map (Tuple2.mapFst (fun c -> if pks |> Seq.exists (stringEqualsI c.ColumnName) then {c with IsPrimaryKey = true} else c))
+                |> Seq.map (Tuple2.mapFst (fun c -> if pks |> Seq.exists (equalsI c.ColumnName) then {c with IsPrimaryKey = true} else c))
                 |> List.ofSeq
 
             let columns = columns |> List.sortBy(fst >> fun c -> c.ColumnName)

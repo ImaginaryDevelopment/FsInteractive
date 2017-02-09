@@ -2,6 +2,7 @@
 open System
 open System.Text
 open BReusable
+open BReusable.StringHelpers
 
 let flip f y x = f x y
 let append (text:string) (sb:StringBuilder) = sb.Append text

@@ -3,7 +3,7 @@ open System
 open System.Data
 open BReusable
 open BReusable.Railways
-open System.Data.SqlClient
+open BReusable.StringHelpers
 open System.Diagnostics
 
 type TableIdentifier = {Schema:string; Name:string;}
@@ -43,6 +43,7 @@ type TableInfo = { Id:TableIdentifier; Columns: ColumnInfo list}
 type ColumnDescription = {ColumnName:string; Type:string; Length:int; Nullable:bool; IsPrimaryKey:bool; IsIdentity:bool}
 
 module Strict = 
+    open BReusable.StringHelpers
 
     type NonBracketedName = NonBracketedName of string
         with

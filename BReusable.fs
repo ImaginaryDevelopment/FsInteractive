@@ -4,6 +4,7 @@ module BReusable
 open System
 [<AutoOpen>]
 module MatchHelpers =
+    // possible purpose: 'when clauses' require binding variable names, and if two cases should have the same result, but one has a condition on the bound variable, it can no longer point to the same exact path
     let (|IsTrue|_|) f x = if f x then Some() else None
 
 [<AutoOpen>]
@@ -37,15 +38,15 @@ module Tuple2 = // idea and most code taken from https://gist.github.com/ploeh/6
     // start Brandon additions
     let mapBoth f (x,y) = f x, f y
 
-[<AutoOpen>]
-module StringHelpersAuto =
+module StringHelpers =
     type System.String with
         static member subString i (x:string) = x.Substring(i)
         static member subString2 i e (x:string)= x.Substring(i,e)
         static member contains s (x:string) = x.Contains(s)
         static member defaultComparison = StringComparison.InvariantCultureIgnoreCase
         static member Null:string = null
-        static member split (delims:string seq) (x:string) = x.Split(delims |> Array.ofSeq, StringSplitOptions.None)
+        static member split1 (delims: string seq) stringSplitOptions (x:string) =  x.Split(delims |> Array.ofSeq, options= stringSplitOptions)
+        static member split (delims:string seq) (x:string) = x |> String.split1 delims StringSplitOptions.None
         // favor non attached methods for commonly used methods
 
     let after (delimiter:string) (s:string) = s|> String.subString (s.IndexOf delimiter + delimiter.Length)
@@ -61,10 +62,6 @@ module StringHelpersAuto =
     let startsWith (delimiter:string) (s:string) = s.StartsWith delimiter
     let startsWithI (delimiter:string) (s:string) = s.StartsWith(delimiter,String.defaultComparison)
     let trim (s:string) = s.Trim()
-//    let after (delimiter:string) (x:string) =
-//        match x.IndexOf delimiter with
-//        | i when i < 0 -> failwithf "after called without matching substring in '%s'(%s)" x delimiter
-//        | i -> x.Substring(i + delimiter.Length)
 
     let before (delimiter:string) s = s|> String.subString2 0 (s.IndexOf delimiter)
     let afterOrSelf delimiter x = if x|> String.contains delimiter then x |> after delimiter else x
@@ -72,7 +69,7 @@ module StringHelpersAuto =
     let afterLast delimiter x =
         if x |> String.contains delimiter then failwithf "After last called with no match"
         x |> String.subString (x.LastIndexOf delimiter + delimiter.Length)
-    let stringEqualsI s1 (toMatch:string)= not <| isNull toMatch && toMatch.Equals(s1, StringComparison.InvariantCultureIgnoreCase)
+    let equalsI s1 (toMatch:string)= not <| isNull toMatch && toMatch.Equals(s1, StringComparison.InvariantCultureIgnoreCase)
 
     let toCamel s = // https://github.com/ayoung/Newtonsoft.Json/blob/master/Newtonsoft.Json/Utilities/StringUtils.cs
         if String.IsNullOrEmpty s then
@@ -84,7 +81,7 @@ module StringHelpersAuto =
             let camelCase = Char.ToLower(s.[0], ci).ToString(ci)
             if (s.Length > 1) then
                 camelCase + (s.Substring 1)
-            else 
+            else
                 camelCase
     let (|NullString|Empty|WhiteSpace|ValueString|) (s:string) =
         match s with
@@ -93,6 +90,52 @@ module StringHelpersAuto =
         | _ when String.IsNullOrWhiteSpace s -> WhiteSpace s
         | _ -> ValueString s
 
+open StringHelpers
+
+// I've also been struggling with the idea that Active patterns are frequently useful as just methods, so sometimes methods are duplicated as patterns
+[<AutoOpen>]
+module StringPatterns =
+    let (|NullString|Empty|WhiteSpace|ValueString|) (s:string) =
+        match s with
+        | null -> NullString
+        | "" -> Empty
+        | _ when String.IsNullOrWhiteSpace s -> WhiteSpace
+        | _ -> ValueString
+    let (|StartsWith|_|) (str:string) arg = if str.StartsWith(arg) then Some() else None
+    let (|StartsWithI|_|) s1 (toMatch:string) = if not <| isNull toMatch && toMatch.StartsWith(s1, StringComparison.InvariantCultureIgnoreCase) then Some () else None
+    let (|StringEqualsI|_|) s1 (toMatch:string) = if equalsI toMatch s1 then Some() else None
+    let (|InvariantEqualI|_|) (str:string) arg =
+       if String.Compare(str, arg, StringComparison.InvariantCultureIgnoreCase) = 0
+       then Some() else None
+    let (|IsNumeric|_|) (s:string) = if not <| isNull s && s.Length > 0 && s |> String.forall Char.IsNumber then Some() else None
+
+    let (|OrdinalEqualI|_|) (str:string) arg =
+       if String.Compare(str, arg, StringComparison.OrdinalIgnoreCase) = 0
+       then Some() else None
+
+    let inline (|IsTOrTryParse|_|) (t,parser) (x:obj): 't option =
+        match x with
+        | v when v.GetType() = t -> Some (v :?> 't)
+        | :? string as p ->
+            match parser p with
+            | true, v -> Some v
+            | _, _ -> None
+        | _ -> None
+
+    let (|Int|_|) (x:obj) =
+        match x with
+        | :? string as p ->
+            let success,value = System.Int32.TryParse(p)
+            if success then
+                Some value
+            else None
+        | _ -> None
+
+    type System.String with
+        static member IsValueString =
+            function
+            | ValueString -> true
+            | _ -> false
 
 //    let (|StartsWithI|_|) (toMatch:string) (x:string) =
 //        if not <| isNull x && not <| isNull toMatch && toMatch.Length > 0 && x.StartsWith(toMatch, StringComparison.InvariantCultureIgnoreCase) then
@@ -132,54 +175,58 @@ module PathHelpers=
         |> Seq.map File.GetLastWriteTime
         |> Seq.max
 
+// Railway Oriented
+type Rail<'TSuccess,'TFailure> =
+    |Happy of 'TSuccess
+    |Unhappy of 'TFailure
 
+[<RequireQualifiedAccess>]
+module Railway =
+
+    // legacy name: bind2
+    /// apply either a success function or a failure function
+    let inline either happyFunc unhappyFunc twoTrackInput =
+        match twoTrackInput with
+        |Happy s -> happyFunc s
+        |Unhappy u -> unhappyFunc u
+
+    /// convert a one-track function into a switch
+    let inline switch f = f >> Happy
+
+    /// convert a switch function into a two-track function
+    let inline bind f = either f Unhappy
+
+    // convert a one-track function into a two-track function
+    let inline map f =
+        bind (f >> Happy)
+
+    let isHappy = function | Happy _ -> true | _ -> false
+    /// bind a function to the failure track
+    /// primary design purpose: adding data to the failure track
+    let inline bind' f = either (Happy) f
+
+    let ofOption failure xOpt = match xOpt with |Some x -> Happy x |None -> Unhappy failure
+
+    /// An adapter that takes a normal one-track function and turns it into a switch function, and also catches exceptions
+    /// could use id instead of a full exn function for cases you just want the exception
+    let inline tryCatch f fEx x =
+        try
+            f x |> Happy
+        with ex -> fEx ex |> Unhappy
+//    let inline toHappyOption x = match x with | Happy x -> Some x | Unhappy _ -> None
+    let toHappyOption = function | Happy s -> Some s |Unhappy _ -> None
+    let toUnhappyOption = function | Happy _ -> None | Unhappy s -> Some s
+    let forAllF fAll items =
+        let items = items |> List.ofSeq
+        if items |> Seq.forall fAll then
+            items |> Seq.choose toHappyOption |> Happy
+        else items |> Seq.choose toUnhappyOption |> Unhappy
 
 module Railways =
     type Railway<'t,'tError> =
         | Success of 't
         | Failure of 'tError
-    /// rail -> one track function lifted to pretend it is two track
-    let map f1to1 rx =
-        match rx with
-        | Success s -> f1to1 s |> Success
-        | Failure x -> Failure x
-    /// rail -> one-in two out function -> outRail
-    let bind f1to2 x =
-        match x with
-        | Success s -> f1to2 s
-        | Failure x -> Failure x
-    /// rail-in to two different functions that have the same return type
-    let bind2 fSuccessToRail fFailure rx =
-        match rx with
-        | Success s -> fSuccessToRail s
-        | Failure x -> fFailure x
 
-    let ofOption failure xOpt = match xOpt with |Some x -> Success x |None -> Failure failure
-//    let tryPick x fItems =
-//        fItems
-//        |> Seq.tryPick (fun fAttempt -> match fAttempt x with |Success result -> Some result | Failure _ -> None)
-//        |> function | Some fResult -> Success fResult | None -> Failure [ "Could not find an item to pick"]
-    let tryCatch f fEx x =
-        try
-            f x |> Success
-        with ex -> fEx |> Failure
-    /// rail-in -> map both the success and failure types to new rail (id on both should work)
-    let map2 fSuccess1to1 fFailure1to1 rx =
-        match rx with
-        | Success s -> fSuccess1to1 s |> Success
-        | Failure x -> fFailure1to1 x |> Failure
-
-    // exception paths must use the same types
-
-    let switch f1 f2 = f1 >> bind f2
-    let isSuccess = function | Success _ -> true | _ -> false
-    let toSuccessOption = function | Success s -> Some s |Failure _ -> None
-    let toFailureOption = function | Success _ -> None | Failure s -> Some s
-    let forAllF fAll items =
-        let items = items |> List.ofSeq
-        if items |> Seq.forall fAll then
-            items |> Seq.choose toSuccessOption |> Success
-        else items |> Seq.choose toFailureOption |> Failure
 
 module Seq =
     open System.Collections.Generic
@@ -216,8 +263,8 @@ module Seq =
 
     /// assumes you will iterate the entire sequence, otherwise not disposed
     /// probably not ok for infinite sequences
-    let ofIEnumerator (en:System.Collections.IEnumerator) = 
-        let unfolder () = 
+    let ofIEnumerator (en:System.Collections.IEnumerator) =
+        let unfolder () =
             if en.MoveNext() then
                 Some(en.Current, ())
             else
@@ -321,11 +368,11 @@ module Reflection =
 
         // Find a property that we can call and get the value
         let prop = typ.GetProperty(name, flags)
-        if prop = null && instance = null then
+        if isNull prop && isNull instance then
           // The syntax can be also used to access nested types of a type
           let nested = typ.Assembly.GetType(typ.FullName + "+" + name)
           // Return nested type if we found one
-          if nested = null then
+          if isNull nested then
             failwithf "Property or nested type '%s' not found in '%s'." name typ.Name
           elif not ((typeof<'R>).IsAssignableFrom(typeof<System.Type>)) then
             let rname = (typeof<'R>.Name)
@@ -334,7 +381,7 @@ module Reflection =
         else
           // Call property and return result if we found some
           let meth = prop.GetGetMethod(true)
-          if prop = null then failwithf "Property '%s' found, but doesn't have 'get' method." name
+          if isNull prop then failwithf "Property '%s' found, but doesn't have 'get' method." name
           try meth.Invoke(instance, [| |]) |> unbox<'R>
           with _ -> failwithf "Failed to get value of '%s' property (of type '%s')" name typ.Name
 

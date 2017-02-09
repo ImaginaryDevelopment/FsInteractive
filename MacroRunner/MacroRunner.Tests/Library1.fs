@@ -6,6 +6,7 @@ open global.Xunit.Abstractions
 open Macros.SqlMacros
 open CodeGeneration
 open BReusable
+open BReusable.StringHelpers
 
 
 type MyFirstTests() =

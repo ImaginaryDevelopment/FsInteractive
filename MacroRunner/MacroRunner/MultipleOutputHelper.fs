@@ -3,6 +3,7 @@ open System
 open System.Collections.Generic
 open System.IO
 open BReusable
+open BReusable.StringHelpers
 
 module DteWrap =
     type Dte = EnvDTE.DTE
@@ -109,7 +110,7 @@ module DteWrap =
                     logger <| "\tWe did however find \"" + pi + "\""
                 )
             | Some childProjectItem ->
-                logger <| sprintf "OutputPane:Appears we found \"%s\" and it has projectItems:%A" td (not <| isNull childProjectItem.ProjectItems)
+//                logger <| sprintf "OutputPane:Appears we found \"%s\" and it has projectItems:%A" td (not <| isNull childProjectItem.ProjectItems)
                 if not <| isNull childProjectItem.ProjectItems then
                     projectItems := childProjectItem.ProjectItems
         )
