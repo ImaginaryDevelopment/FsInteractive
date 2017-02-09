@@ -145,14 +145,14 @@ module Connections =
     let cleanConnectionString x = 
         //"Data Source=;Initial Catalog=;App=;User Id=;Password=;"
         x
-        |> String.split1 [";"] StringSplitOptions.RemoveEmptyEntries
+        |> String.splitO [";"] StringSplitOptions.RemoveEmptyEntries
         |> Seq.map(
-            String.split1 ["="] StringSplitOptions.None 
+            String.splitO ["="] StringSplitOptions.None 
             >> List.ofSeq 
             >> function | [name;value] -> Rail.Happy(name,value) | _ -> Rail.Unhappy "could not read connection string to clean")
         |> Seq.choose Railway.toHappyOption
-        |> Seq.filter(fst >> equalsI "password" >> not )
-        |> Seq.filter(fst >> equalsI"user id" >> not)
+        |> Seq.filter(fst >> stringEqualsI "password" >> not )
+        |> Seq.filter(fst >> stringEqualsI "user id" >> not)
         |> Seq.map (fun (name,value) -> sprintf "%s=%s" name value)
         |> delimit ";"
 

@@ -21,7 +21,7 @@ module DteWrap =
         GetFullName: unit -> string
         GetName: unit -> string
         GetKind: unit -> string
-    } with 
+    } with
         static member FromProject (p:Project) =
             {   GetProjectItems= fun () -> p.ProjectItems
                 GetFullName= fun () -> p.FullName
@@ -85,7 +85,7 @@ module DteWrap =
             fullName
             |> Path.GetDirectoryName
             |> String.length
-            |> flip String.subString fileName
+            |> flip String.substring fileName
             |> trim1 ['\\']
             |> trim1 ['/']
             |> String.split ["\\";"/"]
@@ -163,11 +163,11 @@ module MultipleOutputHelper =
                     | DteDirect (_,tfOpt) -> tfOpt
 
 
-        let getReadableProjects logOpt (projects: ProjectWrapper seq) = 
+        let getReadableProjects logOpt (projects: ProjectWrapper seq) =
             projects
             |> Seq.choose(fun p ->
                 match tryGetKind logOpt p with
-                | Some k -> 
+                | Some k ->
                     if k <> unloadedProject && k <> ProjectKinds.vsProjectKindSolutionFolder then
                         Some (k,p)
                     else None
@@ -185,7 +185,7 @@ module MultipleOutputHelper =
             let files = List<Block>()
             let footer = Block()
             let header = Block()
-            let sb : StringBuilder = 
+            let sb : StringBuilder =
                 if isNull sb then invalidOp "sb must be provided"
                 sb
             let mutable generatedFileNames : string list = []
@@ -201,7 +201,9 @@ module MultipleOutputHelper =
             member x.StartHeader () = x.CurrentBlock <- header
 
             member __.EndBlock () =
-                let log msg = System.Diagnostics.Debugger.Log(0, "EndBlock", if msg |> endsWith "\r\n" then msg else sprintf "%s\r\n" msg)
+                let log msg =
+                    printfn "EndBlock: %s" msg
+                    System.Diagnostics.Debugger.Log(0, "EndBlock", if msg |> endsWith "\r\n" then msg else sprintf "%s\r\n" msg)
                 if isNull currentBlock then
                     log "ending a null block!"
                     ()
@@ -254,14 +256,13 @@ module MultipleOutputHelper =
                     |> Seq.mapi (fun i f -> f,i)
                     |> Seq.fold( fun (pairs: _ list) (block:Block,i:int) ->
 //                    let mutable pairs : (string*(CreateProcessResult*string)) list = List.empty
-                        log <| sprintf "Processing block %i:%s" i block.Name
-                        log <| sprintf "Length is %i" sb.Length
+                        log <| sprintf "Processing block %i:%s\r\nLength is %i" (i + 1) block.Name sb.Length
 
                         let fileName = Path.Combine(outputPath, block.Name)
                         let content = headerText + (tryGetByStartEnd block.Start block.Length) + footerText
                         generatedFileNames <- fileName::generatedFileNames
                         let didCreate = x.CreateFileIfDifferent fileName content
-                        let pairs = 
+                        let pairs =
                             let creationType = if didCreate then Changed else Unchanged
                             (block.Name, (creationType, fileName))::pairs
                         sb.Remove(block.Start, block.Length) |> ignore
@@ -283,17 +284,15 @@ module MultipleOutputHelper =
                     false
 
             abstract GetCustomToolNamespace: fileName: string -> string
-            default __.GetCustomToolNamespace _fileName = null
+            default __.GetCustomToolNamespace _ = null
 
             abstract DefaultProjectNamespace:  string with get
             default __.DefaultProjectNamespace with get() = null
 
             abstract IsFileContentDifferent : fileName:string -> newContent:string -> bool
             default __.IsFileContentDifferent fileName newContent =
-                let isFileContentDifferent =
-                    File.Exists fileName && File.ReadAllText fileName = newContent
-                    |> not
-                isFileContentDifferent
+                let result = not <| File.Exists fileName || (File.ReadAllText fileName = newContent |> not)
+                result
 
             member x.CurrentBlock
                 with get() = currentBlock
@@ -364,7 +363,9 @@ module MultipleOutputHelper =
                         x.CheckoutFileIfRequired fileName
                         File.WriteAllText(fileName, content)
                         true
-                    else false
+                    else
+                        printfn "File content wasn't different, not creating: %s" fileName
+                        false
 
                 //static member private x.CreateVsManager(
                 // this makes the necessary calls to get a Dte for you, as such, it should probably not exist here, rather be a code sample of a way to call this class
@@ -396,17 +397,17 @@ module MultipleOutputHelper =
 
                     if isNull templateProjectItem then failwithf "VsManager.new: templateProjectItem is null"
                     let wrapper = wrapDte dte
-                    
+
                     VsManager(templateFileOpt,wrapper,sb,templateProjectItem)
 
 
 
-                static member FindParentProject logger (readableProjects:(string*ProjectWrapper) seq) childFileName = 
+                static member FindParentProject logger (readableProjects:(string*ProjectWrapper) seq) childFileName =
                     readableProjects
                     |> Seq.tryFind (fun (k,p) ->
                         // let it sail past projects it could not read, if none of them match, we are throwing in the next step of the pipeline
                         try
-                            getIsParentProject p childFileName 
+                            getIsParentProject p childFileName
                         with _ ->
                             logger <| "expected kind= " + ProjectKinds.vsProjectKindSolutionFolder
                             // what if the exception was thrown trying to read p.Kind?
@@ -416,7 +417,7 @@ module MultipleOutputHelper =
                             logger <| "hi! my name is " + (p.GetName())
                             reraise()
                         )
-                    |> Option.map snd 
+                    |> Option.map snd
 
                 // from line to 221..298
                 // does this always try to add, not check and see if it needs to be added? is this always called for each file?
@@ -463,7 +464,7 @@ module MultipleOutputHelper =
                                         dte.Log <| "get_FileNames(0) failed for " + fileName + " into " + (targetProject.GetName())
                 // templateProjectItem is just the item to use as a parent if any (may only function in C# projects?) can be null
                 static member ProjectSyncScriptWrapped (dte:DteWrapper) (templateProjectItemOpt: ProjectItem) (keepFileNames: string seq) =
-                    let log txt = 
+                    let log txt =
                         printfn "ProjectSyncScriptWrapped: %s" txt
                         dte.Log txt
 
@@ -485,6 +486,11 @@ module MultipleOutputHelper =
                     |> Option.iter(Seq.cast<ProjectItem> >> Seq.iter (fun pi -> projectFiles.Add(pi.get_FileNames 0s, pi)))
                     projectFiles
                     |> Seq.filter (fun pair -> keepFileNames |> Seq.contains pair.Key |> not && not <| (Path.GetFileNameWithoutExtension pair.Key + ".").StartsWith originalFilePrefixOpt.Value)
+                    |> List.ofSeq
+                    |> fun x ->
+                        printf "Removing %i items that are no longer used" x.Length
+                        printfn "Names: %A" (x |> Seq.map (fun pair -> pair.Key |> List.ofSeq))
+                        x
                     |> Seq.iter(fun pair ->
                         log <| sprintf "removing unused item from keep list: %s" pair.Key
                         pair.Value.Delete()
@@ -495,7 +501,7 @@ module MultipleOutputHelper =
                     // Add missing files to the project(s)
                     keepFileNameSet
                     |> Seq.iter(fun fileName ->
-                        
+
                         if isInCurrentProject fileName then
                             if not <| projectFiles.ContainsKey fileName then
                                 try

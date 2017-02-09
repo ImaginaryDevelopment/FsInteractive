@@ -30,6 +30,11 @@ module DataModelToF =
 
     type TableGenerationInput = {Id: TableIdentifier; GenerateFull:bool}
 
+    type CodeGenSprocSettingMap = {
+        SprocBlacklist: string list
+        GenerateSprocInputRecords: bool
+    }
+
     type CodeGenSettingMap = {
         TargetProjectName:string
         TargetNamespace: string
@@ -46,7 +51,7 @@ module DataModelToF =
         IncludeNonDboSchemaInNamespace:bool
         // not functional yet, right?
         GenerateValueRecords:bool
-        GenerateSprocInputRecords: bool
+        SprocSettingMap: CodeGenSprocSettingMap option
         UseCliMutable:bool
     }
 
@@ -197,6 +202,7 @@ module DataModelToF =
         appendLine 2 "}"
         appendLine 0 String.Empty
 
+    /// assumes all that is needed is the first char changed, does not account for underscoring
     let toCamelCase s = // https://github.com/ayoung/Newtonsoft.Json/blob/master/Newtonsoft.Json/Utilities/StringUtils.cs
         if String.IsNullOrEmpty s then
             s
@@ -275,9 +281,9 @@ module DataModelToF =
             let converter = mapConverter(cd.Type)
             appendLine 2 (cd.ColumnName + " = ")
             appendLine 3 <| sprintf "match f \"%s\" with // %s" cd.ColumnName mapped
-            let measureType = if String.IsNullOrEmpty measureText || equalsI mapped "string" then String.Empty else sprintf " |> (*) 1<%s>" measureText
+            let measureType = if String.IsNullOrEmpty measureText || stringEqualsI mapped "string" then String.Empty else sprintf " |> (*) 1<%s>" measureText
 
-            if cd.Nullable && nonNullables |> Seq.exists (equalsI mapped) |> not then//(mapped <> typeof<string>.Name) && equalsI mapped "string" |> not  then
+            if cd.Nullable && nonNullables |> Seq.exists (stringEqualsI mapped) |> not then//(mapped <> typeof<string>.Name) && equalsI mapped "string" |> not  then
                 sprintf "|Some x -> x |> Convert.%s%s |> Nullable" converter measureType
             else
                 sprintf "|Some x -> x |> Convert.%s%s" converter measureType
@@ -302,7 +308,7 @@ module DataModelToF =
         |> Seq.iter(fun (cd,measureText) ->
             let mapped = mapSqlType(cd.Type,cd.Nullable,measureText,useOptions)
             let measureType =
-                match String.IsNullOrEmpty measureText || equalsI mapped "string", cd.Nullable with
+                match String.IsNullOrEmpty measureText || stringEqualsI mapped "string", cd.Nullable with
                 | true, _ -> String.Empty
                 | false, true -> sprintf "|> Nullable.map((*) 1<%s>)" measureText
                 | false, false -> sprintf " * 1<%s>" measureText
@@ -442,6 +448,97 @@ module DataModelToF =
 
             |> List.ofSeq
         tableData
+    type SqlSprocMeta = {
+        SpecificCatalog:string
+        SpecificSchema:string
+        SpecificName:string
+        Created:DateTime
+        LastAltered: DateTime
+        IsDeterministic:string
+        SqlDataAccess:string
+        SchemaLevelRoutine:bool option
+    }
+
+    // make this into a Sprocs.generated.fs ?
+    let getSqlSprocs cn = 
+        let sprocData = 
+            getReaderArray cn {CommandText= "select * from information_schema.routines where routine_type = 'PROCEDURE'"; OptCommandType = Some CommandType.Text; OptParameters= None}
+                (fun r ->
+                    {   SpecificCatalog= getRecordOptT r "specific_catalog" |> Option.getOrDefault null
+                        SpecificSchema= getRecordOptT r "specific_schema" |> Option.getOrDefault null
+                        SpecificName= getRecordT r "specific_name"
+                        Created= getRecordT r "created"
+                        LastAltered= getRecordT r "last_altered"
+                        IsDeterministic= getRecordOptT r "is_deterministic" |> Option.getOrDefault null
+                        SqlDataAccess= getRecordOptT r "sql_data_access" |> Option.getOrDefault null
+                        SchemaLevelRoutine= getRecordOptT r "sql_data_access" |> function | Some(StringEqualsI "yes") -> Some true | Some (StringEqualsI "no") -> Some false | _ -> None
+                    }
+                )
+        sprocData
+    type SqlParameterCollection with
+        member x.ToSeq() = 
+            seq { for p in x -> p }
+        static member ToSeq (x: SqlParameterCollection) = x.ToSeq()
+    let getSqlSprocMeta cn sprocName=
+        Connections.runWithConnection cn (fun cn ->
+                SqlMeta.getParms (cn :?> SqlConnection) sprocName
+            )
+    // WIP not hardly started
+    let mapSprocParams cgsm sp = 
+        let ps = 
+            cgsm.CString 
+            |> Connector.CreateCString
+            |> getSqlSprocMeta 
+            <| sprintf "%s.%s.%s" sp.SpecificCatalog sp.SpecificSchema sp.SpecificName
+            |> SqlParameterCollection.ToSeq
+            |> List.ofSeq
+            // change mapParam over to produce output suitable to compose into this function:
+//    let mapSqlType(type' : string, nullable:bool, measureType:string, useOptions:bool) =
+//        match type'.ToLower() with
+//            |"char"
+//            |"nchar"
+//            |"nvarchar"
+//            |"xml"
+//            |"varchar" -> "string"
+//            |"bit" -> mapNullableType("bool", nullable, measureType, useOptions)
+//            |"date"
+//            |"datetime"
+//            |"datetime2"
+//            |"smalldatetime" -> mapNullableType("DateTime", nullable, measureType, useOptions)
+//            |"image" -> "byte[]"
+//            |"uniqueidentifier" -> mapNullableType("Guid",nullable, measureType, useOptions)
+//            |"int" -> mapNullableType("int", nullable, measureType, useOptions)
+//            |"decimal" -> mapNullableType("decimal", nullable, measureType, useOptions)
+//            |"float" -> mapNullableType("float", nullable, measureType, useOptions)
+//            |_ -> if isNull type' then String.Empty else type'
+        let mapParam = 
+            function 
+            | DbType.AnsiString 
+            | DbType.AnsiStringFixedLength
+            | DbType.String
+            | DbType.StringFixedLength
+            | DbType.Xml
+                -> "string"
+            | DbType.Binary -> "byte[]"
+            | DbType.Boolean -> "bool"
+            | DbType.Byte -> "byte"
+            | DbType.Decimal
+            | DbType.Currency -> "decimal"
+            | DbType.Date
+            | DbType.DateTime
+            | DbType.DateTime2
+                // this one might need to be TimeSpan
+            | DbType.DateTimeOffset
+                -> "DateTime"
+            |DbType.Double -> "float"
+            | x -> failwithf "unaccounted for type found %A" x
+            
+        match ps with
+        | [] -> ()
+        | ps -> 
+            let memberList = ps |> Seq.map (fun p -> p.DbType |> mapParam)
+//            appendLine' 1 <| sprintf "type %sInput = {%s}" 
+            ()
 
     let generate generatorId (fPluralizer:string -> string) (fSingularizer:string -> string) (cgsm:CodeGenSettingMap) (manager:MacroRunner.MultipleOutputHelper.IManager, generationEnvironment:StringBuilder, tables:TableIdentifier seq) =
 
@@ -473,6 +570,41 @@ module DataModelToF =
         tables |> Seq.iter (fun t ->
             appendLine' 1 <| sprintf "%s.%s" t.Schema t.Name
         )
+        cgsm.SprocSettingMap
+        |> Option.iter (fun ssm ->
+            appendEmpty()
+            appendLine "Sprocs"
+            let sprocs = 
+                cgsm.CString |> Connector.CreateCString |> getSqlSprocs |> Seq.sortBy (fun sp -> sp.SpecificCatalog, sp.SpecificSchema, sp.SpecificName) 
+                |> Seq.filter(fun sp -> 
+                    ssm.SprocBlacklist |> Seq.exists (stringEqualsI sp.SpecificName)
+                    || ssm.SprocBlacklist |> Seq.exists (stringEqualsI <| sprintf "%s.%s" sp.SpecificSchema sp.SpecificName))
+                |> List.ofSeq
+            printfn "Sprocs! %i" sprocs.Length
+            // this goes into the default block, not a specific and we aren't currently capturing the default block to anywhere
+            sprocs |> Seq.iter (fun sp ->
+                appendLine' 1 <| sprintf "%s.%s.%s" sp.SpecificCatalog sp.SpecificSchema sp.SpecificName
+            )
+            if sprocs.Length > 0 && not <| (sprocs |> Seq.forall(fun sp -> sp.SpecificCatalog = sprocs.[0].SpecificCatalog)) then
+                failwithf "Multiple catalogs not expected"
+            // consider: having this generated after the tables, and using the generated types to map sprocs that match table shapes to accept type records as arguments instead
+            match targetProjectFolder with
+            | Some x -> Path.Combine(x, "Sprocs.generated.fs")
+            | None -> "Sprocs.generated.fs"
+            |> manager.StartNewFile
+            appendLine <| sprintf "module %s.%s" cgsm.TargetNamespace "StoredProcedures"
+            sprocs
+            |> Seq.groupBy (fun sp -> sp.SpecificSchema )
+            |> Seq.iter (fun (schema, schemaSprocs) ->
+                appendLine <| sprintf "module %s = " (toPascalCase schema)
+                schemaSprocs |> Seq.iter(fun sp ->
+                    appendLine' 1 <| sprintf "let %s = \"%s\"" sp.SpecificName sp.SpecificName
+                    mapSprocParams cgsm sp
+                )
+
+            )
+            manager.EndBlock()
+        )
 
         appendEmpty()
         getSqlMeta appendLine cgsm tables fSingularizer
@@ -483,7 +615,7 @@ module DataModelToF =
                 columns
                 |> Seq.filter (fst >> fIncludeColumn)
                 |> Seq.map (Tuple2.mapFst (fun c -> if identities.Contains(c.ColumnName) then {c with IsIdentity = true} else c))
-                |> Seq.map (Tuple2.mapFst (fun c -> if pks |> Seq.exists (equalsI c.ColumnName) then {c with IsPrimaryKey = true} else c))
+                |> Seq.map (Tuple2.mapFst (fun c -> if pks |> Seq.exists (stringEqualsI c.ColumnName) then {c with IsPrimaryKey = true} else c))
                 |> List.ofSeq
 
             let columns = columns |> List.sortBy(fst >> fun c -> c.ColumnName)
@@ -544,12 +676,12 @@ module DataModelToF =
 
 //    // purpose: make an alias to the 'generate' method that is more C# friendly
 //    // would having C# to construct the type directly with null values in the delegates, then letting this translate only those be a better option?
-    let Generate generatorId addlNamespaces useCliMutable (columnBlacklist:IDictionary<string, string seq>) (manager:MacroRunner.MultipleOutputHelper.IManager, generationEnvironment:StringBuilder, targetProjectName:string, tables, cString:string) useOptions generateValueRecords (measures: string seq) (measureBlacklist: string seq) includeNonDboSchemaInNamespace targetNamespace generateSprocInputRecords (pluralizer:Func<_,_>,singularizer:Func<_,_>) (getMeasureNamespace:Func<_,_>)=
+    let Generate generatorId addlNamespaces useCliMutable (columnBlacklist:IDictionary<string, string seq>) (manager:MacroRunner.MultipleOutputHelper.IManager, generationEnvironment:StringBuilder, targetProjectName:string, tables, cString:string) useOptions generateValueRecords (measures: string seq) (measureBlacklist: string seq) includeNonDboSchemaInNamespace targetNamespace sprocSettings (pluralizer:Func<_,_>,singularizer:Func<_,_>) (getMeasureNamespace:Func<_,_>)=
         let columnBlacklist =
             columnBlacklist |> Map.ofDictionary |> Map.toSeq |> Seq.map (fun (k,v) -> KeyValuePair(k, v |> List.ofSeq))
             |> Map.ofDictionary
 
-        let cgsm = {TargetProjectName= targetProjectName; AdditionalNamespaces= addlNamespaces |> List.ofSeq; TargetNamespace=targetNamespace; CString=cString; UseOptionTypes=useOptions; ColumnBlacklist = columnBlacklist; Measures=measures |> List.ofSeq; MeasuresBlacklist= measureBlacklist |> List.ofSeq; IncludeNonDboSchemaInNamespace= includeNonDboSchemaInNamespace; GenerateValueRecords=generateValueRecords; GenerateSprocInputRecords= generateSprocInputRecords; UseCliMutable=useCliMutable; GetMeasureNamepace= Option.ofObj getMeasureNamespace |> Option.map (fun f -> f.Invoke) }
+        let cgsm = {TargetProjectName= targetProjectName; SprocSettingMap = sprocSettings |> Option.ofUnsafeNonNullable; AdditionalNamespaces= addlNamespaces |> List.ofSeq; TargetNamespace=targetNamespace; CString=cString; UseOptionTypes=useOptions; ColumnBlacklist = columnBlacklist; Measures=measures |> List.ofSeq; MeasuresBlacklist= measureBlacklist |> List.ofSeq; IncludeNonDboSchemaInNamespace= includeNonDboSchemaInNamespace; GenerateValueRecords=generateValueRecords; UseCliMutable=useCliMutable; GetMeasureNamepace= Option.ofObj getMeasureNamespace |> Option.map (fun f -> f.Invoke) }
         generate generatorId
             pluralizer.Invoke
             singularizer.Invoke
@@ -706,10 +838,10 @@ module GenerationSample =
                 MeasuresBlacklist= List.empty
                 IncludeNonDboSchemaInNamespace= false
                 GenerateValueRecords = false
-                GenerateSprocInputRecords = false
                 UseCliMutable = false
                 GetMeasureNamepace = None
                 AdditionalNamespaces = []
+                SprocSettingMap = None
             }
 
             DataModelToF.generate generatorId pluralizer.Pluralize pluralizer.Singularize cgsm (manager, sb, tablesToGen)

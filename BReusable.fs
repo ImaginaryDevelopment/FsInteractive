@@ -38,57 +38,136 @@ module Tuple2 = // idea and most code taken from https://gist.github.com/ploeh/6
     // start Brandon additions
     let mapBoth f (x,y) = f x, f y
 
-module StringHelpers =
-    type System.String with
-        static member subString i (x:string) = x.Substring(i)
-        static member subString2 i e (x:string)= x.Substring(i,e)
-        static member contains s (x:string) = x.Contains(s)
-        static member defaultComparison = StringComparison.InvariantCultureIgnoreCase
-        static member Null:string = null
-        static member split1 (delims: string seq) stringSplitOptions (x:string) =  x.Split(delims |> Array.ofSeq, options= stringSplitOptions)
-        static member split (delims:string seq) (x:string) = x |> String.split1 delims StringSplitOptions.None
-        // favor non attached methods for commonly used methods
+let private failNullOrEmpty paramName x = if String.IsNullOrEmpty x then raise <| ArgumentOutOfRangeException paramName else x
+type System.String with
+//        // no idea how to call this thing with a comparer
+//        static member indexOf (delimiter,?c:StringComparison) (x:string) = 
+//            match failNullOrEmpty "delimiter" delimiter,c with
+//            | d, Some c -> x.IndexOf(d,comparisonType=c)
+//            | d, None -> x.IndexOf d
+    static member indexOf delimiter (x:string) =
+        failNullOrEmpty "delimiter" delimiter
+        |> x.IndexOf
+    static member indexOfC delimiter c (x:string) =
+        x.IndexOf(failNullOrEmpty "delimiter" delimiter ,comparisonType=c)
+// couldn't get this guy to call the other guy, so... leaving him out too
+//        static member contains (delimiter, ?c:StringComparison) (x:string) = 
+//            match failNullOrEmpty "delimiter" delimiter, c with
+//            | d, Some c -> x.IndexOf(d, comparisonType=c) |> flip (>=) 0
+//            | d, None -> x.Contains d
+    static member contains delimiter (x:string) =
+        failNullOrEmpty "delimiter" delimiter
+        |> x.Contains
+    static member containsC delimiter c (x:string) = 
+        x
+        |> String.indexOfC (failNullOrEmpty "delimiter" delimiter) c
+        |> flip (>=) 0
+    static member substring i (x:string) = x.Substring i
+    static member substring2 i e (x:string)= x.Substring(i,e)
+    // the default insensitive comparison
+    static member defaultIComparison = StringComparison.InvariantCultureIgnoreCase
+    static member Null:string = null
+    static member trim (s:string) = match s with | null -> null | s -> s.Trim()
+    static member split (delims:string seq) (x:string) = x.Split(delims |> Array.ofSeq, StringSplitOptions.None)
+    static member splitO (items:string seq) options (x:string) = x.Split(items |> Array.ofSeq, options)
+    static member emptyToNull (x:string) = if String.IsNullOrEmpty x then null else x
+    static member equalsI (x:string) (x2:string) = not <| isNull x && not <| isNull x2 && x.Equals(x2, String.defaultIComparison)
+    static member startsWithI (toMatch:string) (x:string) = not <| isNull x && not <| isNull toMatch && toMatch.Length > 0 && x.StartsWith(toMatch, String.defaultIComparison)
+    static member isNumeric (x:string) = not <| isNull x && x.Length > 0 && x |> String.forall Char.IsNumber
+    static member splitLines(x:string) = x.Split([| "\r\n";"\n"|], StringSplitOptions.None)
+    static member beforeAnyOf (delimiters:string list) (x:string) =
+        let index, _ =
+            delimiters
+            |> Seq.map (fun delimiter -> x.IndexOf(delimiter),delimiter)
+            |> Seq.filter(fun (index,_) -> index >= 0)
+            |> Seq.minBy (fun (index, _) -> index)
+        x.Substring(0,index)
+    static member replace (target:string) (replacement) (str:string) = if String.IsNullOrEmpty target then invalidOp "bad target" else str.Replace(target,replacement)
 
-    let after (delimiter:string) (s:string) = s|> String.subString (s.IndexOf delimiter + delimiter.Length)
-    let contains (delimiter:string) (x:string) = if isNull x then false elif isNull delimiter || delimiter = "" then failwithf "bad contains call" else x.IndexOf(delimiter, String.defaultComparison) >= 0
-    let containsI (delimiter:string) (x:string) = if isNull x then false elif isNull delimiter || delimiter = "" then failwithf "bad contains call" else x.IndexOf(delimiter, String.defaultComparison) >= 0
+// comment/concern/critique auto-opening string functions may pollute (as there are so many string functions)
+// not having to type `String.` on at least the used constantly is a huge reduction in typing
+// also helps with point-free style
+module StringHelpers =
+
+    // I've been fighting/struggling with where to namespace/how to architect string functions, they are so commonly used, static members make it easier to find them
+    // since typing `String.` with this module open makes them all easy to find
+    // favor non attached methods for commonly used methods
+
+//    let before (delimiter:string) (x:string) = x.Substring(0, x.IndexOf delimiter)
+
+    let contains (delimiter:string) (x:string) = String.contains delimiter x
+    let containsI (delimiter:string) (x:string) = x |> String.containsC delimiter String.defaultIComparison
+    let substring i x = x |> String.substring i
+    let substring2 i length (x:string)  = x |> String.substring2 i length //x.Substring(i, length)
+    let before (delimiter:string) s = s |> String.substring2 0 (s.IndexOf delimiter)
+    let beforeOrSelf delimiter x = if x|> String.contains delimiter then x |> before delimiter else x
+    let after (delimiter:string) (x:string) =
+        failNullOrEmpty "x" x
+        |> tee (fun _ -> failNullOrEmpty "delimiter" delimiter |> ignore)
+        |> fun x -> 
+            match x.IndexOf delimiter with
+            | i when i < 0 -> failwithf "after called without matching substring in '%s'(%s)" x delimiter
+            | i -> x |> String.substring (i + delimiter.Length)
+    let afterI (delimiter:string) (x:string) = 
+        x
+        |> String.indexOfC delimiter String.defaultIComparison
+        |> (+) delimiter.Length
+        |> flip String.substring x
+    let afterOrSelf delimiter x = if x|> String.contains delimiter then x |> after delimiter else x
+    let afterOrSelfI (delimiter:string) (x:string) = if x |> String.containsC delimiter String.defaultIComparison then x |> afterI delimiter else x
     let containsAnyOf (delimiters:string seq) (x:string) = delimiters |> Seq.exists(flip contains x)
     let containsIAnyOf (delimiters:string seq) (x:string) = delimiters |> Seq.exists(flip containsI x)
     let delimit (delimiter:string) (items:#seq<string>) = String.Join(delimiter,items)
+
     let endsWith (delimiter:string) (x:string) = x.EndsWith delimiter
-    let isNumeric (s:string)= not <| isNull s && s.Length > 0 && s |> String.forall Char.IsNumber
-    let replace (target:string) (replacement) (str:string) = str.Replace (target,replacement)
+    let isNumeric (s:string)= not <| isNull s && s.Length > 0 && s |> String.forall Char.IsNumber 
+    let replace (target:string) (replacement) (str:string) = if String.IsNullOrEmpty target then invalidOp "bad target" else str.Replace(target,replacement)
     let splitLines(x:string) = x.Split([| "\r\n";"\n"|], StringSplitOptions.None)
     let startsWith (delimiter:string) (s:string) = s.StartsWith delimiter
-    let startsWithI (delimiter:string) (s:string) = s.StartsWith(delimiter,String.defaultComparison)
-    let trim (s:string) = s.Trim()
+    let startsWithI (delimiter:string) (s:string) = s.StartsWith(delimiter,String.defaultIComparison)
+    let trim = String.trim
+//    let after (delimiter:string) (x:string) =  
+//        match x.IndexOf delimiter with
+//        | i when i < 0 -> failwithf "after called without matching substring in '%s'(%s)" x delimiter
+//        | i -> x.Substring(i + delimiter.Length)
 
-    let before (delimiter:string) s = s|> String.subString2 0 (s.IndexOf delimiter)
-    let afterOrSelf delimiter x = if x|> String.contains delimiter then x |> after delimiter else x
-    let beforeOrSelf delimiter x = if x|> String.contains delimiter then x |> before delimiter else x
-    let afterLast delimiter x =
+    let afterLast delimiter x = 
         if x |> String.contains delimiter then failwithf "After last called with no match"
-        x |> String.subString (x.LastIndexOf delimiter + delimiter.Length)
-    let equalsI s1 (toMatch:string)= not <| isNull toMatch && toMatch.Equals(s1, StringComparison.InvariantCultureIgnoreCase)
+        x |> String.substring (x.LastIndexOf delimiter + delimiter.Length)
+    let stringEqualsI s1 (toMatch:string)= not <| isNull toMatch && toMatch.Equals(s1, StringComparison.InvariantCultureIgnoreCase)
 
-    let toCamel s = // https://github.com/ayoung/Newtonsoft.Json/blob/master/Newtonsoft.Json/Utilities/StringUtils.cs
-        if String.IsNullOrEmpty s then
-            s
-        elif not <| Char.IsUpper s.[0] then
-            s
-        else
-            let ci = System.Globalization.CultureInfo.InvariantCulture
-            let camelCase = Char.ToLower(s.[0], ci).ToString(ci)
-            if (s.Length > 1) then
-                camelCase + (s.Substring 1)
-            else
-                camelCase
-    let (|NullString|Empty|WhiteSpace|ValueString|) (s:string) =
+    let (|NullString|Empty|WhiteSpace|ValueString|) (s:string) = 
         match s with
         | null -> NullString
         | "" -> Empty
         | _ when String.IsNullOrWhiteSpace s -> WhiteSpace s
         | _ -> ValueString s
+    let inline isNullOrEmptyToOpt s =
+        if String.IsNullOrEmpty s then None else Some s
+
+    // was toFormatString
+    // with help from http://www.readcopyupdate.com/blog/2014/09/26/type-constraints-by-example-part1.html
+    let inline toFormatString (f:string) (a:^a) = ( ^a : (member ToString:string -> string) (a,f))
+
+    //if more is needed consider humanizer or inflector
+    let toPascalCase s =
+        s
+        |> Seq.mapi (fun i l -> if i=0 && Char.IsLower l then Char.ToUpper l else l)
+        |> String.Concat
+
+    let humanize camel :string =
+        seq {
+            let pascalCased = toPascalCase camel
+            yield pascalCased.[0]
+            for l in  pascalCased |> Seq.skip 1 do
+                if System.Char.IsUpper l then
+                    yield ' '
+                    yield l
+                else
+                    yield l
+        }
+        |> String.Concat
+
 
 open StringHelpers
 
@@ -103,7 +182,7 @@ module StringPatterns =
         | _ -> ValueString
     let (|StartsWith|_|) (str:string) arg = if str.StartsWith(arg) then Some() else None
     let (|StartsWithI|_|) s1 (toMatch:string) = if not <| isNull toMatch && toMatch.StartsWith(s1, StringComparison.InvariantCultureIgnoreCase) then Some () else None
-    let (|StringEqualsI|_|) s1 (toMatch:string) = if equalsI toMatch s1 then Some() else None
+    let (|StringEqualsI|_|) s1 (toMatch:string) = if stringEqualsI toMatch s1 then Some() else None
     let (|InvariantEqualI|_|) (str:string) arg =
        if String.Compare(str, arg, StringComparison.InvariantCultureIgnoreCase) = 0
        then Some() else None
