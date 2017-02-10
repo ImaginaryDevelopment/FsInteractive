@@ -577,8 +577,8 @@ module DataModelToF =
             let sprocs = 
                 cgsm.CString |> Connector.CreateCString |> getSqlSprocs |> Seq.sortBy (fun sp -> sp.SpecificCatalog, sp.SpecificSchema, sp.SpecificName) 
                 |> Seq.filter(fun sp -> 
-                    ssm.SprocBlacklist |> Seq.exists (stringEqualsI sp.SpecificName)
-                    || ssm.SprocBlacklist |> Seq.exists (stringEqualsI <| sprintf "%s.%s" sp.SpecificSchema sp.SpecificName))
+                    ssm.SprocBlacklist |> Seq.exists (stringEqualsI sp.SpecificName) |> not
+                    && ssm.SprocBlacklist |> Seq.exists (stringEqualsI <| sprintf "%s.%s" sp.SpecificSchema sp.SpecificName) |> not)
                 |> List.ofSeq
             printfn "Sprocs! %i" sprocs.Length
             // this goes into the default block, not a specific and we aren't currently capturing the default block to anywhere
