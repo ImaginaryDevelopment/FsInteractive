@@ -363,7 +363,7 @@ module DataModelToF =
             appendLine 2 <| "|> sprintf \"%s;select SCOPE_IDENTITY()\""
         appendLine 0 String.Empty
 
-    let generateINotifyClass(typeName:string, columns:ColumnDescription seq, appendLine:int -> string -> unit, useOptions:bool ) =
+    let generateINotifyClass(typeName:string, columns:ColumnDescription seq, appendLine:int -> string -> unit, _useOptions:bool ) =
         let mapFieldNameFromType(columnName:string) =
             match toCamelCase columnName with
             | "type" ->  "type'"
@@ -536,7 +536,8 @@ module DataModelToF =
         match ps with
         | [] -> ()
         | ps -> 
-            let memberList = ps |> Seq.map (fun p -> p.DbType |> mapParam)
+            //WIP
+            let _memberList = ps |> Seq.map (fun p -> p.DbType |> mapParam)
 //            appendLine' 1 <| sprintf "type %sInput = {%s}" 
             ()
 
@@ -560,8 +561,16 @@ module DataModelToF =
 
         appendLine "Projects"
 
+        // fails on unloaded projects, probably anything else that won't give up the full name
         projects |> Option.iter (Seq.iter (fun p ->
-                appendLine' 1 (p.GetName() + " " + p.GetFullName())
+                let fullName = 
+                    try 
+                        p.GetFullName()
+                        |> sprintf " %s" 
+                    with _ ->
+                        // project may be unloaded
+                        String.Empty
+                appendLine' 1 (p.GetName() + fullName)
             )
         )
         appendEmpty()

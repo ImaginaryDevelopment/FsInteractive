@@ -176,7 +176,12 @@ module MultipleOutputHelper =
             |> List.ofSeq
 
         let getIsParentProject (project:ProjectWrapper) =
-            let projectDir = project.GetFullName() |> System.IO.Path.GetDirectoryName
+            let projectDir = 
+                try
+                    project.GetFullName() |> System.IO.Path.GetDirectoryName
+                with ex ->
+                    ex.Data.Add("getIsParentProject", project.GetName())
+                    reraise()
             startsWith projectDir
 
         type Manager (templateFilePathOpt,sb) =
