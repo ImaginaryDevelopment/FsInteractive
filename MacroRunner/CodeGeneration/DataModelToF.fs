@@ -215,6 +215,84 @@ module DataModelToF =
             else
                 camelCase
 
+    let generateFromStpMethod appendLine useOptions camelType (columns :(ColumnDescription*MeasureText) seq)=
+        appendLine 0 String.Empty
+
+        appendLine 1 ("let inline toRecordStp (" + camelType + ": ^a) =")
+        appendLine 2 "{"
+
+        columns
+        |> Seq.iter(fun (cd,measureText) ->
+            let mapped = mapSqlType(cd.Type,cd.Nullable,measureText,useOptions)
+            let measureType =
+                match String.IsNullOrEmpty measureText || stringEqualsI mapped "string", cd.Nullable with
+                | true, _ -> String.Empty
+                | false, true -> sprintf "|> Nullable.map((*) 1<%s>)" measureText
+                | false, false -> sprintf " * 1<%s>" measureText
+
+            appendLine 3 <| sprintf "%s = (^a: (member %s: _) %s)%s" cd.ColumnName cd.ColumnName camelType measureType
+        )
+
+        appendLine 2 "}"
+        ()
+
+    let generateCreateSqlInsertTextMethod appendLine useOptions typeName schemaName tableName (columns:(ColumnDescription*MeasureText) seq) =
+        let canDoInsert = columns |> Seq.exists(fst >> fun c -> c.Type = "image" || c.Type = "byte[]") |> not
+        if canDoInsert then
+            appendLine 0 String.Empty
+            // idea: put what running the .Zero() record against this function would generate in a comment
+            let insertStart = sprintf "insert into %s.%s(%s) values (%s)" schemaName tableName
+            let hasIdentity = 
+                columns
+                |> Seq.map fst
+                |> Seq.exists(fun c -> c.IsIdentity)
+            columns
+            |> Seq.map (fun (cd,mt) -> cd.ColumnName, mapSqlType(cd.Type, cd.Nullable, mt, useOptions) |> flip getDefaultValue null)
+            |> List.ofSeq
+            |> fun s -> s |> Seq.map fst, s |> Seq.map snd
+            |> fun (names,values) ->
+                insertStart (names |> delimit ",") (values |> delimit ",")
+                |> sprintf "//%s"
+                |> appendLine 1
+            let insertMethodName = if hasIdentity then "createInsertReturnIdentity" else "createInsert"
+            appendLine 1 <| sprintf "let %s blacklist (r:I%s) =" insertMethodName typeName
+            let needsQuoted (c:ColumnDescription) = ["varchar"; "char"; "nvarchar"; "nchar";"datetime";"xml";"datetime2"] |> Seq.tryFind (fun n -> match c.Type with |IsTrue (containsI n) -> true | _ -> false)
+
+            match columns |> Seq.filter (fst >> fun c -> not c.IsIdentity) |> Seq.choose (fst >> needsQuoted) |> Seq.tryHead with
+            | Some firstTypeToNeedQuoteF ->
+                firstTypeToNeedQuoteF
+                |> sprintf "let quoted (s:string) = \"'\" + s.Replace(\"'\",\"''\") + \"'\" // %s"
+                |> appendLine 2
+            | None -> ()
+
+            let mapValue (cd:ColumnDescription, prefix:string) :string  =
+                let fullCName = prefix + cd.ColumnName
+                match cd.Type.ToLower() with
+                    |"varchar" -> sprintf "if String.IsNullOrEmpty %s then \"null\" else quoted %s" fullCName fullCName
+                    |"int" ->  
+                        if cd.Nullable then 
+                            "if isNull (box " + fullCName + ") then \"null\" else " + fullCName + " |> string" 
+                        else fullCName + " |> string"
+                    |_ ->  if cd.Nullable then "if isNull (box " + fullCName + ") then \"null\" else " + fullCName + " |> string |> quoted" else fullCName + " |> string |> quoted"
+
+            appendLine 2 "["
+
+            columns
+            |> Seq.map fst
+            |> Seq.filter (fun c -> not c.IsIdentity)
+            |> Seq.iter(fun cd->
+                let mapped = "\"" + cd.ColumnName + "\", " + mapValue(cd,"r.")
+                appendLine 3 mapped
+            )
+
+            appendLine 2 "]"
+            appendLine 2 <| "|> Seq.filter (fun kvp -> blacklist |> Seq.contains (fst kvp) |> not)"
+            appendLine 2 <| sprintf "|> fun pairs -> sprintf \"%s\" (String.Join(\",\", pairs |> Seq.map fst )) (String.Join(\",\", pairs |> Seq.map snd))" (insertStart "%s" "%s")
+            // this should not be happening if there is no identity on the table
+            if hasIdentity then
+                appendLine 2 <| "|> sprintf \"%s;select SCOPE_IDENTITY()\""
+        ()
+
     /// generate the helper module
     let generateModule (typeName:string, columns:(ColumnDescription*MeasureText) seq, schemaName:string, tableName:string, appendLine:int -> string -> unit, useOptions:bool ) =
         let moduleName = sprintf "%sHelpers" typeName
@@ -299,68 +377,8 @@ module DataModelToF =
 
         appendLine 1 "let FromF (camelTypeF:Func<string,obj option>) = fromf (Func<_>.invoke1 camelTypeF)"
 
-        appendLine 0 String.Empty
-
-        appendLine 1 ("let inline toRecordStp (" + camelType + ": ^a) =")
-        appendLine 2 "{"
-
-        columns
-        |> Seq.iter(fun (cd,measureText) ->
-            let mapped = mapSqlType(cd.Type,cd.Nullable,measureText,useOptions)
-            let measureType =
-                match String.IsNullOrEmpty measureText || stringEqualsI mapped "string", cd.Nullable with
-                | true, _ -> String.Empty
-                | false, true -> sprintf "|> Nullable.map((*) 1<%s>)" measureText
-                | false, false -> sprintf " * 1<%s>" measureText
-
-            appendLine 3 <| sprintf "%s = (^a: (member %s: _) %s)%s" cd.ColumnName cd.ColumnName camelType measureType
-        )
-
-        appendLine 2 "}"
-
-        let canDoInsert = columns |> Seq.exists(fst >> fun c -> c.Type = "image" || c.Type = "byte[]") |> not
-        if canDoInsert then
-            appendLine 0 String.Empty
-            // idea: put what running the .Zero() record against this function would generate in a comment
-            let insertStart = sprintf "insert into %s.%s(%s) values (%s)" schemaName tableName
-            columns
-            |> Seq.map (fun (cd,mt) -> cd.ColumnName, mapSqlType(cd.Type, cd.Nullable, mt, useOptions) |> flip getDefaultValue null)
-            |> List.ofSeq
-            |> fun s -> s |> Seq.map fst, s |> Seq.map snd
-            |> fun (names,values) ->
-                insertStart (names |> delimit ",") (values |> delimit ",")
-                |> sprintf "//%s"
-                |> appendLine 1
-            appendLine 1 ("let createInsert blacklist (r:I" + typeName + ") =")
-            let needsQuoted (c:ColumnDescription) = ["varchar"; "char"; "nvarchar"; "nchar";"datetime";"xml";"datetime2"] |> Seq.tryFind (fun n -> match c.Type with |IsTrue (containsI n) -> true | _ -> false)
-
-            match columns |> Seq.filter (fst >> fun c -> not c.IsIdentity) |> Seq.choose (fst >> needsQuoted) |> Seq.tryHead with
-            | Some firstTypeToNeedQuoteF ->
-                firstTypeToNeedQuoteF
-                |> sprintf "let quoted (s:string) = \"'\" + s.Replace(\"'\",\"''\") + \"'\" // %s"
-                |> appendLine 2
-            | None -> ()
-
-            let mapValue (cd:ColumnDescription, prefix:string) :string  =
-                match cd.Type.ToLower() with
-                    |"varchar" -> "if String.IsNullOrEmpty " + prefix + cd.ColumnName+ " then \"null\" else quoted " + prefix + cd.ColumnName
-                    |"int" -> if cd.Nullable then "if isNull (box " + prefix + cd.ColumnName + ") then \"null\" else " + prefix + cd.ColumnName + " |> string" else prefix + cd.ColumnName + " |> string"
-                    |_ ->  if cd.Nullable then "if isNull (box " + prefix + cd.ColumnName + ") then \"null\" else " + prefix + cd.ColumnName + " |> string |> quoted" else prefix + cd.ColumnName + " |> string |> quoted"
-
-            appendLine 2 "["
-
-            columns
-            |> Seq.map fst
-            |> Seq.filter (fun c -> not c.IsIdentity)
-            |> Seq.iter(fun cd->
-                let mapped = "\"" + cd.ColumnName + "\", " + mapValue(cd,"r.")
-                appendLine 3 mapped
-            )
-
-            appendLine 2 "]"
-            appendLine 2 <| "|> Seq.filter (fun kvp -> blacklist |> Seq.contains (fst kvp) |> not)"
-            appendLine 2 <| sprintf "|> fun pairs -> sprintf \"%s\" (String.Join(\",\", pairs |> Seq.map fst )) (String.Join(\",\", pairs |> Seq.map snd))" (insertStart "%s" "%s")
-            appendLine 2 <| "|> sprintf \"%s;select SCOPE_IDENTITY()\""
+        generateFromStpMethod appendLine useOptions camelType columns
+        generateCreateSqlInsertTextMethod appendLine useOptions typeName schemaName tableName columns
         appendLine 0 String.Empty
 
     let generateINotifyClass(typeName:string, columns:ColumnDescription seq, appendLine:int -> string -> unit, _useOptions:bool ) =
@@ -492,6 +510,7 @@ module DataModelToF =
             <| sprintf "%s.%s.%s" sp.SpecificCatalog sp.SpecificSchema sp.SpecificName
             |> SqlParameterCollection.ToSeq
             |> List.ofSeq
+
             // change mapParam over to produce output suitable to compose into this function:
 //    let mapSqlType(type' : string, nullable:bool, measureType:string, useOptions:bool) =
 //        match type'.ToLower() with
