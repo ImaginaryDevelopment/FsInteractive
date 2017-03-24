@@ -439,6 +439,7 @@ module DataModelToF =
             appendLine 1 ("member x." + cd.ColumnName)
             appendLine 2 ("with get() = " + camel)
             appendLine 2 "and set v = "
+            //to consider: this might benefit from only setting/raising changed if the value is different
             appendLine 3 (camel + " <- v")
             appendLine 3 ("x.RaisePropertyChanged \"" + cd.ColumnName + "\"")
 
