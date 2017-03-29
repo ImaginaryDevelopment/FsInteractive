@@ -6,10 +6,15 @@ open System.Diagnostics
 // for statically typed parameters in an active pattern see: http://stackoverflow.com/questions/7292719/active-patterns-and-member-constraint
 //consider pulling in useful functions from https://gist.github.com/ruxo/a9244a6dfe5e73337261
 
+module IntPatterns =
+    let (|PositiveInt|Zero|NegativeInt|) (x:int<_>) =
+        if x > 0<_> then PositiveInt
+        elif x = 0<_> then Zero
+        else NegativeInt
 
 // things that assist with point-free style
 [<AutoOpen>]
-module FunctionalHelpersAuto = 
+module FunctionalHelpersAuto =
     let teeTuple f x = x, f x
     /// take a dead-end function and curry the input
     let tee f x = f x; x
@@ -28,7 +33,7 @@ module FunctionalHelpersAuto =
         | _ -> None
     // long pipe chains don't allow breakpoints anywhere inside
     // does this need anything to prevent the method from being inlined/optimized away?
-    let breakpoint x = 
+    let breakpoint x =
         let result = x
         result
     let breakpointf f x =
@@ -61,7 +66,7 @@ module Tuple2 = // idea and most code taken from https://gist.github.com/ploeh/6
 let private failNullOrEmpty paramName x = if String.IsNullOrEmpty x then raise <| ArgumentOutOfRangeException paramName else x
 type System.String with
 //        // no idea how to call this thing with a comparer
-//        static member indexOf (delimiter,?c:StringComparison) (x:string) = 
+//        static member indexOf (delimiter,?c:StringComparison) (x:string) =
 //            match failNullOrEmpty "delimiter" delimiter,c with
 //            | d, Some c -> x.IndexOf(d,comparisonType=c)
 //            | d, None -> x.IndexOf d
@@ -71,14 +76,14 @@ type System.String with
     static member indexOfC delimiter c (x:string) =
         x.IndexOf(failNullOrEmpty "delimiter" delimiter ,comparisonType=c)
 // couldn't get this guy to call the other guy, so... leaving him out too
-//        static member contains (delimiter, ?c:StringComparison) (x:string) = 
+//        static member contains (delimiter, ?c:StringComparison) (x:string) =
 //            match failNullOrEmpty "delimiter" delimiter, c with
 //            | d, Some c -> x.IndexOf(d, comparisonType=c) |> flip (>=) 0
 //            | d, None -> x.Contains d
     static member contains delimiter (x:string) =
         failNullOrEmpty "delimiter" delimiter
         |> x.Contains
-    static member containsC delimiter c (x:string) = 
+    static member containsC delimiter c (x:string) =
         x
         |> String.indexOfC (failNullOrEmpty "delimiter" delimiter) c
         |> flip (>=) 0
@@ -123,11 +128,11 @@ module StringHelpers =
     let after (delimiter:string) (x:string) =
         failNullOrEmpty "x" x
         |> tee (fun _ -> failNullOrEmpty "delimiter" delimiter |> ignore)
-        |> fun x -> 
+        |> fun x ->
             match x.IndexOf delimiter with
             | i when i < 0 -> failwithf "after called without matching substring in '%s'(%s)" x delimiter
             | i -> x |> String.substring (i + delimiter.Length)
-    let afterI (delimiter:string) (x:string) = 
+    let afterI (delimiter:string) (x:string) =
         x
         |> String.indexOfC delimiter String.defaultIComparison
         |> (+) delimiter.Length
@@ -139,28 +144,21 @@ module StringHelpers =
     let delimit (delimiter:string) (items:#seq<string>) = String.Join(delimiter,items)
 
     let endsWith (delimiter:string) (x:string) = x.EndsWith delimiter
-    let isNumeric (s:string)= not <| isNull s && s.Length > 0 && s |> String.forall Char.IsNumber 
+    let isNumeric (s:string)= not <| isNull s && s.Length > 0 && s |> String.forall Char.IsNumber
     let replace (target:string) (replacement) (str:string) = if String.IsNullOrEmpty target then invalidOp "bad target" else str.Replace(target,replacement)
     let splitLines(x:string) = x.Split([| "\r\n";"\n"|], StringSplitOptions.None)
     let startsWith (delimiter:string) (s:string) = s.StartsWith delimiter
     let startsWithI (delimiter:string) (s:string) = s.StartsWith(delimiter,String.defaultIComparison)
     let trim = String.trim
-//    let after (delimiter:string) (x:string) =  
+//    let after (delimiter:string) (x:string) =
 //        match x.IndexOf delimiter with
 //        | i when i < 0 -> failwithf "after called without matching substring in '%s'(%s)" x delimiter
 //        | i -> x.Substring(i + delimiter.Length)
 
-    let afterLast delimiter x = 
+    let afterLast delimiter x =
         if x |> String.contains delimiter then failwithf "After last called with no match"
         x |> String.substring (x.LastIndexOf delimiter + delimiter.Length)
     let stringEqualsI s1 (toMatch:string)= not <| isNull toMatch && toMatch.Equals(s1, StringComparison.InvariantCultureIgnoreCase)
-
-    let (|NullString|Empty|WhiteSpace|ValueString|) (s:string) = 
-        match s with
-        | null -> NullString
-        | "" -> Empty
-        | _ when String.IsNullOrWhiteSpace s -> WhiteSpace s
-        | _ -> ValueString s
     let inline isNullOrEmptyToOpt s =
         if String.IsNullOrEmpty s then None else Some s
 
@@ -192,6 +190,7 @@ module StringHelpers =
 [<AutoOpen>]
 module StringPatterns =
     open StringHelpers
+
     let (|NullString|Empty|WhiteSpace|ValueString|) (s:string) =
         match s with
         | null -> NullString
@@ -205,6 +204,7 @@ module StringPatterns =
        if String.Compare(str, arg, StringComparison.InvariantCultureIgnoreCase) = 0
        then Some() else None
     let (|IsNumeric|_|) (s:string) = if not <| isNull s && s.Length > 0 && s |> String.forall Char.IsNumber then Some() else None
+    let (|ContainsI|_|) s1 (toMatch:string) = if toMatch |> containsI s1 then Some () else None
 
     let (|OrdinalEqualI|_|) (str:string) arg =
        if String.Compare(str, arg, StringComparison.OrdinalIgnoreCase) = 0
@@ -231,15 +231,15 @@ module StringPatterns =
     type System.String with
         static member IsValueString =
             function
-            | ValueString -> true
+            | ValueString _ -> true
             | _ -> false
 
-module Xml = 
+module Xml =
     open System.Xml.Linq
     let nsNone = XNamespace.None
     let toXName (ns:XNamespace) name =
         ns + name
-    
+
     let getElement1 n (e:XElement) =
         e.Element n
         |> Option.ofObj
@@ -249,18 +249,18 @@ module Xml =
     let getElements1 n (e:XElement) = e.Elements n
     // point-free Seq.filter argument
     let isNamed n (e:XElement) = e.Name = n
-    let getElementsAfter n (e:XElement) = 
+    let getElementsAfter n (e:XElement) =
         e
         |> getElements1 n
         |> Seq.skipWhile (isNamed n >> not)
         |> Seq.skip 1
 
-    let getAttribVal name (e:XElement) = 
+    let getAttribVal name (e:XElement) =
         nsNone + name
         |> e.Attribute
         |> Option.ofObj
         |> Option.map (fun a -> a.Value)
-    let setAttribVal name value (e:XElement) = 
+    let setAttribVal name value (e:XElement) =
         e.SetAttributeValue(nsNone + name, value)
 
     let getDescendants n (e:XElement) = e.Descendants n
@@ -270,34 +270,34 @@ module Xml =
         |> getAttribVal name
         |> Option.toObj
         |> (=) value
-    let isElement (e:XNode) = 
+    let isElement (e:XNode) =
         match e with
         | :? XElement -> true
         | _ -> false
-        
+
     // when you |> string an XElement, normally it writes appends the namespace as an attribute, but this is normally covered by the root element
     let stripNamespaces (e:XElement):XElement=
         // if the node is not XElement, pass through
         let rec stripNamespaces (n:XNode): XNode =
             match n with
-            | :? XElement as x -> 
-                let contents = 
-                    x.Attributes() 
+            | :? XElement as x ->
+                let contents =
+                    x.Attributes()
                     // strips default namespace, but not other declared namespaces
                     |> Seq.filter(fun xa -> xa.Name.LocalName <> "xmlns")
-                    |> Seq.cast<obj> 
-                    |> List.ofSeq 
+                    |> Seq.cast<obj>
+                    |> List.ofSeq
                     |> (@) (
-                        x.Nodes() 
-                        |> Seq.map stripNamespaces 
-                        |> Seq.cast<obj> 
+                        x.Nodes()
+                        |> Seq.map stripNamespaces
+                        |> Seq.cast<obj>
                         |> List.ofSeq
                     )
                 XElement(nsNone + x.Name.LocalName, contents |> Array.ofList) :> XNode
             | x -> x
         stripNamespaces e :?> XElement
 
-        
+
 //        e.nodes
 //        XElement(nsNone + e.Name.LocalName, content = e.Nodes)
     ()
@@ -510,6 +510,18 @@ type System.DateTime with
     static member addHours h (dt:DateTime) = dt.AddHours h
     static member addMinutes min (dt:DateTime) = dt.AddMinutes min
     static member toShortDateString (dt:DateTime) = dt.ToShortDateString()
+    static member getYear (dt:DateTime) = dt.Year
+    static member getHour (dt:DateTime) = dt.Hour
+    static member getMinute (dt:DateTime) = dt.Minute
+    static member roundTo useRoundUp (ts:TimeSpan) (dt:DateTime) =
+        if useRoundUp then
+            ts.Ticks - 1L
+        else
+            ts.Ticks / 2L
+        |> flip (+) dt.Ticks
+        |> flip (/) ts.Ticks
+        |> (*) ts.Ticks
+        |> DateTime
     // taken from SO http://stackoverflow.com/a/1595311/57883
     static member getAge  (now:DateTime) (dt:DateTime) =
         let age = now.Year - dt.Year
@@ -540,6 +552,67 @@ type System.DateTime with
 
     member x.GetAge (now:DateTime) = DateTime.getAge now x
 
+module Time =
+    [<CustomComparison>]
+    [<CustomEquality>]
+    // shadowed constructor/private implementation
+    type ValidatedTime = private {_Hour:int; _Minute:int;} with
+            static member op_LessThan (x:ValidatedTime,y:ValidatedTime) = x.Hour < y.Hour || (x.Hour = y.Hour && x.Minute < y.Minute)
+            static member op_GreaterThan (x:ValidatedTime, y:ValidatedTime) = x.Hour > y.Hour || (x.Hour = y.Hour && x.Minute > y.Minute)
+            static member op_GreaterThanOrEqual (x:ValidatedTime, y:ValidatedTime) = x.Hour > y.Hour || (x.Hour = y.Hour && x.Minute >= y.Minute)
+            static member op_LessThanOrEqual (x:ValidatedTime,y:ValidatedTime) = x.Hour < y.Hour || (x.Hour = y.Hour && x.Minute <= y.Minute)
+            static member CanCreate hour minute = hour < 24 && hour >= 0 && minute >=0 && minute < 60
+            static member Create hour minute = if ValidatedTime.CanCreate hour minute then {_Hour=hour; _Minute = minute} |> Some else None
+            // exposing any members is a questionable decision for a Pure ADT, but... maybe this is ok for the way I'm using it
+            member x.Hour = x._Hour
+            member x.Minute = x._Minute
+            override x.ToString() =
+                DateTime.Today
+                |> DateTime.addHours (float x.Hour)
+                |> DateTime.addMinutes (float x.Minute)
+                |> DateTime.toString "hh:mmtt"
+            override x.GetHashCode() = (x.Hour,x.Minute).GetHashCode()
+            override x.Equals obj =
+                match obj with
+                | :? ValidatedTime as y ->
+                    x.Hour = y.Hour && x.Minute = y.Minute
+                | _ -> false
+            interface IComparable with
+                member x.CompareTo (obj:obj)=
+                    match obj with
+                    | :? ValidatedTime as y ->
+                       if ValidatedTime.op_LessThan (x, y) then
+                           -1
+                        elif ValidatedTime.op_GreaterThan (x, y) then
+                            1
+                        else
+                            0
+                    | _ -> raise <| InvalidOperationException("Type must be ValidatedTime")
+
+    [<RequireQualifiedAccess; CompilationRepresentation (CompilationRepresentationFlags.ModuleSuffix)>]
+    module ValidatedTime = //| ValidatedTime of hour:int * minute:int
+            let create hour minute = if ValidatedTime.CanCreate hour minute then {_Hour = hour; _Minute=minute} |> Some else None
+            let ofDateTime (dt:DateTime) = ValidatedTime.Create dt.Hour dt.Minute
+            let ofTimeSpan (ts:TimeSpan) = ValidatedTime.Create ts.Hours ts.Minutes
+            let getHour (vt: ValidatedTime) = vt.Hour
+            let getMinute (vt:ValidatedTime) = vt.Minute
+//    // shadow constructor
+//    let ValidatedTime hour minute = ValidatedTime.Create hour minute
+
+    // where only the hour component and below are relevant
+    // a timespan of
+    type IntraDayTimeSpan = |IntraDayTimeSpan of start:ValidatedTime*stop:ValidatedTime with
+        member x.Start = x |> function |IntraDayTimeSpan(start,_) -> start
+        member x.Stop = x |> function |IntraDayTimeSpan(_,stop) -> stop
+        member x.Contains (t:ValidatedTime) =
+            x.Start < t && t < x.Stop
+        member x.Overlaps (y:IntraDayTimeSpan) =
+            x.Contains y.Start || x.Contains y.Stop || y.Contains x.Start || y.Contains x.Stop
+
+    let IntraDayTimeSpan start stop =
+        if start < stop then
+            IntraDayTimeSpan(start,stop) |> Some
+        else None
 
 type System.TimeSpan with
     static member getTicks (x:TimeSpan) = x.Ticks
@@ -550,7 +623,7 @@ type System.TimeSpan with
 module DateTime =
     let getAgeDisplay now dob = DateTime.getAgeDisplay now dob
 
-// Railway Oriented
+// Railway Oriented Programming
 type Rail<'tSuccess,'tFailure> =
     |Happy of 'tSuccess
     |Unhappy of 'tFailure
@@ -878,7 +951,7 @@ module Reflection =
                 for y in sequence do
                 yield seq { yield! x; yield y}}
             Seq.fold step (Seq.singleton Seq.empty) sequences
-#else // TODO: F# 4.3 implementation 
+#else // TODO: F# 4.3 implementation
             sequences |> ignore
             Array.empty
 // original from SO?
@@ -1073,28 +1146,79 @@ module Ideas =
 // encapsulate INPC such that, fields can hold INPC values
 module Inpc =
     open System.ComponentModel
+    let checkComparerOpt fComparerOpt oldValue newValue = 
+        match fComparerOpt with
+        | Some f -> 
+            if f oldValue newValue then
+                printfn "Value was the same, keeping value %A = %A" oldValue newValue
+                None
+            else 
+                printfn "Value was different changing value! %A <> %A" oldValue newValue
+                Some newValue
+        | None -> Some newValue
+
+            
     let triggerPropChanged (event:Event<PropertyChangedEventHandler,PropertyChangedEventArgs>) name () =
         event.Trigger(null, PropertyChangedEventArgs(name))
     // consider adding a param for comparison, so the inpc won't fire if they are equal
     // or the parent property exposure could do it?
-    type InpcWrapper<'T> (fNotifier, defaultValue:'T) =
+    type InpcWrapper<'T> (fNotifier, defaultValue:'T, comparerOpt) =
         let mutable field = defaultValue
+        // consider:
+        //member x.UnsafeSet v = field <- v
+        member val IsDebug = false with get,set
+        member val DisplayName : string = null with get,set
+        member x.Value
+            with get() = field
+            and set v =
+                let oldValue = field
+                let compareResult = checkComparerOpt comparerOpt field v
+                if x.IsDebug then
+                    printfn "InpcWrapper%s (hasComparer %b, comparerSaysChangeValue %b) from %A to %A"
+                        (if not <| isNull x.DisplayName then " " + x.DisplayName else String.Empty)
+                        (Option.isSome comparerOpt)
+                        (Option.isSome compareResult)
+                        oldValue v
+                compareResult
+                |> Option.iter(fun v ->
+                    field <- v
+                    fNotifier()
+                    if x.IsDebug then
+                        printfn "InpcWrapper%s (hasComparer %b, comparerSaysChangeValue %b) from %A to %A"
+                            (if not <| isNull x.DisplayName then " " + x.DisplayName else String.Empty)
+                            (Option.isSome comparerOpt)
+                            (Option.isSome compareResult)
+                            oldValue field
+                )
+        member __.Notify() = fNotifier()
+
+    // because you can't use this when initializing a C# property to call notifyproperty changed, let the notifier be set later
+    type InpcWrapperDeferredNotifier<'T>(defaultValue: 'T, comparerOpt) = 
+        let mutable notifier: Action = Action(ignore)
+        let mutable field = defaultValue
+        member __.Notifier
+            with set v = notifier <- v
         // consider:
         //member x.UnsafeSet v = field <- v
         member __.Value
             with get() = field
             and set v =
-                field <- v
-                fNotifier()
-        member __.Notify() = fNotifier()
+                checkComparerOpt comparerOpt field v
+                |> Option.iter(fun v ->
+                    field <- v
+                    if not <| isNull notifier then
+                        notifier.Invoke()
+                )
+        member __.Notify() = if not <| isNull notifier then notifier.Invoke()
 
     // instead of using a parent/base class: use this method!
-    let createInpc event name defaultValue = InpcWrapper(triggerPropChanged event name, defaultValue)
+    let createInpc event name comparer defaultValue = InpcWrapper(triggerPropChanged event name, defaultValue, comparer)
+    //let CreateInpc 
 
     // sample class for the createInpc method above
     type InpcEventWrappedSample () =
         let propertyChanged = new Event<_, _>()
-        let encapsulated = createInpc propertyChanged "Encapsulated" false
+        let encapsulated = createInpc propertyChanged "Encapsulated" None false
 
         member __.Encapsulated
             with get() = encapsulated.Value
@@ -1105,7 +1229,7 @@ module Inpc =
             member __.PropertyChanged = propertyChanged.Publish
         abstract member RaisePropertyChanged : string -> unit
         default x.RaisePropertyChanged(propertyName : string) = propertyChanged.Trigger(x, PropertyChangedEventArgs(propertyName))
-        member x.PropertyChanged = propertyChanged
+        member __.PropertyChanged = propertyChanged
 
 // is this even remotely useful, when you have quotation helpers above?
 module ExpressionHelpers =
