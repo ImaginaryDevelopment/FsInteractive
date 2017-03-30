@@ -478,7 +478,6 @@ module DataModelToF =
         SchemaLevelRoutine:bool option
     }
 
-    // make this into a Sprocs.generated.fs ?
     let getSqlSprocs cn = 
         let sprocData = 
             getReaderArray cn {CommandText= "select * from information_schema.routines where routine_type = 'PROCEDURE'"; OptCommandType = Some CommandType.Text; OptParameters= None}
@@ -503,14 +502,16 @@ module DataModelToF =
                 SqlMeta.getParms (cn :?> SqlConnection) sprocName
             )
     // WIP not hardly started
-    let mapSprocParams cgsm sp = 
+    let mapSprocParams cn (appendLine:int -> string -> unit) sp = 
         let ps = 
-            cgsm.CString 
-            |> Connector.CreateCString
+            cn
             |> getSqlSprocMeta 
             <| sprintf "%s.%s.%s" sp.SpecificCatalog sp.SpecificSchema sp.SpecificName
             |> SqlParameterCollection.ToSeq
             |> List.ofSeq
+        let mapParamName (s: string) = 
+           s.[1..] 
+           |> toCamelCase 
 
             // change mapParam over to produce output suitable to compose into this function:
 //    let mapSqlType(type' : string, nullable:bool, measureType:string, useOptions:bool) =
@@ -550,17 +551,69 @@ module DataModelToF =
                 // this one might need to be TimeSpan
             | DbType.DateTimeOffset
                 -> "DateTime"
-            |DbType.Double -> "float"
+            | DbType.Double -> "float"
+            | DbType.Int16 
+            | DbType.Int32 -> "int"
+            | DbType.Int64 -> "long"
+
+
             | x -> failwithf "unaccounted for type found %A" x
             
         match ps with
         | [] -> ()
         | ps -> 
-            //WIP
-            let _memberList = ps |> Seq.map (fun p -> p.DbType |> mapParam)
-//            appendLine' 1 <| sprintf "type %sInput = {%s}" 
+            let filtered = 
+                ps 
+                |> Seq.filter(fun p -> 
+                    p.Direction <> ParameterDirection.Input && 
+                    p.Direction <> ParameterDirection.ReturnValue &&
+                    p.ParameterName |> String.equalsI "@RETURN_VALUE" |> not)
+                |> List.ofSeq
+            let memberList = 
+                filtered
+                |> Seq.map (fun p -> sprintf "%s: %s" (p.ParameterName |> mapParamName) (p.DbType |> mapParam)) 
+                |> List.ofSeq
+            match memberList with
+            | [] -> ()
+            | x -> 
+                filtered 
+                |> List.map (fun p -> p.ParameterName, p.Direction)
+                |> printfn "member list for %s has %i params after filter, which are %A" sp.SpecificName filtered.Length 
+
+                x 
+                |> delimit ";" 
+                |> sprintf "type %sInput = {%s}" sp.SpecificName
+                |> appendLine 1 
             ()
 
+    let generateSprocComponent cn targetNamespace appendLine (ssm:CodeGenSprocSettingMap) =
+        let sprocs = 
+            cn |> getSqlSprocs |> Seq.sortBy (fun sp -> sp.SpecificCatalog, sp.SpecificSchema, sp.SpecificName) 
+            |> Seq.filter(fun sp -> 
+                ssm.SprocBlacklist |> Seq.exists (stringEqualsI sp.SpecificName) |> not
+                && ssm.SprocBlacklist |> Seq.exists (stringEqualsI <| sprintf "%s.%s" sp.SpecificSchema sp.SpecificName) |> not)
+            |> List.ofSeq
+
+        printfn "Sprocs! %i" sprocs.Length
+
+        // this would go into the default block, not a specific and we aren't currently capturing the default block to anywhere
+        sprocs |> Seq.iter (fun sp ->
+            printfn "%s.%s.%s" sp.SpecificCatalog sp.SpecificSchema sp.SpecificName
+        )
+        if sprocs.Length > 0 && not <| (sprocs |> Seq.forall(fun sp -> sp.SpecificCatalog = sprocs.[0].SpecificCatalog)) then
+            failwithf "Multiple catalogs not expected"
+        // consider: having this generated after the tables, and using the generated types to map sprocs that match table shapes to accept type records as arguments instead
+        appendLine 0 <| sprintf "module %s.%s" targetNamespace "StoredProcedures"
+        sprocs
+        |> Seq.groupBy (fun sp -> sp.SpecificSchema )
+        |> Seq.iter (fun (schema, schemaSprocs) ->
+            appendLine 0 <| sprintf "module %s = " (toPascalCase schema)
+            schemaSprocs |> Seq.iter(fun sp ->
+                appendLine 1 <| sprintf "let %s = \"%s\"" sp.SpecificName sp.SpecificName
+                mapSprocParams cn appendLine sp
+            )
+
+        )
     let generate generatorId (fPluralizer:string -> string) (fSingularizer:string -> string) (cgsm:CodeGenSettingMap) (manager:MacroRunner.MultipleOutputHelper.IManager, generationEnvironment:StringBuilder, tables:TableIdentifier seq) =
 
         log(sprintf "DataModelToF.generate:cgsm:%A" cgsm)
@@ -603,35 +656,13 @@ module DataModelToF =
         |> Option.iter (fun ssm ->
             appendEmpty()
             appendLine "Sprocs"
-            let sprocs = 
-                cgsm.CString |> Connector.CreateCString |> getSqlSprocs |> Seq.sortBy (fun sp -> sp.SpecificCatalog, sp.SpecificSchema, sp.SpecificName) 
-                |> Seq.filter(fun sp -> 
-                    ssm.SprocBlacklist |> Seq.exists (stringEqualsI sp.SpecificName) |> not
-                    && ssm.SprocBlacklist |> Seq.exists (stringEqualsI <| sprintf "%s.%s" sp.SpecificSchema sp.SpecificName) |> not)
-                |> List.ofSeq
-            printfn "Sprocs! %i" sprocs.Length
-            // this goes into the default block, not a specific and we aren't currently capturing the default block to anywhere
-            sprocs |> Seq.iter (fun sp ->
-                appendLine' 1 <| sprintf "%s.%s.%s" sp.SpecificCatalog sp.SpecificSchema sp.SpecificName
-            )
-            if sprocs.Length > 0 && not <| (sprocs |> Seq.forall(fun sp -> sp.SpecificCatalog = sprocs.[0].SpecificCatalog)) then
-                failwithf "Multiple catalogs not expected"
-            // consider: having this generated after the tables, and using the generated types to map sprocs that match table shapes to accept type records as arguments instead
             match targetProjectFolder with
             | Some x -> Path.Combine(x, "Sprocs.generated.fs")
             | None -> "Sprocs.generated.fs"
             |> manager.StartNewFile
-            appendLine <| sprintf "module %s.%s" cgsm.TargetNamespace "StoredProcedures"
-            sprocs
-            |> Seq.groupBy (fun sp -> sp.SpecificSchema )
-            |> Seq.iter (fun (schema, schemaSprocs) ->
-                appendLine <| sprintf "module %s = " (toPascalCase schema)
-                schemaSprocs |> Seq.iter(fun sp ->
-                    appendLine' 1 <| sprintf "let %s = \"%s\"" sp.SpecificName sp.SpecificName
-                    mapSprocParams cgsm sp
-                )
 
-            )
+            generateSprocComponent (Connector.CreateCString cgsm.CString) cgsm.TargetNamespace appendLine' ssm
+
             manager.EndBlock()
         )
 

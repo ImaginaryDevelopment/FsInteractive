@@ -45,7 +45,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="AssemblyInfo.fs" />
-    <Compile Include="Library1.fs" />
+    <Compile Include="Audio.fs" />
     <None Include="Script.fsx" />
   </ItemGroup>
   <ItemGroup>
