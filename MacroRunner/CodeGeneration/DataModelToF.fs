@@ -32,6 +32,7 @@ module DataModelToF =
 
     type CodeGenSprocSettingMap = {
         SprocBlacklist: string list
+        SprocInputMapBlacklist: string list
         GenerateSprocInputRecords: bool
     }
 
@@ -511,27 +512,8 @@ module DataModelToF =
             |> List.ofSeq
         let mapParamName (s: string) = 
            s.[1..] 
-           |> toCamelCase 
+           //|> toCamelCase 
 
-            // change mapParam over to produce output suitable to compose into this function:
-//    let mapSqlType(type' : string, nullable:bool, measureType:string, useOptions:bool) =
-//        match type'.ToLower() with
-//            |"char"
-//            |"nchar"
-//            |"nvarchar"
-//            |"xml"
-//            |"varchar" -> "string"
-//            |"bit" -> mapNullableType("bool", nullable, measureType, useOptions)
-//            |"date"
-//            |"datetime"
-//            |"datetime2"
-//            |"smalldatetime" -> mapNullableType("DateTime", nullable, measureType, useOptions)
-//            |"image" -> "byte[]"
-//            |"uniqueidentifier" -> mapNullableType("Guid",nullable, measureType, useOptions)
-//            |"int" -> mapNullableType("int", nullable, measureType, useOptions)
-//            |"decimal" -> mapNullableType("decimal", nullable, measureType, useOptions)
-//            |"float" -> mapNullableType("float", nullable, measureType, useOptions)
-//            |_ -> if isNull type' then String.Empty else type'
         let mapParam = 
             function 
             | DbType.AnsiString 
@@ -610,7 +592,8 @@ module DataModelToF =
             appendLine 0 <| sprintf "module %s = " (toPascalCase schema)
             schemaSprocs |> Seq.iter(fun sp ->
                 appendLine 1 <| sprintf "let %s = \"%s\"" sp.SpecificName sp.SpecificName
-                mapSprocParams cn appendLine sp
+                if ssm.SprocInputMapBlacklist |> Seq.exists (fun x -> x = sp.SpecificName || x = (sprintf "%s.%s" sp.SpecificSchema sp.SpecificName)) |> not then
+                    mapSprocParams cn appendLine sp
             )
 
         )
