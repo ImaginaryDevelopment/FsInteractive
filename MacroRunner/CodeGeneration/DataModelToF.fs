@@ -564,8 +564,8 @@ module DataModelToF =
         | ps -> 
             let filtered = 
                 ps 
-                |> Seq.filter(fun p -> 
-                    p.Direction <> ParameterDirection.Input && 
+                |> Seq.filter(fun p ->
+                    p.Direction <> ParameterDirection.Output && 
                     p.Direction <> ParameterDirection.ReturnValue &&
                     p.ParameterName |> String.equalsI "@RETURN_VALUE" |> not)
                 |> List.ofSeq
