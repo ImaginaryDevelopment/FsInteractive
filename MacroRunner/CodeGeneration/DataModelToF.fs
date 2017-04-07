@@ -243,7 +243,7 @@ module DataModelToF =
             appendLine 0 String.Empty
             // idea: put what running the .Zero() record against this function would generate in a comment
             let insertStart = sprintf "insert into %s.%s(%s) values (%s)" schemaName tableName
-            let hasIdentity = 
+            let hasIdentity =
                 columns
                 |> Seq.map fst
                 |> Seq.exists(fun c -> c.IsIdentity)
@@ -270,9 +270,9 @@ module DataModelToF =
                 let fullCName = prefix + cd.ColumnName
                 match cd.Type.ToLower() with
                     |"varchar" -> sprintf "if String.IsNullOrEmpty %s then \"null\" else quoted %s" fullCName fullCName
-                    |"int" ->  
-                        if cd.Nullable then 
-                            "if isNull (box " + fullCName + ") then \"null\" else " + fullCName + " |> string" 
+                    |"int" ->
+                        if cd.Nullable then
+                            "if isNull (box " + fullCName + ") then \"null\" else " + fullCName + " |> string"
                         else fullCName + " |> string"
                     |_ ->  if cd.Nullable then "if isNull (box " + fullCName + ") then \"null\" else " + fullCName + " |> string |> quoted" else fullCName + " |> string |> quoted"
 
@@ -394,7 +394,7 @@ module DataModelToF =
         appendLine 0 String.Empty
 
         appendLine 0 String.Empty
-        for cd in columns do // https://fadsworld.wordpress.com/2011/05/18/f-quotations-for-inotifypropertychanged/
+        for cd in columns do
             let camel = mapFieldNameFromType(cd.ColumnName)
             appendLine 1 ("let mutable "+ camel + " = model." + cd.ColumnName)
 
@@ -479,8 +479,8 @@ module DataModelToF =
         SchemaLevelRoutine:bool option
     }
 
-    let getSqlSprocs cn = 
-        let sprocData = 
+    let getSqlSprocs cn =
+        let sprocData =
             getReaderArray cn {CommandText= "select * from information_schema.routines where routine_type = 'PROCEDURE'"; OptCommandType = Some CommandType.Text; OptParameters= None}
                 (fun r ->
                     {   SpecificCatalog= getRecordOptT r "specific_catalog" |> Option.getOrDefault null
@@ -495,28 +495,32 @@ module DataModelToF =
                 )
         sprocData
     type SqlParameterCollection with
-        member x.ToSeq() = 
-            seq { for p in x -> p }
+        member x.ToSeq() = seq { for p in x -> p }
         static member ToSeq (x: SqlParameterCollection) = x.ToSeq()
     let getSqlSprocMeta cn sprocName=
         Connections.runWithConnection cn (fun cn ->
                 SqlMeta.getParms (cn :?> SqlConnection) sprocName
             )
-    // WIP not hardly started
-    let mapSprocParams cn (appendLine:int -> string -> unit) sp = 
-        let ps = 
+
+    let mapSprocParams cn (appendLine:int -> string -> unit) sp =
+        let ps =
             cn
-            |> getSqlSprocMeta 
+            |> getSqlSprocMeta
             <| sprintf "%s.%s.%s" sp.SpecificCatalog sp.SpecificSchema sp.SpecificName
             |> SqlParameterCollection.ToSeq
             |> List.ofSeq
-        let mapParamName (s: string) = 
-           s.[1..] 
-           //|> toCamelCase 
+        let mapParamName (s: string) =
+            // get rid of @ sign
+            match s.[1..] with
+            // get rid of keywords
+            | "end" -> "``end``"
+            | x -> x
 
-        let mapParam = 
-            function 
-            | DbType.AnsiString 
+        // would be nice if we mapped measures into this
+        let mapParam =
+            // name, if the type is inherently nullable
+            function
+            | DbType.AnsiString
             | DbType.AnsiStringFixedLength
             | DbType.String
             | DbType.StringFixedLength
@@ -534,44 +538,44 @@ module DataModelToF =
             | DbType.DateTimeOffset
                 -> "DateTime"
             | DbType.Double -> "float"
-            | DbType.Int16 
+            | DbType.Int16
             | DbType.Int32 -> "int"
             | DbType.Int64 -> "long"
 
-
             | x -> failwithf "unaccounted for type found %A" x
-            
+
         match ps with
         | [] -> ()
-        | ps -> 
-            let filtered = 
-                ps 
+        | ps ->
+            let filtered =
+                ps
                 |> Seq.filter(fun p ->
-                    p.Direction <> ParameterDirection.Output && 
+                    p.Direction <> ParameterDirection.Output &&
                     p.Direction <> ParameterDirection.ReturnValue &&
                     p.ParameterName |> String.equalsI "@RETURN_VALUE" |> not)
                 |> List.ofSeq
-            let memberList = 
+            let memberList =
                 filtered
-                |> Seq.map (fun p -> sprintf "%s: %s" (p.ParameterName |> mapParamName) (p.DbType |> mapParam)) 
+                |> Seq.map (fun p ->
+                    let typeWording = (p.DbType |> mapParam) + if p.IsNullable then " option" else String.Empty
+                    sprintf "%s: %s" (p.ParameterName |> mapParamName) typeWording)
                 |> List.ofSeq
             match memberList with
             | [] -> ()
-            | x -> 
-                filtered 
+            | x ->
+                filtered
                 |> List.map (fun p -> p.ParameterName, p.Direction)
-                |> printfn "member list for %s has %i params after filter, which are %A" sp.SpecificName filtered.Length 
-
-                x 
-                |> delimit ";" 
-                |> sprintf "type %sInput = {%s}" sp.SpecificName
-                |> appendLine 1 
+                |> printfn "member list for %s has %i params after filter, which are %A" sp.SpecificName filtered.Length
+                x
+                |> delimit ";"
+                |> sprintf "type %sInput = {%s}" (toPascalCase sp.SpecificName)
+                |> appendLine 1
             ()
 
     let generateSprocComponent cn targetNamespace appendLine (ssm:CodeGenSprocSettingMap) =
-        let sprocs = 
-            cn |> getSqlSprocs |> Seq.sortBy (fun sp -> sp.SpecificCatalog, sp.SpecificSchema, sp.SpecificName) 
-            |> Seq.filter(fun sp -> 
+        let sprocs =
+            cn |> getSqlSprocs |> Seq.sortBy (fun sp -> sp.SpecificCatalog, sp.SpecificSchema, sp.SpecificName)
+            |> Seq.filter(fun sp ->
                 ssm.SprocBlacklist |> Seq.exists (stringEqualsI sp.SpecificName) |> not
                 && ssm.SprocBlacklist |> Seq.exists (stringEqualsI <| sprintf "%s.%s" sp.SpecificSchema sp.SpecificName) |> not)
             |> List.ofSeq
@@ -586,11 +590,13 @@ module DataModelToF =
             failwithf "Multiple catalogs not expected"
         // consider: having this generated after the tables, and using the generated types to map sprocs that match table shapes to accept type records as arguments instead
         appendLine 0 <| sprintf "module %s.%s" targetNamespace "StoredProcedures"
+        appendLine 0 "open System"
         sprocs
-        |> Seq.groupBy (fun sp -> sp.SpecificSchema )
+        |> Seq.groupBy (fun sp -> sp.SpecificSchema)
         |> Seq.iter (fun (schema, schemaSprocs) ->
             appendLine 0 <| sprintf "module %s = " (toPascalCase schema)
             schemaSprocs |> Seq.iter(fun sp ->
+                // the next line is at least partially because there is no nameof operator, but also, because even if there were, sprocNames wouldn't be somewhere you could use it
                 appendLine 1 <| sprintf "let %s = \"%s\"" sp.SpecificName sp.SpecificName
                 if ssm.SprocInputMapBlacklist |> Seq.exists (fun x -> x = sp.SpecificName || x = (sprintf "%s.%s" sp.SpecificSchema sp.SpecificName)) |> not then
                     mapSprocParams cn appendLine sp
@@ -619,10 +625,10 @@ module DataModelToF =
 
         // fails on unloaded projects, probably anything else that won't give up the full name
         projects |> Option.iter (Seq.iter (fun p ->
-                let fullName = 
-                    try 
+                let fullName =
+                    try
                         p.GetFullName()
-                        |> sprintf " %s" 
+                        |> sprintf " %s"
                     with _ ->
                         // project may be unloaded
                         String.Empty

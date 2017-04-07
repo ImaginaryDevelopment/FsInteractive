@@ -176,7 +176,7 @@ module MultipleOutputHelper =
             |> List.ofSeq
 
         let getIsParentProject (project:ProjectWrapper) =
-            let projectDir = 
+            let projectDir =
                 try
                     project.GetFullName() |> System.IO.Path.GetDirectoryName
                 with ex ->

@@ -762,11 +762,50 @@ module Diagnostics =
     let LogS topic s =
         logS (isNullOrEmptyToOpt topic) [] s
 
-    let logEx topic (ex:exn) = sprintf "%A" ex |> logS topic []
-    let LogEx topic (ex:exn) = logEx (isNullOrEmptyToOpt topic) ex
+    let inline addDataIfPresent (ex:#exn) (s:string) =
+        if not <| isNull ex.Data && ex.Data.Keys.Count > 0 then
+            let extractString (v:obj) =
+                match v with 
+                | :? string as s -> s
+                | x -> sprintf "%A" x
+                |> replace "\"" "\\\""
+                |> sprintf "\"%s\""
+            ex.Data.Keys
+            |> Seq.cast<obj>
+            |> Seq.map (fun k -> k, ex.Data.[k])
+            |> Seq.map (Tuple2.mapBoth extractString)
+            |> Seq.map (fun (k,v) -> sprintf "%s:%s" k v)
+            |> delimit ","
+            // escape double quotes
+            |> sprintf "%s\r\n{data:{%s}}" s
+        else
+            s
 
-    let logExS topic s ex = sprintf "%s:%A" s ex |> logS topic []
-    let LogExS topic s ex = logExS (isNullOrEmptyToOpt topic) s ex
+    // this needs to account for ex.Data information
+    let logObj topic sOpt (x:obj) = 
+        match sOpt with 
+        | Some s -> sprintf "%s:%A" s x
+        | None -> sprintf "%A" x
+        |> fun s ->
+            match x with 
+            | :? exn as x -> s |> addDataIfPresent x
+            | _ -> s
+        |> logS topic []
+
+    // if desired, only add data if the key isn't already present
+    let addDataMaybe k v (ex:#exn) =
+        if not <| ex.Data.Contains k then
+            ex.Data.Add (k, v)
+
+    // purpose: in a catch clause, try to do f, swallow exceptions so the outer exception is still handled the way it was intended to
+    // not using addDataMaybe in case the behavior is not desired
+    let inline tryDataAdd (x:#exn) f =
+        try
+            f x.Data.Add
+        with ex ->
+            logObj (Some "error adding exception data") None ex
+
+    let logExS topic s ex = logObj topic s ex 
 
     let BeginLogScope scopeName=
         let pid = Process.GetCurrentProcess().Id
@@ -786,16 +825,10 @@ module Diagnostics =
                         logS (Some scopeName) [] (sprintf "  <Elapsed>%A</Elapsed>" sw.ElapsedMilliseconds)
                         logS (Some scopeName) [] (sprintf "<%s/>" scopeName)
         }
-    let addDataMaybe k v (ex:#exn) =
-        if not <| ex.Data.Contains k then
-            ex.Data.Add (k, v)
-    let tryDataAdd (_:#exn) f =
-        try
-            f()
-        with ex ->
-            logEx (Some "error adding exception data") ex
+
 
 module Option = // https://github.com/fsharp/fsharp/blob/master/src/fsharp/FSharp.Core/option.fs
+    let bindf f = Option.bind f
 
     /// unsafe (Unchecked.defaultof<_>)
     let getValueOrDefault (n: 'a option) = match n with | Some x -> x | None -> Unchecked.defaultof<_>
@@ -939,62 +972,6 @@ module Reflection =
                     | :? CompilationSourceNameAttribute as csna -> Some(csna)
                     | _ -> None)
         |> (function | Some(csna) -> csna.SourceName | None -> mi.Name)
-
-    //currently this method is only called for diagnostic purposes
-    let rec getAllDUCases fNonUnionArg t : obj list =
-        let getAllDUCases = getAllDUCases fNonUnionArg
-        // both of the following are taken from http://stackoverflow.com/questions/6497058/lazy-cartesian-product-of-multiple-sequences-sequence-of-sequences
-        let cartesian_product sequences =
-#if FSHARP44
-            let step acc sequence = seq {
-                for x in acc do
-                for y in sequence do
-                yield seq { yield! x; yield y}}
-            Seq.fold step (Seq.singleton Seq.empty) sequences
-#else // TODO: F# 4.3 implementation
-            sequences |> ignore
-            Array.empty
-// original from SO?
-//        let cartesian_product sequences =
-//            let step acc sequence = seq {
-//                for x in acc do
-//                for y in sequence do
-//                yield Seq.append x [y] }
-//            Seq.fold step (Seq.singleton Seq.empty) sequences
-#endif
-        // only works with no arg cases I bet
-        let makeCaseTypes (fUnion:Type-> obj list) (fNonUnionArg:Type -> obj) (uc: UnionCaseInfo) : UnionCaseInfo*(obj list list) =
-            let constructorArgs =
-                uc.GetFields()
-                |> Seq.map (fun f ->
-                    if FSharpType.IsUnion f.PropertyType then
-                        let childTypes = fUnion f.PropertyType
-                        if
-                            childTypes
-                            |> Seq.exists (fun ct -> FSharpType.IsUnion (ct.GetType()) |> not) then
-                                failwithf "fUnion returned a bad type in list %A" childTypes
-                        childTypes
-                    else [ fNonUnionArg f.PropertyType] )
-                |> List.ofSeq
-            let allCombinationsOfFieldPossibles =
-                cartesian_product constructorArgs
-                |> Seq.map List.ofSeq
-                |> List.ofSeq
-            uc, allCombinationsOfFieldPossibles
-        // with help from http://stackoverflow.com/a/4470670/57883
-            // trying to write this one
-        let result =
-            FSharpType.GetUnionCases t
-            |> Seq.map (makeCaseTypes getAllDUCases fNonUnionArg)
-            |> List.ofSeq
-        let result =
-            result
-            |> Seq.map (fun (uc,allFieldComboCases) -> allFieldComboCases |> Seq.map (fun args-> FSharpValue.MakeUnion(uc,args |> Array.ofList)))
-            |> Seq.collect id
-            |> Seq.map box
-            |> List.ofSeq
-        result
-
 
     module Assemblies =
         // http://stackoverflow.com/a/28319367/57883
