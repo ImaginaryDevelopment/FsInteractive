@@ -18,6 +18,11 @@ module FunctionalHelpersAuto =
     let teeTuple f x = x, f x
     /// take a dead-end function and curry the input
     let tee f x = f x; x
+    // take a value and adjust it to fall within the range of vMin .. vMax
+    let clamp vMin vMax v = 
+        max v vMin
+        |> min vMax
+
     /// super handy with operators like (*) and (-)
     /// take a function that expects 2 arguments and flips them before applying to the function
     let inline flip f x y = f y x
@@ -828,7 +833,6 @@ module Diagnostics =
 
 
 module Option = // https://github.com/fsharp/fsharp/blob/master/src/fsharp/FSharp.Core/option.fs
-    let bindf f = Option.bind f
 
     /// unsafe (Unchecked.defaultof<_>)
     let getValueOrDefault (n: 'a option) = match n with | Some x -> x | None -> Unchecked.defaultof<_>
