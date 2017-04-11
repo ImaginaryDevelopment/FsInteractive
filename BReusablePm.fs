@@ -6,6 +6,37 @@ open System.Diagnostics
 // for statically typed parameters in an active pattern see: http://stackoverflow.com/questions/7292719/active-patterns-and-member-constraint
 //consider pulling in useful functions from https://gist.github.com/ruxo/a9244a6dfe5e73337261
 
+//https://blogs.msdn.microsoft.com/dsyme/2009/11/08/equality-and-comparison-constraints-in-f/
+module IComparable = 
+    let equalsOn f x (yobj:obj) =
+        match yobj with
+        | :? 'T as y -> (f x = f y)
+        | _ -> false
+    let hashOn f x =  hash (f x) 
+    let compareOn f x (yobj: obj) =
+        match yobj with
+        | :? 'T as y -> compare (f x) (f y)
+        | _ -> invalidArg "yobj" "cannot compare values of different types"
+
+/// this doesn't account for cases where the identity is longer than signed int holds
+type ValidIdentity<[<Measure>] 'T> private(i:int<'T>) =
+    static let fIsValid i = i > 0<_>
+    let i = if fIsValid i then i else failwithf "Invalid value"
+    member __.Value = i
+    /// valid values are 1..x
+    static member TryCreateOpt i =
+        if fIsValid i then
+            ValidIdentity<'T>(i) |> Some
+        else None
+    static member get (vi:ValidIdentity<_>) : int<'T> = vi.Value
+    member private x.ToDump() = i |> string // linqpad friendly
+    override x.ToString() =
+        x.ToDump()
+    override x.Equals y = IComparable.equalsOn ValidIdentity.get x y
+    override x.GetHashCode() = IComparable.hashOn ValidIdentity.get x
+    interface System.IComparable with
+        member x.CompareTo y = IComparable.compareOn ValidIdentity.get x y
+
 module IntPatterns =
     let (|PositiveInt|Zero|NegativeInt|) (x:int<_>) =
         if x > 0<_> then PositiveInt
