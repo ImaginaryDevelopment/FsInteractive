@@ -154,6 +154,10 @@ let runGeneration generatorId (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) ma
         |> fun items -> dataModelOnlyItems@items
     )
     |> Seq.collect id
+    |> Seq.filter (fun x ->
+        not <| cgsm.TypeGenerationBlacklist.Contains x.Name && 
+            not <| cgsm.TypeGenerationBlacklist.Contains (sprintf "%s.%s" x.Schema x.Name)
+    )
     |> List.ofSeq
     |> fun mappedTables ->
     DataModelToF.generate generatorId

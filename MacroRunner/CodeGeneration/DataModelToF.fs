@@ -31,8 +31,8 @@ module DataModelToF =
     type TableGenerationInput = {Id: TableIdentifier; GenerateFull:bool}
 
     type CodeGenSprocSettingMap = {
-        SprocBlacklist: string list
-        SprocInputMapBlacklist: string list
+        SprocBlacklist: string Set
+        SprocInputMapBlacklist: string Set
         GenerateSprocInputRecords: bool
     }
 
@@ -41,14 +41,17 @@ module DataModelToF =
         TargetNamespace: string
         CString:string
         UseOptionTypes:bool
-        ColumnBlacklist:Map<string, string list>
-        Measures: string list
+        ColumnBlacklist:Map<string, string Set>
+        // if we are generating sql tables, these are the tables we generated we don't want types generated for
+        // for instance, we don't really need a type to hold a fkey+fkey table like paymentId to ReversalPaymentId
+        TypeGenerationBlacklist: string Set
+        Measures: string Set
         ///Needs to include any namespace that defines:
         /// - Func<_>.invoke1 ( type System.Func<'tResult> with static member invoke1<'t> (x:System.Func<'t,'tResult>) y = x.Invoke y)
-        AdditionalNamespaces: string list
+        AdditionalNamespaces: string Set
         GetMeasureNamepace: (string -> string) option
 
-        MeasuresBlacklist: string list
+        MeasuresBlacklist: string Set
         IncludeNonDboSchemaInNamespace:bool
         // not functional yet, right?
         GenerateValueRecords:bool
@@ -725,12 +728,25 @@ module DataModelToF =
 
 //    // purpose: make an alias to the 'generate' method that is more C# friendly
 //    // would having C# to construct the type directly with null values in the delegates, then letting this translate only those be a better option?
-    let Generate generatorId addlNamespaces useCliMutable (columnBlacklist:IDictionary<string, string seq>) (manager:MacroRunner.MultipleOutputHelper.IManager, generationEnvironment:StringBuilder, targetProjectName:string, tables, cString:string) useOptions generateValueRecords (measures: string seq) (measureBlacklist: string seq) includeNonDboSchemaInNamespace targetNamespace sprocSettings (pluralizer:Func<_,_>,singularizer:Func<_,_>) (getMeasureNamespace:Func<_,_>)=
+    let Generate generatorId addlNamespaces useCliMutable (columnBlacklist:IDictionary<string, string seq>) (manager:MacroRunner.MultipleOutputHelper.IManager, generationEnvironment:StringBuilder, targetProjectName:string, tables, cString:string) useOptions generateValueRecords (measures: string seq) (measureBlacklist: string seq) includeNonDboSchemaInNamespace targetNamespace sprocSettings (pluralizer:Func<_,_>,singularizer:Func<_,_>) (getMeasureNamespace:Func<_,_>) typeGenerationBlacklist =
         let columnBlacklist =
-            columnBlacklist |> Map.ofDictionary |> Map.toSeq |> Seq.map (fun (k,v) -> KeyValuePair(k, v |> List.ofSeq))
+            columnBlacklist |> Map.ofDictionary |> Map.toSeq |> Seq.map (fun (k,v) -> KeyValuePair(k, v |> Set.ofSeq))
             |> Map.ofDictionary
 
-        let cgsm = {TargetProjectName= targetProjectName; SprocSettingMap = sprocSettings |> Option.ofUnsafeNonNullable; AdditionalNamespaces= addlNamespaces |> List.ofSeq; TargetNamespace=targetNamespace; CString=cString; UseOptionTypes=useOptions; ColumnBlacklist = columnBlacklist; Measures=measures |> List.ofSeq; MeasuresBlacklist= measureBlacklist |> List.ofSeq; IncludeNonDboSchemaInNamespace= includeNonDboSchemaInNamespace; GenerateValueRecords=generateValueRecords; UseCliMutable=useCliMutable; GetMeasureNamepace= Option.ofObj getMeasureNamespace |> Option.map (fun f -> f.Invoke) }
+        let cgsm = {    TargetProjectName= targetProjectName
+                        SprocSettingMap = sprocSettings |> Option.ofUnsafeNonNullable
+                        AdditionalNamespaces= addlNamespaces |> Set.ofSeq
+                        TargetNamespace=targetNamespace
+                        CString=cString
+                        UseOptionTypes=useOptions
+                        ColumnBlacklist = columnBlacklist
+                        Measures=measures |> Set.ofSeq
+                        MeasuresBlacklist= measureBlacklist |> Set.ofSeq
+                        IncludeNonDboSchemaInNamespace= includeNonDboSchemaInNamespace
+                        GenerateValueRecords=generateValueRecords
+                        UseCliMutable=useCliMutable
+                        TypeGenerationBlacklist = typeGenerationBlacklist |> Set.ofSeq
+                        GetMeasureNamepace= Option.ofObj getMeasureNamespace |> Option.map (fun f -> f.Invoke) }
         generate generatorId
             pluralizer.Invoke
             singularizer.Invoke
@@ -883,13 +899,14 @@ module GenerationSample =
                 CString=connectionString
                 UseOptionTypes=false
                 ColumnBlacklist = Map.empty
-                Measures=List.empty
-                MeasuresBlacklist= List.empty
+                Measures=Set.empty
+                MeasuresBlacklist= Set.empty
                 IncludeNonDboSchemaInNamespace= false
                 GenerateValueRecords = false
                 UseCliMutable = false
                 GetMeasureNamepace = None
-                AdditionalNamespaces = []
+                AdditionalNamespaces = Set.empty
+                TypeGenerationBlacklist = Set.empty
                 SprocSettingMap = None
             }
 
