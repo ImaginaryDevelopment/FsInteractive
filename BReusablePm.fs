@@ -546,6 +546,7 @@ type System.DateTime with
     static member addHours h (dt:DateTime) = dt.AddHours h
     static member addMinutes min (dt:DateTime) = dt.AddMinutes min
     static member toShortDateString (dt:DateTime) = dt.ToShortDateString()
+    static member getStartOfMonth (dt:DateTime) = DateTime(dt.Year, dt.Month,1)
     static member getYear (dt:DateTime) = dt.Year
     static member getHour (dt:DateTime) = dt.Hour
     static member getMinute (dt:DateTime) = dt.Minute
@@ -867,6 +868,7 @@ module Option = // https://github.com/fsharp/fsharp/blob/master/src/fsharp/FShar
 
     /// unsafe (Unchecked.defaultof<_>)
     let getValueOrDefault (n: 'a option) = match n with | Some x -> x | None -> Unchecked.defaultof<_>
+    let getOrFailMsg argName (n: 'a option) = match n with | Some x -> x | None -> failwithf "Value expected for %s" argName
 
     // the built-in exists, but the order here is more natural
     let getOrDefault (default': 'a) (n: 'a option) = match n with| Some x -> x | None -> default'
