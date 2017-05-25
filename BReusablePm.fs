@@ -76,6 +76,13 @@ module FunctionalHelpersAuto =
         let result = f x
         result
 
+    // allows you to pattern match against non-nullables to check for null (in case c# calls)
+    let (|NonNull|UnsafeNull|) x = 
+        match box x with
+        | null -> UnsafeNull
+        | _ -> NonNull
+
+
 module Tuple2 = // idea and most code taken from https://gist.github.com/ploeh/6d8050e121a5175fabb1d08ef5266cd7
     let replicate x = x,x
     // useful for Seq.mapi

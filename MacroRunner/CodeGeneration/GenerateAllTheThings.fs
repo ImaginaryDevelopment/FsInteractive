@@ -30,14 +30,17 @@ type ColumnInput = {
         UseMax: bool
         AllowNull: Nullability
         Attributes:string list
+        // in case you want small datetime for a datetime
+        CustomSqlType: string
         FKey:FKey option
+        DefaultValue: string
         Comments: string list
 //        GenerateReferenceTable: bool
 //        ReferenceValuesWithComment: IDictionary<string,string>
         IsUnique: bool
     } with
     static member create name columnType =
-        {Name=name; Type=columnType; Length= None; Precision=None;Scale=None;UseMax=false; AllowNull=Nullability.NotNull; Attributes=list.Empty; FKey= None; Comments = List.empty; IsUnique=false}
+        {Name=name; Type=columnType; Length= None; Precision=None;Scale=None;UseMax=false; AllowNull=Nullability.NotNull; Attributes=list.Empty; FKey= None; Comments = List.empty; IsUnique=false; DefaultValue=null; CustomSqlType=null}
     static member createFKeyedColumn<'T> name fkeyInfo =
         ColumnInput.create name typeof<'T>
         |> fun x -> {x with FKey = Some fkeyInfo }
@@ -51,7 +54,7 @@ type ColumnInput = {
         ColumnInput.createFKeyedColumn<int> (prefix + "UserID") (FKeyIdentifier {Table={Schema="dbo"; Name="Users"}; Column="UserID" })
         |> fun x -> {x with Comments = comment; AllowNull= allowNull}
     static member makeNullable50 name =
-        {Name=name; Type=typeof<string>; Length=Some 50; Precision=None; Scale=None; UseMax=false; AllowNull = Nullability.AllowNull; Attributes=List.empty; FKey = None;Comments = List.empty; IsUnique=false }
+        {Name=name; Type=typeof<string>; DefaultValue=null; CustomSqlType= null; Length=Some 50; Precision=None; Scale=None; UseMax=false; AllowNull = Nullability.AllowNull; Attributes=List.empty; FKey = None;Comments = List.empty; IsUnique=false }
 
 type TableInput() =
      member val Name:string = Unchecked.defaultof<_> with get,set
@@ -113,6 +116,8 @@ let runGeneration generatorId (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) ma
                                         Attributes = ci.Attributes
                                         IsUnique= ci.IsUnique
                                         FKey= ci.FKey
+                                        DefaultValue = ci.DefaultValue
+                                        CustomSqlType = ci.CustomSqlType
                                         Comments = ci.Comments
 //                                            if isNull ci.fk
 //                                            ci.FKey //if isNull ci.FKey then None else {FKeyInfo.Schema = ci.FKey.Schema; Table= ci.FKey.Table; Column = ci.FKey.Column} |> Some

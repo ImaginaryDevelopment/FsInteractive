@@ -47,7 +47,7 @@ module SqlGeneratorReferenceData =
         {   TableGenerationInfo.Id = {Schema="dbo";Name="Payment"}
             Columns=
                 [
-                    {ColumnGenerationInfo.Name="PaymentID"; Type=ColumnType.Other typeof<int>; Attributes = pkeyIdent; IsUnique=false; AllowNull=Nullability.NotNull; FKey=None; Comments = List.empty}
+                    {ColumnGenerationInfo.Name="PaymentID"; Type=ColumnType.Other typeof<int>; Attributes = pkeyIdent; IsUnique=false; AllowNull=Nullability.NotNull; FKey=None; Comments = List.empty; DefaultValue=null; CustomSqlType=null; }
                     {makeIntFkey "AppointmentId" (FKey.FKeyIdentifier {Table ={Schema="dbo"; Name="PaymentItemStatus"}; Column="AppointmentId"}) with AllowNull = AllowNull }
 //                    createFKeyedColumn typeof<int> "AppointmentId" {FKeyInfo.Schema="dbo"; Table="PaymentItemStatus"; Column="AppointmentId"} true null
                     // from line 47
@@ -74,7 +74,7 @@ module SqlGeneratorReferenceData =
                             ValuesWithComment = ["New";"Partial";"Complete"] |> Seq.map (fun n -> n,null) |> dict }
                     {   Name="TotalAmount";
                         Type=Decimal (Some {Precision=12; Scale=2}); IsUnique=false; Attributes = List.empty; AllowNull = NotNull; FKey=None;
-                        Comments = ["was amount (18,2)"] }
+                        Comments = ["was amount (18,2)"]; DefaultValue=null; CustomSqlType=null; }
                     makeUserIdColumn null AllowNull "null to allow system inserts/adjustments that aren't done by a user"
                     {makeIntFkey "PayerID" (FKeyIdentifier {Table={Schema="dbo";Name="Payers"};Column="PayerID"}) with AllowNull=AllowNull}
                     makePatientIdColumn null AllowNull null

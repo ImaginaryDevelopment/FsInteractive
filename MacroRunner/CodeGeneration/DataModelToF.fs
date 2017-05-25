@@ -885,6 +885,8 @@ module GenerationSample =
                         AllowNull = NotNull
                         FKey = None
                         Comments = List.empty
+                        DefaultValue=null
+                        CustomSqlType=null
                     }
                 ]
             }
