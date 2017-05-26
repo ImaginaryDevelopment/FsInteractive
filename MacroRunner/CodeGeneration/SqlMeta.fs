@@ -111,6 +111,7 @@ let composeFKeyAndDefaultValue tableName columnName defaultValue fkeyOpt =
          )
          |> Option.getOrDefault null
     let defaultValueText = Option.ofObj defaultValue |> Option.map (formatDefaultValue tableName columnName) |> Option.getOrDefault null
+    // apparently null string + null string is empty string
     match fkeyText, defaultValueText with
     | ValueString x, ValueString y -> sprintf "%s %s" x y
     | ValueString x, _ -> x
@@ -134,6 +135,7 @@ let formatColumnComments doDiag appendLine appendLine' tableName ci =
     let comment =
         match ci.Comments with
         | [comment] -> " -- " + comment |> Some
+        // if it is empty, let it fall through for ref value comments checking
         | []
         | _ :: _ :: _ ->
             match ci with
@@ -142,11 +144,11 @@ let formatColumnComments doDiag appendLine appendLine' tableName ci =
                     printfn "found rvc for %s -> %s! %A" tableName ci.Name rvc
                 " -- " + (delimit "," rvc.Keys) |> Some
             | _ -> None
-        |> Option.getOrDefault String.Empty 
+        |> Option.getOrDefault null
     multipleComments,comment
 
 let formatAttributes (attributes: string seq) hasCombinationPK fKeyText allowNull tableName (columnName, isUnique)=
-    let allowNull = (match allowNull with |AllowNull -> true | NotNull -> false) 
+    let allowNull = (match allowNull with | AllowNull -> true | NotNull -> false) 
     let isPk = not <| isNull attributes && Seq.contains "primary key" attributes
     let unique = if not <| isNull attributes && Seq.contains "unique" attributes || isUnique then " CONSTRAINT UQ_" + tableName + "_" + columnName + " UNIQUE" else String.Empty
     let needsStarter = allowNull || not isPk || hasCombinationPK
@@ -155,9 +157,9 @@ let formatAttributes (attributes: string seq) hasCombinationPK fKeyText allowNul
         starter + (if not <| isNull fKeyText then " " + fKeyText else null)
     else
         let attribs = starter + (delimit " " (if hasCombinationPK then attributes |> Seq.except([| "primary key" |]) else attributes)) + unique
-        if isNull fKeyText then
-            attribs
-        else attribs + " " + fKeyText
+        match fKeyText with
+        | ValueString _ -> attribs + " " + fKeyText
+        | _ -> attribs |> trim
 
 let generateColumn doDiag (tableId:TableIdentifier) appendLine appendLine' hasCombinationPK isLastColumn ci = 
     let fKeyTextOpt = composeFKeyAndDefaultValue tableId.Name ci.Name ci.DefaultValue ci.FKey
@@ -170,7 +172,6 @@ let generateColumn doDiag (tableId:TableIdentifier) appendLine appendLine' hasCo
             ci.AllowNull 
             tableId.Name
             (ci.Name, ci.IsUnique)
-
 
     let result =
         // %-32s is padRight 32chars ' '
