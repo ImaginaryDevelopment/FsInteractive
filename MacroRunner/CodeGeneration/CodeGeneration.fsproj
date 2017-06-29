@@ -54,6 +54,7 @@
     <Compile Include="SqlMeta.fs" />
     <Compile Include="SqlScriptGeneration.fs" />
     <Compile Include="PureCodeGeneration.fs" />
+    <Compile Include="GenerateJS.fs" />
     <Compile Include="Conversion.fs" />
     <Compile Include="DataModelToF.fs" />
     <Compile Include="GenerateFromTypes.fs" />

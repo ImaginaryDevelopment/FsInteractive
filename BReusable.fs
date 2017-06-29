@@ -1,6 +1,5 @@
 ﻿[<AutoOpen>]
 module BReusable
-
 open System
 [<AutoOpen>]
 module MatchHelpers =
@@ -37,11 +36,13 @@ module Tuple2 = // idea and most code taken from https://gist.github.com/ploeh/6
         | None -> None
     // start Brandon additions
     let mapBoth f (x,y) = f x, f y
+()
 
 let private failNullOrEmpty paramName x = if String.IsNullOrEmpty x then raise <| ArgumentOutOfRangeException paramName else x
+
 type System.String with
 //        // no idea how to call this thing with a comparer
-//        static member indexOf (delimiter,?c:StringComparison) (x:string) = 
+//        static member indexOf (delimiter,?c:StringComparison) (x:string) =
 //            match failNullOrEmpty "delimiter" delimiter,c with
 //            | d, Some c -> x.IndexOf(d,comparisonType=c)
 //            | d, None -> x.IndexOf d
@@ -51,14 +52,14 @@ type System.String with
     static member indexOfC delimiter c (x:string) =
         x.IndexOf(failNullOrEmpty "delimiter" delimiter ,comparisonType=c)
 // couldn't get this guy to call the other guy, so... leaving him out too
-//        static member contains (delimiter, ?c:StringComparison) (x:string) = 
+//        static member contains (delimiter, ?c:StringComparison) (x:string) =
 //            match failNullOrEmpty "delimiter" delimiter, c with
 //            | d, Some c -> x.IndexOf(d, comparisonType=c) |> flip (>=) 0
 //            | d, None -> x.Contains d
     static member contains delimiter (x:string) =
         failNullOrEmpty "delimiter" delimiter
         |> x.Contains
-    static member containsC delimiter c (x:string) = 
+    static member containsC delimiter c (x:string) =
         x
         |> String.indexOfC (failNullOrEmpty "delimiter" delimiter) c
         |> flip (>=) 0
@@ -88,13 +89,10 @@ type System.String with
 // not having to type `String.` on at least the used constantly is a huge reduction in typing
 // also helps with point-free style
 module StringHelpers =
-
     // I've been fighting/struggling with where to namespace/how to architect string functions, they are so commonly used, static members make it easier to find them
     // since typing `String.` with this module open makes them all easy to find
     // favor non attached methods for commonly used methods
-
 //    let before (delimiter:string) (x:string) = x.Substring(0, x.IndexOf delimiter)
-
     let contains (delimiter:string) (x:string) = String.contains delimiter x
     let containsI (delimiter:string) (x:string) = x |> String.containsC delimiter String.defaultIComparison
     let substring i x = x |> String.substring i
@@ -104,11 +102,11 @@ module StringHelpers =
     let after (delimiter:string) (x:string) =
         failNullOrEmpty "x" x
         |> tee (fun _ -> failNullOrEmpty "delimiter" delimiter |> ignore)
-        |> fun x -> 
+        |> fun x ->
             match x.IndexOf delimiter with
             | i when i < 0 -> failwithf "after called without matching substring in '%s'(%s)" x delimiter
             | i -> x |> String.substring (i + delimiter.Length)
-    let afterI (delimiter:string) (x:string) = 
+    let afterI (delimiter:string) (x:string) =
         x
         |> String.indexOfC delimiter String.defaultIComparison
         |> (+) delimiter.Length
@@ -118,25 +116,22 @@ module StringHelpers =
     let containsAnyOf (delimiters:string seq) (x:string) = delimiters |> Seq.exists(flip contains x)
     let containsIAnyOf (delimiters:string seq) (x:string) = delimiters |> Seq.exists(flip containsI x)
     let delimit (delimiter:string) (items:#seq<string>) = String.Join(delimiter,items)
-
     let endsWith (delimiter:string) (x:string) = x.EndsWith delimiter
-    let isNumeric (s:string)= not <| isNull s && s.Length > 0 && s |> String.forall Char.IsNumber 
+    let isNumeric (s:string)= not <| isNull s && s.Length > 0 && s |> String.forall Char.IsNumber
     let replace (target:string) (replacement) (str:string) = if String.IsNullOrEmpty target then invalidOp "bad target" else str.Replace(target,replacement)
     let splitLines(x:string) = x.Split([| "\r\n";"\n"|], StringSplitOptions.None)
     let startsWith (delimiter:string) (s:string) = s.StartsWith delimiter
     let startsWithI (delimiter:string) (s:string) = s.StartsWith(delimiter,String.defaultIComparison)
     let trim = String.trim
-//    let after (delimiter:string) (x:string) =  
+//    let after (delimiter:string) (x:string) =
 //        match x.IndexOf delimiter with
 //        | i when i < 0 -> failwithf "after called without matching substring in '%s'(%s)" x delimiter
 //        | i -> x.Substring(i + delimiter.Length)
-
-    let afterLast delimiter x = 
+    let afterLast delimiter x =
         if x |> String.contains delimiter then failwithf "After last called with no match"
         x |> String.substring (x.LastIndexOf delimiter + delimiter.Length)
     let stringEqualsI s1 (toMatch:string)= not <| isNull toMatch && toMatch.Equals(s1, StringComparison.InvariantCultureIgnoreCase)
-
-    let (|NullString|Empty|WhiteSpace|ValueString|) (s:string) = 
+    let (|NullString|Empty|WhiteSpace|ValueString|) (s:string) =
         match s with
         | null -> NullString
         | "" -> Empty
@@ -144,17 +139,14 @@ module StringHelpers =
         | _ -> ValueString s
     let inline isNullOrEmptyToOpt s =
         if String.IsNullOrEmpty s then None else Some s
-
     // was toFormatString
     // with help from http://www.readcopyupdate.com/blog/2014/09/26/type-constraints-by-example-part1.html
     let inline toFormatString (f:string) (a:^a) = ( ^a : (member ToString:string -> string) (a,f))
-
     //if more is needed consider humanizer or inflector
     let toPascalCase s =
         s
         |> Seq.mapi (fun i l -> if i=0 && Char.IsLower l then Char.ToUpper l else l)
         |> String.Concat
-
     let humanize camel :string =
         seq {
             let pascalCased = toPascalCase camel
@@ -167,10 +159,7 @@ module StringHelpers =
                     yield l
         }
         |> String.Concat
-
-
 open StringHelpers
-
 // I've also been struggling with the idea that Active patterns are frequently useful as just methods, so sometimes methods are duplicated as patterns
 [<AutoOpen>]
 module StringPatterns =
@@ -187,11 +176,9 @@ module StringPatterns =
        if String.Compare(str, arg, StringComparison.InvariantCultureIgnoreCase) = 0
        then Some() else None
     let (|IsNumeric|_|) (s:string) = if not <| isNull s && s.Length > 0 && s |> String.forall Char.IsNumber then Some() else None
-
     let (|OrdinalEqualI|_|) (str:string) arg =
        if String.Compare(str, arg, StringComparison.OrdinalIgnoreCase) = 0
        then Some() else None
-
     let inline (|IsTOrTryParse|_|) (t,parser) (x:obj): 't option =
         match x with
         | v when v.GetType() = t -> Some (v :?> 't)
@@ -200,7 +187,6 @@ module StringPatterns =
             | true, v -> Some v
             | _, _ -> None
         | _ -> None
-
     let (|Int|_|) (x:obj) =
         match x with
         | :? string as p ->
@@ -209,13 +195,11 @@ module StringPatterns =
                 Some value
             else None
         | _ -> None
-
     type System.String with
         static member IsValueString =
             function
             | ValueString -> true
             | _ -> false
-
 //    let (|StartsWithI|_|) (toMatch:string) (x:string) =
 //        if not <| isNull x && not <| isNull toMatch && toMatch.Length > 0 && x.StartsWith(toMatch, StringComparison.InvariantCultureIgnoreCase) then
 //            Some ()
@@ -227,8 +211,6 @@ module StringPatterns =
 //        |> function
 //            | IsTrue (containsI "xy") -> true
 //            | _ -> false
-
-
 #if LINQPAD
     let dumpt (title:string) x = x.Dump(title); x
 #else
@@ -258,34 +240,27 @@ module PathHelpers=
 type Rail<'TSuccess,'TFailure> =
     |Happy of 'TSuccess
     |Unhappy of 'TFailure
-
 [<RequireQualifiedAccess>]
-module Railway =
 
+module Railway =
     // legacy name: bind2
     /// apply either a success function or a failure function
     let inline either happyFunc unhappyFunc twoTrackInput =
         match twoTrackInput with
         |Happy s -> happyFunc s
         |Unhappy u -> unhappyFunc u
-
     /// convert a one-track function into a switch
     let inline switch f = f >> Happy
-
     /// convert a switch function into a two-track function
     let inline bind f = either f Unhappy
-
     // convert a one-track function into a two-track function
     let inline map f =
         bind (f >> Happy)
-
     let isHappy = function | Happy _ -> true | _ -> false
     /// bind a function to the failure track
     /// primary design purpose: adding data to the failure track
     let inline bind' f = either (Happy) f
-
     let ofOption failure xOpt = match xOpt with |Some x -> Happy x |None -> Unhappy failure
-
     /// An adapter that takes a normal one-track function and turns it into a switch function, and also catches exceptions
     /// could use id instead of a full exn function for cases you just want the exception
     let inline tryCatch f fEx x =
@@ -306,10 +281,8 @@ module Railways =
         | Success of 't
         | Failure of 'tError
 
-
 module Seq =
     open System.Collections.Generic
-
     let any<'t> (items:'t seq) = items |> Seq.exists (fun _ -> true)
   /// Iterates over elements of the input sequence and groups adjacent elements.
   /// A new group is started when the specified predicate holds about the element
@@ -320,7 +293,6 @@ module Seq =
     let groupWhen f (input:seq<_>) = seq {
         use en = input.GetEnumerator()
         let running = ref true
-
         // Generate a group starting with the current element. Stops generating
         // when it founds element such that 'f en.Current' is 'true'
         let rec group() =
@@ -328,18 +300,15 @@ module Seq =
             if en.MoveNext() then
               if not (f en.Current) then yield! group()
             else running := false ]
-
         if en.MoveNext() then
           // While there are still elements, start a new group
           while running.Value do
             yield group() |> Seq.ofList }
-
     let copyFrom (source: _ seq) (toPopulate:IList<_>)  =
         if not <| isNull source && not <| isNull toPopulate then
             use enumerator = source.GetEnumerator()
             while enumerator.MoveNext() do
                 toPopulate.Add(enumerator.Current)
-
     /// assumes you will iterate the entire sequence, otherwise not disposed
     /// probably not ok for infinite sequences
     let ofIEnumerator (en:System.Collections.IEnumerator) =
@@ -366,7 +335,6 @@ module Reflection =
         else
             //printfn "did not match %A to %A" typeof<'a> t ;
             None
-
     let isType<'a> = Unchecked.defaultof<'a>
     let rec getMethod recurse name (t:Type) =
         seq {
@@ -382,7 +350,6 @@ module Reflection =
             if recurse then
                 yield! t.GetInterfaces() |> Seq.collect (getMethods recurse)
         }
-
     // via http://www.fssnip.net/2V author: Tomas Petricek http://stackoverflow.com/users/33518/tomas-petricek
     // let us access public or private properties or methods dynamically
     // Various flags that specify what members can be called
@@ -392,19 +359,16 @@ module Reflection =
     let instanceFlags = BindingFlags.NonPublic ||| BindingFlags.Public ||| BindingFlags.Instance
     let private ctorFlags = instanceFlags
     let inline asMethodBase(a:#MethodBase) = a :> MethodBase
-
     // The operator takes just instance and a name. Depending on how it is used
     // it either calls method (when 'R is function) or accesses a property
     let (?) (o:obj) name : 'R =
       // The return type is a function, which means that we want to invoke a method
       if FSharpType.IsFunction(typeof<'R>) then
-
         // Get arguments (from a tuple) and their types
         let argType, resType = FSharpType.GetFunctionElements(typeof<'R>)
         // Construct an F# function as the result (and cast it to the
         // expected function type specified by 'R)
         FSharpValue.MakeFunction(typeof<'R>, fun args ->
-
           // We treat elements of a tuple passed as argument as a list of arguments
           // When the 'o' object is 'System.Type', we call static methods
           let methods, instance, args =
@@ -415,7 +379,6 @@ module Reflection =
               if argType = typeof<unit> then [| |]
               elif not(FSharpType.IsTuple(argType)) then [| args |]
               else FSharpValue.GetTupleFields(args)
-
             // Static member call (on value of type System.Type)?
             if (typeof<System.Type>).IsAssignableFrom(o.GetType()) then
               let methods = (unbox<Type> o).GetMethods(staticFlags) |> Array.map asMethodBase
@@ -423,20 +386,17 @@ module Reflection =
               Array.concat [ methods; ctors ], null, args
             else
               o.GetType().GetMethods(instanceFlags) |> Array.map asMethodBase, o, args
-
           // A simple overload resolution based on the name and the number of parameters only
           // TODO: This doesn't correctly handle multiple overloads with same parameter count
           let methods =
             [ for m in methods do
                 if m.Name = name && m.GetParameters().Length = args.Length then yield m ]
-
           // If we find suitable method or constructor to call, do it!
           match methods with
           | [] -> failwithf "No method '%s' with %d arguments found" name args.Length
           | _::_::_ -> failwithf "Multiple methods '%s' with %d arguments found" name args.Length
           | [:? ConstructorInfo as c] -> c.Invoke(args)
           | [ m ] -> m.Invoke(instance, args) ) |> unbox<'R>
-
       else
         // The result type is not an F# function, so we're getting a property
         // When the 'o' object is 'System.Type', we access static properties
@@ -444,7 +404,6 @@ module Reflection =
           if (typeof<System.Type>).IsAssignableFrom(o.GetType())
             then unbox o, staticFlags, null
             else o.GetType(), instanceFlags, o
-
         // Find a property that we can call and get the value
         let prop = typ.GetProperty(name, flags)
         if isNull prop && isNull instance then
@@ -463,7 +422,6 @@ module Reflection =
           if isNull prop then failwithf "Property '%s' found, but doesn't have 'get' method." name
           try meth.Invoke(instance, [| |]) |> unbox<'R>
           with _ -> failwithf "Failed to get value of '%s' property (of type '%s')" name typ.Name
-
 module Assemblies =
     // http://stackoverflow.com/a/28319367/57883
     let getAssemblyFullPath (assembly:System.Reflection.Assembly) =
@@ -479,36 +437,27 @@ module Assemblies =
                     bsPath
                 else codeBaseFailedAssert () ;assembly.Location
         fullPath
-
 module Option =
 //    [<AutoOpen>]
     // Brandon
 //    module BReusable =
-
     let getValueOrDefault (n: 'a option) = match n with | Some x -> x | None -> Unchecked.defaultof<_>
     let getOrDefault (default': 'a) (n: 'a option) = match n with| Some x -> x | None -> default'
     let getOrDefault' (default': 'a Lazy) (n: 'a option) = match n with| Some x -> x | None -> default'.Force()
-
     // for types the compiler insists aren't nullable, but maybe C# is calling
     let ofUnsafeNonNullable x =
         match box x with
         | null -> None
         | _ -> Some x
     (* End Brandon *)
-
-
 let (|NullableNull|NullableValue|) (x: _ Nullable) =
     if x.HasValue then NullableValue x.Value else NullableNull
-
 [<RequireQualifiedAccess>]
 module Nullable = //http://bugsquash.blogspot.com/2010/09/nullable-in-f.html also https://gist.github.com/mausch/571158
-
     let getValueOrDefault n = match n with NullableValue x -> x | NullableNull -> n.GetValueOrDefault()
-
     //let create x = System.Nullable x (* just use Nullable in and of itself, create is unnecessary. perhaps this is because of F# 4? *)
     let getOrDefault v n = match n with NullableValue x -> x | _ -> v
     let getOrElse (v: 'a Lazy) (n: 'a Nullable) = match n with NullableValue x -> x | _ -> v.Force()
-
     let get (x: _ Nullable) = x.Value
     let bind f x =
         match x with
@@ -549,16 +498,12 @@ module Nullable = //http://bugsquash.blogspot.com/2010/09/nullable-in-f.html als
         match x with
         | NullableNull -> []
         | NullableValue v -> [v]
-
     let liftNullable op (a: _ Nullable) (b: _ Nullable) =
         if a.HasValue && b.HasValue
             then Nullable(op a.Value b.Value)
             else Nullable()
-
     let mapBoolOp op a b =
         match a,b with
         | NullableValue x, NullableValue y -> op x y
         | _ -> false
-
     let bindf (n: _ Nullable) f ``default`` = if n.HasValue then f n.Value else ``default``
-

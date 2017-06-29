@@ -12,7 +12,7 @@ type FKeyIdentifier = {Table: TableIdentifier; Column:string}
 type ColumnLength = |Max | Length of int
 type DecimalInfo = {Precision:int; Scale:int}
 
-type ColumnType = 
+type SqlColumnType = 
     |Decimal of DecimalInfo option
     |VarChar of ColumnLength
     |NVarChar of ColumnLength
@@ -23,13 +23,15 @@ type ColumnType =
 type Nullability = 
     | AllowNull
     | NotNull
+    | PrimaryKey
 type Uniqueness =
     | Unique
     | NotUnique
+
 type ColumnInfo = 
     { 
         Name:string; 
-        Type:ColumnType
+        SqlType:SqlColumnType
         AllowNull:Nullability
         Attributes: string list
         IsUnique: Uniqueness
@@ -37,7 +39,7 @@ type ColumnInfo =
     }
     with
         static member Zero ct = 
-            {Name=null; Type = ct; AllowNull = NotNull;IsUnique=Uniqueness.NotUnique; Attributes = List.empty; FKeyOpt = None}
+            {Name=null; SqlType = ct; AllowNull = NotNull;IsUnique=Uniqueness.NotUnique; Attributes = List.empty; FKeyOpt = None}
 type TableInfo = { Id:TableIdentifier; Columns: ColumnInfo list}
 // ColumnInfo looks superior to this, but perhaps this shape is needed somewhere specific
 type ColumnDescription = {ColumnName:string; Type:string; Length:int; Nullable:bool; IsPrimaryKey:bool; IsIdentity:bool}
@@ -149,7 +151,7 @@ let getTableData cn (tableIdentifier:TableIdentifier) =
                 | _ -> ()
         }
         |> Set.ofSeq
-    tableIdentifier, pks, columns, identities
+    pks, columns, identities
 
 open Strict
 

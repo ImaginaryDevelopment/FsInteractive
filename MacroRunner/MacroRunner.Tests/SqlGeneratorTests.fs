@@ -25,6 +25,8 @@ let projects = [
         "Miscellaneous Files"
     ]
 module SqlGeneratorReferenceData =
+    open CodeGeneration.SqlMeta.ColumnTyping
+
     let refData= [
             {ReferenceData.FKeyId = {Table={Schema="dbo";Name="GuarantorTypes"};Column="GuarantorTypeId"}; GenerateReferenceTable = false; ValuesWithComment =
                 dict [
@@ -36,19 +38,22 @@ module SqlGeneratorReferenceData =
     let pkeyIdent =[ "identity"; "primary key" ]
     let vOrnonValueStringToList s = if String.IsNullOrEmpty s then List.empty else [s]
 
-    let makeUserIdColumn prefix allowNull comment =
+    let makeUserIdColumn prefix nullability comment =
         let fkey = FKey.FKeyIdentifier {Table={Schema="dbo"; Name="Users"}; Column="UserID"}
-        { makeIntFkey (prefix + "UserID") fkey with AllowNull = allowNull; Comments= vOrnonValueStringToList comment}
-    let makePatientIdColumn prefix allowNull comment =
+        { makeIntFkey (prefix + "UserID") fkey with Nullability = nullability; Comments= vOrnonValueStringToList comment}
+    let makePatientIdColumn prefix nullability comment =
         let fkey = FKey.FKeyIdentifier {Table={Schema="dbo";Name="Patients"; };Column="PatientID"}
-        {makeIntFkey (prefix+"PatientID") fkey with AllowNull = allowNull; Comments=vOrnonValueStringToList comment}
+        {makeIntFkey (prefix+"PatientID") fkey with Nullability = nullability; Comments=vOrnonValueStringToList comment}
 
-    let toGen = [
+    let toGen = 
+        let makeNonFKeyColumn name columnType nullability = 
+            {Name=name; ColumnType = columnType; IsUnique = NotUnique; Nullability = nullability; FKey = None; Comments = List.Empty; DefaultValue = null}
+        [
         {   TableGenerationInfo.Id = {Schema="dbo";Name="Payment"}
             Columns=
                 [
-                    {ColumnGenerationInfo.Name="PaymentID"; Type=ColumnType.Other typeof<int>; Attributes = pkeyIdent; IsUnique=false; AllowNull=Nullability.NotNull; FKey=None; Comments = List.empty; DefaultValue=null; CustomSqlType=null; }
-                    {makeIntFkey "AppointmentId" (FKey.FKeyIdentifier {Table ={Schema="dbo"; Name="PaymentItemStatus"}; Column="AppointmentId"}) with AllowNull = AllowNull }
+                    {ColumnInput.Name="PaymentID"; ColumnType=ColumnType.IdentityColumn; IsUnique=NotUnique; Nullability=Nullability.NotNull; FKey=None; Comments = List.empty; DefaultValue=null}
+                    {makeIntFkey "AppointmentId" (FKey.FKeyIdentifier {Table ={Schema="dbo"; Name="PaymentItemStatus"}; Column="AppointmentId"}) with Nullability = AllowNull }
 //                    createFKeyedColumn typeof<int> "AppointmentId" {FKeyInfo.Schema="dbo"; Table="PaymentItemStatus"; Column="AppointmentId"} true null
                     // from line 47
 
@@ -73,19 +78,19 @@ module SqlGeneratorReferenceData =
                             GenerateReferenceTable = true
                             ValuesWithComment = ["New";"Partial";"Complete"] |> Seq.map (fun n -> n,null) |> dict }
                     {   Name="TotalAmount";
-                        Type=Decimal (Some {Precision=12; Scale=2}); IsUnique=false; Attributes = List.empty; AllowNull = NotNull; FKey=None;
-                        Comments = ["was amount (18,2)"]; DefaultValue=null; CustomSqlType=null; }
+                        ColumnType=DecimalColumn (Some {Precision=Precision.Create(12uy).Value; Scale=Scale.Create(2uy).Value}); IsUnique=NotUnique; Nullability = NotNull; FKey=None;
+                        Comments = ["was amount (18,2)"]; DefaultValue=null}
                     makeUserIdColumn null AllowNull "null to allow system inserts/adjustments that aren't done by a user"
-                    {makeIntFkey "PayerID" (FKeyIdentifier {Table={Schema="dbo";Name="Payers"};Column="PayerID"}) with AllowNull=AllowNull}
+                    {makeIntFkey "PayerID" (FKeyIdentifier {Table={Schema="dbo";Name="Payers"};Column="PayerID"}) with Nullability=AllowNull}
                     makePatientIdColumn null AllowNull null
                     // change comment after testing to 'name was timestamp'
-                    { makeNonFKeyColumn "Created" (Other typeof<DateTime>) AllowNull with Comments = ["was timestamp"]}
+                    { ColumnInput.Name="Created"; ColumnType=ColumnType.DateTimeColumn; Nullability=NotNull; IsUnique=NotUnique; Comments = ["was timestamp"]; FKey=None;DefaultValue=null}
 //                    {Name="Created"; Type=Other typeof<DateTime>; AllowNull=AllowNull; Comments = ["was timestamp"]; GenerateReferenceTable = false; ReferenceValuesWithComment=null;FKey=None; Attributes = List.empty}
-                    { makeNonFKeyColumn "TransactionNumber" (VarChar (Length 30)) AllowNull with Comments = ["was checkNumber now will store check number or ACH number (when applicable)"]}
-                    { makeNonFKeyColumn "Rcd" (Other typeof<DateTime>) AllowNull with Comments = ["Payment Recvd"]}
-                    makeNonFKeyColumn "IsElectronic" (Other typeof<bool>) NotNull
-                    { makeIntFkey "CCItemID" (FKeyIdentifier {Table={Schema="dbo";Name="Accounts"};Column="CCItem"}) with AllowNull=AllowNull}
-                    makeNonFKeyColumn "Comments" (VarChar Max) AllowNull
+                    { makeNonFKeyColumn "TransactionNumber" (ColumnType.StringColumn 30) AllowNull with Comments = ["was checkNumber now will store check number or ACH number (when applicable)"]}
+                    { makeNonFKeyColumn "Rcd" ColumnType.DateTimeColumn AllowNull with Comments = ["Payment Recvd"]}
+                    makeNonFKeyColumn "IsElectronic" ColumnType.Bit NotNull
+                    { makeIntFkey "CCItemID" (FKeyIdentifier {Table={Schema="dbo";Name="Accounts"};Column="CCItem"}) with Nullability=AllowNull}
+                    makeNonFKeyColumn "Comments" ColumnType.StringMax AllowNull
             ]
         }
     ]

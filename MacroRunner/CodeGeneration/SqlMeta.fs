@@ -19,25 +19,68 @@ type FKey =
     |FKeyIdentifier of FKeyIdentifier
     |FKeyWithReference of ReferenceData
 
-type ColumnGenerationInfo<'T> =
-    {
-        Name:string;
-        Type: 'T
-        AllowNull:Nullability
-        Attributes: string list
-        IsUnique: bool
-        DefaultValue: string
-        CustomSqlType: string
+module ColumnTyping = 
+    type Precision private(p) = 
+        member __.P = p
+        static member Default = Precision(18uy)
+        static member Create p = 
+            if 1uy <= p && p <= 38uy then
+                Precision(p)
+                |> Some
+            else None
+    type Scale private (s) = 
+        member __.S = s
+        static member Default = Scale(0uy)
+        static member Create p = 
+            if 0uy <= p && p <= 38uy then
+                Scale(p)
+                |> Some
+            else None
+    type ColumnPS = {Precision:Precision; Scale: Scale}
+    // only accounting for varchar text fields currently
+    type ColumnType = 
+            | Bit
+            ///// 0 - 255
+            //| TinyIntColumn
+            ///// up to 32,767
+            //| SmallIntColumn
+            /// up to 2,147,483,647
+            | IntColumn
+            | IdentityColumn
+            | StringColumn of length:int
+            | StringMax
+            | NStringMax
+            | NStringColumn of length:int
+            | Floater of ColumnPS option
+            | DecimalColumn of ColumnPS option
+            | DateTimeColumn
+            | UniqueIdentifier
+            // in case you want small datetime for a datetime
+            | Custom of string
+open ColumnTyping
+// differences: UseMax, Scale, Precision added (base would be ColumnGenerationInfo<Type>)
+type ColumnInput = {
+        Name:string
+        ColumnType: ColumnTyping.ColumnType
+        Nullability: Nullability
+        //Attributes:string list
         FKey:FKey option
+        DefaultValue: string
         Comments: string list
-    }
-    with
-        static member Zero ct =
-            {Name=null; Type = ct; AllowNull = NotNull;IsUnique=false; Attributes = List.empty; DefaultValue=null; CustomSqlType=null; FKey = None; Comments = List.empty}
+//        GenerateReferenceTable: bool
+//        ReferenceValuesWithComment: IDictionary<string,string>
+        IsUnique: Uniqueness
+    } with 
+        member x.IsPrimaryKey = 
+            match x.Nullability with |PrimaryKey -> true | _ -> false
+        member x.IsIdentity =
+            match x.ColumnType with 
+            | IdentityColumn -> true
+            | _ -> false
 
-type ColumnGenerationInfo = ColumnGenerationInfo<ColumnType>
+
 //type TableInfo = { Id:TableIdentifier; Columns: ColumnInfo list}
-type TableGenerationInfo = {Id:TableIdentifier; Columns: ColumnGenerationInfo list}
+type TableGenerationInfo = {Id:TableIdentifier; Columns: ColumnInput list}
 
 let getParms conn procName =
     use cmd = new SqlCommand(procName, conn)
@@ -50,26 +93,11 @@ let getParms conn procName =
 let getTableGenerationData appendLine fSingularizer cn (ti:TableIdentifier) =
     let typeName = fSingularizer ti.Name
     appendLine <| sprintf "Starting table %s as type %s" ti.Name typeName
-    let (ti, pks,columns,identities) = getTableData cn ti
-    ti, typeName, pks, columns, identities
-
-let toColumnType (t:Type) length precision scale useMax =
-    match t with
-    | TypeOf (isType:bool) -> ColumnType.Other typeof<bool>
-    | TypeOf (isType:decimal) ->
-        match precision,scale with
-        | NullableValue p, NullableValue s ->
-            {Precision=p; Scale = s}
-            |> Some
-            |> ColumnType.Decimal
-        | _ -> ColumnType.Decimal None
-    |TypeOf (isType:string) ->
-        match useMax,length with
-        | true, _ -> Max
-        | _, NullableValue length -> Length length
-        | _ -> failwithf "mismatched for %A " (useMax,length)
-        |> ColumnType.VarChar
-    | _ -> Other t
+    try
+    let (pks,columns,identities) = getTableData cn ti
+    Rail.Happy( ti, typeName, pks, columns, identities)
+    with ex ->
+        Rail.Unhappy (ti,ex)
 
 let formatFKey (table:string) column (fKey:FKeyIdentifier) : string =
     let fKeyColumn = if isNull fKey.Column then column else fKey.Column
@@ -78,27 +106,25 @@ let formatFKey (table:string) column (fKey:FKeyIdentifier) : string =
 let formatDefaultValue (table:string) column defaultValue : string = 
     sprintf "CONSTRAINT [DF_%s_%s] DEFAULT %s" table column defaultValue
 
-let mapTypeToSql customType ct =
-    let mapLength =
-        function
-        | Max -> "MAX"
-        | Length l -> string l
-    match customType with
-    | ValueString _ -> customType
-    | _ -> 
-        match ct with
-        | Decimal (Some(di)) -> sprintf "decimal(%i,%i)" di.Precision di.Scale
-        | Decimal None -> "decimal"
-        | VarChar cl -> sprintf "varchar(%s)" (mapLength cl)
-        | NVarChar cl -> sprintf "nvarchar(%s)" (mapLength cl)
-        | Char cl -> sprintf "char(%s)" (mapLength cl)
-        | NChar cl -> sprintf "nchar(%s)" (mapLength cl)
-        | Other t ->
-            match t with
-            | TypeOf(isType:int) -> "int"
-            | TypeOf(isType:bool) -> "bit"
-            | TypeOf(isType:DateTime) -> "datetime"
-            | _ -> t.Name
+let mapTypeToSql =
+    function
+    | Custom ct ->
+            ct
+    | Bit -> "bit"
+    | IntColumn -> "int"
+    | DateTimeColumn -> "datetime"
+    | DecimalColumn None -> "decimal"
+    | DecimalColumn (Some ps) ->
+        sprintf "decimal(%i,%i)" ps.Precision.P ps.Scale.S
+    | Floater None -> "Numeric"
+    | Floater (Some ps) ->
+        sprintf "numeric(%i,%i)" ps.Precision.P ps.Scale.S
+    | IdentityColumn -> "int"
+    | StringColumn l -> sprintf "varchar(%i)" l
+    | StringMax -> "varchar(MAX)"
+    | NStringColumn length -> sprintf "nvarchar(%i)" length
+    | NStringMax -> "nvarchar(MAX)"
+    | UniqueIdentifier -> sprintf "uniqueidentifier"
 
 let composeFKeyAndDefaultValue tableName columnName defaultValue fkeyOpt = 
     let fkeyText = 
@@ -147,37 +173,45 @@ let formatColumnComments doDiag appendLine appendLine' tableName ci =
         |> Option.getOrDefault null
     multipleComments,comment
 
-let formatAttributes (attributes: string seq) hasCombinationPK fKeyText allowNull tableName (columnName, isUnique)=
-    let allowNull = (match allowNull with | AllowNull -> true | NotNull -> false) 
-    let isPk = not <| isNull attributes && Seq.contains "primary key" attributes
-    let unique = if not <| isNull attributes && Seq.contains "unique" attributes || isUnique then " CONSTRAINT UQ_" + tableName + "_" + columnName + " UNIQUE" else String.Empty
-    let needsStarter = allowNull || not isPk || hasCombinationPK
-    let starter = (if allowNull then "null" elif needsStarter then "not null" else String.Empty) + (if needsStarter then " " else String.Empty)
-    if isNull attributes then
-        starter + (if not <| isNull fKeyText then " " + fKeyText else null)
+let formatAttributes hasCombinationPK fKeyText nullability tableName (columnName, isUnique,isIdentity)=
+    let isPk = match nullability with PrimaryKey -> true | _ -> false
+    let allowNull = match nullability with AllowNull -> true | _ -> false
+
+    // if it is a primary key it doesn't need the starter
+    let starter = if allowNull then "null" else "not null"
+    if not isIdentity && not isPk && not isUnique then
+        starter + (if not <| String.IsNullOrEmpty fKeyText then " " + fKeyText else null)
     else
-        let attribs = starter + (delimit " " (if hasCombinationPK then attributes |> Seq.except([| "primary key" |]) else attributes)) + unique
-        match fKeyText with
-        | ValueString _ -> attribs + " " + fKeyText
-        | _ -> attribs |> trim
+        [
+                if isIdentity then yield "identity"
+                if isPk then yield "primary key"
+                if allowNull then yield "null"
+                if not allowNull && (not isPk || (isPk && hasCombinationPK)) then yield "not null"
+                if isUnique then yield "CONSTRAINT UQ_" + tableName + "_" + columnName + " UNIQUE"
+                match fKeyText with
+                | ValueString _ -> yield fKeyText
+                | _ -> ()
+        ]
+        |> delimit " "
+        |> trim
 
 let generateColumn doDiag (tableId:TableIdentifier) appendLine appendLine' hasCombinationPK isLastColumn ci = 
     let fKeyTextOpt = composeFKeyAndDefaultValue tableId.Name ci.Name ci.DefaultValue ci.FKey
     let hasMultipleComments,comment = formatColumnComments doDiag appendLine appendLine' tableId.Name ci
     let attribs = 
+        let isIdentity = match ci.ColumnType with | IdentityColumn -> true | _ -> false
         formatAttributes 
-            ci.Attributes 
             hasCombinationPK 
             fKeyTextOpt 
-            ci.AllowNull 
+            ci.Nullability 
             tableId.Name
-            (ci.Name, ci.IsUnique)
+            (ci.Name, (match ci.IsUnique with | Unique -> true | _ -> false), isIdentity)
 
     let result =
         // %-32s is padRight 32chars ' '
         sprintf "%-32s%-16s%s%s%s%s"
             (sprintf "[%s]" ci.Name)
-            (mapTypeToSql ci.CustomSqlType ci.Type)
+            (mapTypeToSql ci.ColumnType)
             attribs
             //(if i < columnCount - 1 || hasCombinationPK then "," else String.Empty)
             (if isLastColumn || hasCombinationPK then "," else String.Empty)
@@ -203,12 +237,11 @@ let generateTable doDiag (manager:IManager) (generationEnvironment:StringBuilder
     appendLine "-- Generated file, DO NOT edit directly"
     appendLine (sprintf "CREATE TABLE [%s].[%s] (" tableInfo.Id.Schema tableInfo.Id.Name)
     // SqlGeneration.ttinclude ~ 165
-    // custom type,  column type
+    // custom type, column type
 
     let mutable i = 0
     let columnCount = tableInfo.Columns.Length
-    let hasCombinationPK = tableInfo.Columns.Count (fun ci -> ci.Attributes |> Seq.contains "primary key") > 1
-    
+    let hasCombinationPK = tableInfo.Columns.Count (fun ci -> ci.Nullability |> function | PrimaryKey -> true | _ -> false) > 1
 
     tableInfo.Columns
     |> Seq.iter (fun ci ->
@@ -217,7 +250,7 @@ let generateTable doDiag (manager:IManager) (generationEnvironment:StringBuilder
     )
     if hasCombinationPK then
         let columns =
-            tableInfo.Columns.Where(fun ci -> ci.Attributes.Contains("primary key")).Select(fun ci -> ci.Name)
+            tableInfo.Columns.Where(fun ci -> ci.IsPrimaryKey).Select(fun ci -> ci.Name)
             |> delimit ","
 
         sprintf "CONSTRAINT PK_%s PRIMARY KEY (%s)" tableInfo.Id.Name columns
@@ -346,7 +379,7 @@ let generateTablesAndReferenceTables(manager:IManager, generationEnvironment:Str
                         childCi.Comments
                     elif fKey.ValuesWithComment |> isNull |> not && fKey.ValuesWithComment.Count > 0 then [fKey.ValuesWithComment.Keys |> delimit"," ]
                     else []
-                let pkeyColumn = {childCi with Attributes = ["primary key"]; AllowNull = NotNull; FKey=None; Comments= refPKComment}
+                let pkeyColumn = {childCi with Nullability = PrimaryKey; FKey=None; Comments= refPKComment}
                 let tId = fKey.FKeyId.Table
                 let table = {TableGenerationInfo.Id={Schema = tId.Schema; Name=tId.Name}; Columns = [pkeyColumn]}
                 printfn "Generating ReferenceTable from %A" table
@@ -358,13 +391,19 @@ let generateTablesAndReferenceTables(manager:IManager, generationEnvironment:Str
                 reraise()
         )
     )
-let makeStrFkey50 name fkey = {ColumnGenerationInfo.Name=name; DefaultValue=null; CustomSqlType=null; Type=VarChar (Length 50); IsUnique=false; Attributes = List.empty; AllowNull = NotNull; FKey = Some (FKeyIdentifier fkey); Comments = List.empty}
-let makeStrRefFkey50 name fkey = {ColumnGenerationInfo.Name=name; DefaultValue=null; CustomSqlType=null; Type=VarChar (Length 50); IsUnique=false; Attributes = List.empty; AllowNull = NotNull; FKey = Some (FKeyWithReference fkey); Comments = List.empty}
-let makeIntFkey name fkey = {ColumnGenerationInfo.Name=name; DefaultValue=null; CustomSqlType=null; Type=Other typeof<int>; IsUnique=false; Attributes = List.empty; AllowNull = NotNull; FKey=Some fkey; Comments = List.empty}
+//     Name:string
+//        Type: ColumnTyping.ColumnType
+//        AllowNull: Nullability
+//        FKey:FKey option
+//        DefaultValue: string
+//        Comments: string list
+////        GenerateReferenceTable: bool
+////        ReferenceValuesWithComment: IDictionary<string,string>
+//        IsUnique: Uniqueness
+let makeStrFkey50 name fkey = {ColumnInput.Name=name; DefaultValue=null; ColumnType=ColumnType.StringColumn 50; IsUnique=NotUnique; Nullability = NotNull; FKey = Some (FKeyIdentifier fkey); Comments = List.empty}
+let makeStrRefFkey50 name fkey = {ColumnInput.Name=name; DefaultValue=null; ColumnType=ColumnType.StringColumn 50; IsUnique=NotUnique; Nullability = NotNull; FKey = Some (FKeyWithReference fkey); Comments = List.empty}
+let makeIntFkey name fkey = {Name=name; DefaultValue=null; ColumnType=ColumnType.IntColumn; IsUnique=NotUnique; Nullability = NotNull; FKey=Some fkey; Comments = List.empty}
 let makeNullable50 name =
-    {Name=name; Type = VarChar (Length 50); AllowNull = AllowNull; DefaultValue=null; CustomSqlType=null; IsUnique=false; Attributes = List.empty; FKey = None; Comments = List.empty}
-
-let makeNonFKeyColumn name columnType allowNull =
-    {Name=name; Type=columnType; AllowNull=allowNull; Comments = List.empty; DefaultValue=null; CustomSqlType=null; FKey=None; IsUnique=false; Attributes = List.empty}
+    {Name=name; ColumnType = StringColumn 50; Nullability = AllowNull; DefaultValue=null; IsUnique=NotUnique; FKey = None; Comments = List.empty}
 
 // end sql generation module

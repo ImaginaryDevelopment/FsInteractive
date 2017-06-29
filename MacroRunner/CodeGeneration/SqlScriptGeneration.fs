@@ -14,6 +14,7 @@ let indentSb (sb,i) = sb, i + 1
 let deIndentSb (sb,i) = sb, i - 1
 let appendLines (lines: string seq) (sb:StringBuilder,i) = lines |> Seq.fold(flip appendLine) (sb,i)
 let appendIndentLines (map: (int*string) seq) (sb:StringBuilder,i) = map |> Seq.fold (fun (sb,i) (j,l) -> appendLine' j l (sb,i)) (sb,i)
+
     //lines |> Seq.fold(appendLine i |> flip) sb
     //lines |> Seq.iter (flip appendLine sb >> ignore<StringBuilder>)
     //sb
@@ -48,8 +49,6 @@ type Droppable =
 //        function
 //        | Table t -> TableId t
 //        | Other o ->
-
-
 
 let includeFile = sprintf ":r %s"
 
