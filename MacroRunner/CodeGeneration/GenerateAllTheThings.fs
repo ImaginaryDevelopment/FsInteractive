@@ -14,6 +14,7 @@ open CodeGeneration.SqlMeta
 open CodeGeneration.SqlMeta.ColumnTyping
 
 open CodeGeneration.DataModelToF
+open BReusable.StringHelpers
 
 
 let failing s=
@@ -43,6 +44,14 @@ type TableInput() =
      member val Columns:ColumnInput seq = Unchecked.defaultof<_> with get,set
 
 type SqlGenerationConfig = { TargetSqlProjectName: string; SqlItems: TableInput list; InsertionConfig: InsertsGenerationConfig option}
+type GenMapTableItem = 
+    | DataModelOnly of TableIdentifier
+    | Detailed of TableGenerationInfo
+    with
+        static member GetTI =
+            function
+                |DataModelOnly ti -> ti
+                |Detailed x -> x.Id
 
 // although InsertsGenerationConfig doesn't apply to TableGenerationInfo, let them be grouped for convenience
 //type SqlGenerationism =
@@ -102,25 +111,52 @@ let runGeneration generatorId (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) ma
                 targetSqlProjectFolder
                 items ic
         | None -> ()
-
-        items
-        |> Seq.map (fun gm -> gm.Id)
-        |> List.ofSeq
-        |> fun items -> dataModelOnlyItems@items
+        let result = 
+            (dataModelOnlyItems
+            |> List.map DataModelOnly)@(items |> List.map GenMapTableItem.Detailed)
+        result
     )
     |> Seq.collect id
-    |> Seq.filter (fun x ->
+    |> Seq.filter (
+        function
+        | DataModelOnly ti -> 
+            ti
+        | Detailed details -> 
+            details.Id
+        >> (fun x ->
         not <| cgsm.TypeGenerationBlacklist.Contains x.Name && 
             not <| cgsm.TypeGenerationBlacklist.Contains (sprintf "%s.%s" x.Schema x.Name)
+        )
     )
     |> List.ofSeq
     |> fun mappedTables ->
     DataModelToF.generate generatorId
         pluralizer.Pluralize
         pluralizer.Singularize
-        None
+        (Some (fun ti (exn:exn) ->
+            mappedTables
+            |> Seq.find(function | Detailed details -> details.Id = ti | DataModelOnly dmTI -> dmTI = ti)
+            |> function
+                |Detailed details ->
+                    // this is what should be happening on the main path too
+                    let getMeasureType (item:ColumnInput) =
+                        cgsm.Measures
+                        |> Seq.tryFind (fun m -> cgsm.MeasuresBlacklist |> Seq.contains item.Name |> not && containsI m item.Name)
+                        |> Option.getOrDefault null
+
+                    {   SqlTableMeta.TI = details.Id
+                        TypeName=pluralizer.Singularize details.Id.Name
+                        PrimaryKeys=details.Columns |> Seq.choose (fun c -> if c.IsPrimaryKey then Some c.Name else None) |> Set.ofSeq
+                        Identities= details.Columns |> Seq.choose (fun c -> if c.IsIdentity then Some c.Name else None) |> Set.ofSeq
+                        Columns= SqlTableColumnChoice.Manual details.Columns
+                    }
+                    |> Some
+                | DataModelOnly dmInput ->
+                    None
+
+        ))
         cgsm
-        (manager, sb, mappedTables)
+        (manager, sb, mappedTables |> Seq.map GenMapTableItem.GetTI)
 
 let sb = System.Text.StringBuilder()
 let appendLine text (sb:System.Text.StringBuilder) =

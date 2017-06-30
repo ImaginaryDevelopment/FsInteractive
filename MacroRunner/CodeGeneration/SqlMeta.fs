@@ -39,24 +39,36 @@ module ColumnTyping =
     type ColumnPS = {Precision:Precision; Scale: Scale}
     // only accounting for varchar text fields currently
     type ColumnType = 
-            | Bit
-            ///// 0 - 255
-            //| TinyIntColumn
-            ///// up to 32,767
-            //| SmallIntColumn
-            /// up to 2,147,483,647
-            | IntColumn
-            | IdentityColumn
-            | StringColumn of length:int
-            | StringMax
-            | NStringMax
-            | NStringColumn of length:int
-            | Floater of ColumnPS option
-            | DecimalColumn of ColumnPS option
-            | DateTimeColumn
-            | UniqueIdentifier
-            // in case you want small datetime for a datetime
-            | Custom of string
+        | Bit
+        ///// 0 - 255
+        //| TinyIntColumn
+        ///// up to 32,767
+        //| SmallIntColumn
+        /// up to 2,147,483,647
+        | IntColumn
+        | IdentityColumn
+        | StringColumn of length:int
+        | StringMax
+        | NStringMax
+        | NStringColumn of length:int
+        | Floater of ColumnPS option
+        | DecimalColumn of ColumnPS option
+        | DateTimeColumn
+        | UniqueIdentifier
+        // in case you want small datetime for a datetime
+        | Custom of string
+        with 
+            member x.NeedsQuoted =
+                match x with
+                | StringColumn _ 
+                | StringMax
+                | NStringMax
+                | NStringColumn _
+                | DateTimeColumn
+                | Custom _
+                | UniqueIdentifier -> true
+                | _ -> false
+
 open ColumnTyping
 // differences: UseMax, Scale, Precision added (base would be ColumnGenerationInfo<Type>)
 type ColumnInput = {

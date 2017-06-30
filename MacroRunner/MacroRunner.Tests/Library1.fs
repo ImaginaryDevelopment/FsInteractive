@@ -24,7 +24,7 @@ module CodeGeneration =
     [<Fact>]
     let ``generateINotifyClass Foo generates a FooN type``() =
         let columns =
-            [
+            SqlTableColumnChoice.SqlTableColumnMeta [
                 {ColumnDescription.ColumnName="Bar";
                  Type = "string"
                  Length = 1

@@ -8,6 +8,7 @@ open System.Text
 open BReusable
 open BReusable.StringHelpers
 open MacroRunner.AdoHelper
+open CodeGeneration.SqlMeta.ColumnTyping
 
 type Path = System.IO.Path
 type IManager = MacroRunner.MultipleOutputHelper.IManager
@@ -71,58 +72,137 @@ module DataModelToF =
 
         sprintf "%s%s%s" targetType measureType nullability
 
-    // take the sql type and give back what .net type we're using
-    let mapSqlType(type' : string, nullable:bool, measureType:string, useOptions:bool) =
-        match type'.ToLower() with
-            |"char"
-            |"nchar"
-            |"nvarchar"
-            |"xml"
-            |"varchar" -> "string"
-            |"bit" -> mapNullableType("bool", nullable, measureType, useOptions)
-            |"date"
-            |"datetime"
-            |"datetime2"
-            |"smalldatetime" -> mapNullableType("DateTime", nullable, measureType, useOptions)
-            |"image" -> "byte[]"
-            |"uniqueidentifier" -> mapNullableType("Guid",nullable, measureType, useOptions)
-            |"int" -> mapNullableType("int", nullable, measureType, useOptions)
-            |"decimal" -> mapNullableType("decimal", nullable, measureType, useOptions)
-            |"float" -> mapNullableType("float", nullable, measureType, useOptions)
-            |_ -> if isNull type' then String.Empty else type'
 
-    let generateColumnComment (cd:ColumnDescription) =
-        let typeName = if isNull cd.Type then "null" else cd.Type
-        let suffixes =
-            [
-                if cd.IsIdentity then
-                    yield "identity"
-                if cd.IsPrimaryKey then
-                    yield "primaryKey"
-            ]
-        let nullability = if cd.Nullable then "null" else "not null"
+
+    type SqlTableColumnChoiceItem = 
+        |SqlTableColumnMetaItem of ColumnDescription
+        |ManualItem of ColumnInput
+        with 
+            member x.IsPrimaryKey = 
+                match x with
+                |SqlTableColumnMetaItem cd -> cd.IsPrimaryKey
+                |ManualItem x -> x.IsPrimaryKey
+            member x.Name = 
+                match x with
+                | SqlTableColumnMetaItem cd -> cd.ColumnName
+                | ManualItem x -> x.Name
+            member x.IsIdentity =
+                match x with
+                | SqlTableColumnMetaItem cd -> cd.IsIdentity
+                | ManualItem x -> x.IsIdentity
+            member x.Nullable = 
+                match x with
+                | SqlTableColumnMetaItem cd -> cd.Nullable
+                | ManualItem x -> match x.Nullability with Nullability.AllowNull -> true | _ -> false
+            member x.Type =
+                match x with 
+                | SqlTableColumnMetaItem cd -> cd.Type
+                | ManualItem x -> 
+                    match x.ColumnType with
+                    | Bit -> "bit"
+                    | StringMax 
+                    | StringColumn _ -> "string"
+                    | Custom x -> x
+                    | DateTimeColumn -> "datetime"
+                    | DecimalColumn _ -> "decimal"
+                    | Floater _ -> "float"
+                    | IntColumn
+                    | IdentityColumn -> "int"
+                    | NStringMax 
+                    | NStringColumn _ -> "nvarchar"
+                    | UniqueIdentifier -> "uniqueidentifier"
+            static member MapSqlType measureText useOptions (x:SqlTableColumnChoiceItem)= 
+                // take the sql type and give back what .net type we're using
+                let type' = x.Type
+                let nullable = x.Nullable
+                match type'.ToLower() with
+                    |"char"
+                    |"nchar"
+                    |"nvarchar"
+                    |"xml"
+                    |"varchar" -> "string"
+                    |"bit" -> mapNullableType("bool", nullable, measureText, useOptions)
+                    |"date"
+                    |"datetime"
+                    |"datetime2"
+                    |"smalldatetime" -> mapNullableType("DateTime", nullable, measureText, useOptions)
+                    |"image" -> "byte[]"
+                    |"uniqueidentifier" -> mapNullableType("Guid",nullable, measureText, useOptions)
+                    |"int" -> mapNullableType("int", nullable, measureText, useOptions)
+                    |"decimal" -> mapNullableType("decimal", nullable, measureText, useOptions)
+                    |"float" -> mapNullableType("float", nullable, measureText, useOptions)
+                    |_ -> if isNull type' then String.Empty else type'
+
+
+    type SqlTableColumnChoice = 
+        | SqlTableColumnMeta of ColumnDescription list
+        | Manual of ColumnInput list
+        with 
+            member x.Length = 
+                x |> function
+                    | Manual x -> x.Length
+                    | SqlTableColumnMeta x -> x.Length
+            member x.Destructure() = 
+                x
+                |> function
+                    | Manual x -> x |> List.map (ManualItem)
+                    | SqlTableColumnMeta x -> x |> List.map (SqlTableColumnMetaItem)
+               
+    let generateColumnComment =
+        function
+        | SqlTableColumnMetaItem cd ->
+            let typeName = if isNull cd.Type then "null" else cd.Type
+            let suffixes =
+                [
+                    if cd.IsIdentity then
+                        yield "identity"
+                    if cd.IsPrimaryKey then
+                        yield "primaryKey"
+                ]
+            let nullability = if cd.Nullable then "null" else "not null"
+            typeName,suffixes,nullability,cd.Length
+        | ManualItem x ->
+            let typeName = sprintf "%A" x.ColumnType
+            let suffixes = 
+                [
+                    if x.IsIdentity then
+                        yield "identity"
+                    if x.IsPrimaryKey then
+                        yield "primaryKey"
+                ]
+            let nullability = match x.Nullability with | AllowNull -> "null" | _ -> "not null"
+            let length = 
+                match x.ColumnType with
+                |ColumnTyping.StringColumn x -> x
+                |ColumnTyping.NStringColumn x -> x
+                | _ -> 0
+            typeName,suffixes, nullability,length
+                
+        >> fun (typeName,suffixes,nullability,length) ->
         //let identity = if cd.IsIdentity then " identity" else String.Empty
-        let suffix = if suffixes |> Seq.any then suffixes |> delimit " " |> (+) " " else String.Empty
-        sprintf "/// %s (%i) %s%s" typeName cd.Length nullability suffix
+            let suffix = if suffixes |> Seq.any then suffixes |> delimit " " |> (+) " " else String.Empty
+            sprintf "/// %s (%i) %s%s" typeName length nullability suffix
 
     let generateTypeComment columnCount = sprintf "/// %i properties" columnCount
 
     type InterfaceGeneratorArgs = { Writeable:bool; UseOptions:bool}
-    type SqlTableColumnMeta = {ColumnDescription: ColumnDescription; MeasureOpt:string}
 
-    let generateInterface (typeName:string, columns: SqlTableColumnMeta seq, appendLine:int -> string -> unit, interfaceGeneratorArgs ) =
+
+
+    let generateInterface (typeName:string, fMeasure, columns: SqlTableColumnChoice, appendLine:int -> string -> unit, interfaceGeneratorArgs ) =
         appendLine 0 <| sprintf "// typeName:%s writeable:%A useOptions:%A" typeName interfaceGeneratorArgs.Writeable interfaceGeneratorArgs.UseOptions
-        appendLine 0 (generateTypeComment (Seq.length columns))
+        appendLine 0 (generateTypeComment columns.Length)
         appendLine 0 ("type I" + typeName + (if interfaceGeneratorArgs.Writeable  then "RW" else String.Empty) + " =")
         if interfaceGeneratorArgs.Writeable then
             appendLine 1 ("inherit I" + typeName)
 
-        columns
-        |> Seq.iter (fun cm ->
-            appendLine 1 (generateColumnComment cm.ColumnDescription)
-            let cd = cm.ColumnDescription
-            let mappedSqlTpe = mapSqlType(cd.Type, cd.Nullable, cm.MeasureOpt, interfaceGeneratorArgs.UseOptions)
-            appendLine 1 <| sprintf "abstract member %s:%s with get%s" cd.ColumnName mappedSqlTpe (if interfaceGeneratorArgs.Writeable then ",set" else String.Empty)
+        columns.Destructure()
+        |> Seq.iter(fun item ->
+            appendLine 1 (item |> generateColumnComment )
+            let measureText = fMeasure item.Name
+            let mapped = SqlTableColumnChoiceItem.MapSqlType measureText interfaceGeneratorArgs.UseOptions item
+
+            appendLine 1 <| sprintf "abstract member %s:%s with get%s" item.Name mapped (if interfaceGeneratorArgs.Writeable then ",set" else String.Empty)
         )
 
         appendLine 0 String.Empty
@@ -157,12 +237,18 @@ module DataModelToF =
                 |_ -> "null"
 
     ///useCliMutable : enables simple serialization see also http://blog.ploeh.dk/2013/10/15/easy-aspnet-web-api-dtos-with-f-climutable-records/
-    let generateRecord useCliMutable (typeName:string) (columns: SqlTableColumnMeta seq, appendLine:int -> string -> unit, useOptions:bool, generateValueRecord:bool) =
+    let generateRecord useCliMutable (typeName:string) (fMeasure:string -> string) (columns: SqlTableColumnChoice, appendLine:int -> string -> unit, useOptions:bool, generateValueRecord:bool) =
         // what is a value record?
         // - a record that is fully nullable so that all fields can indicate if a value was provided (in cases where the default value has a meaning like set the value to null)
         // - something that always uses options, instead of allowing nullables?
         // - something without the pk?
-        let columns = if generateValueRecord then columns |> Seq.filter(fun {ColumnDescription= cd } -> not cd.IsPrimaryKey) else columns
+        let columns = 
+            columns.Destructure()
+            |> fun columns ->
+                if generateValueRecord then 
+                    columns 
+                    |> Seq.filter(fun cd -> not cd.IsPrimaryKey) 
+                    |> List.ofSeq else columns
 
         let recordTypeName = if generateValueRecord then sprintf "type %sValueRecord" typeName else sprintf "type %sRecord" typeName
         appendLine 0 (generateTypeComment (Seq.length columns))
@@ -175,9 +261,11 @@ module DataModelToF =
         appendLine 1 "{"
 
         columns
-        |> Seq.iter (fun scm ->
-            appendLine 1 <| generateColumnComment scm.ColumnDescription
-            appendLine 1 <| scm.ColumnDescription.ColumnName + ":" + mapSqlType(scm.ColumnDescription.Type,scm.ColumnDescription.Nullable, scm.MeasureOpt, useOptions)
+        |> Seq.iter (fun x -> 
+            appendLine 1 <| generateColumnComment x
+            let mt = fMeasure x.Name
+            let mapped = SqlTableColumnChoiceItem.MapSqlType mt useOptions x
+            appendLine 1 <| x.Name + ":" + mapped
         )
 
         appendLine 1 "}"
@@ -185,8 +273,8 @@ module DataModelToF =
             appendLine 1 <| "interface I" + typeName + " with"
 
             columns
-            |> Seq.iter (fun { ColumnDescription = cd} ->
-                appendLine 2 <| "member x." + cd.ColumnName + " with get () = x." + cd.ColumnName
+            |> Seq.iter (fun cd ->
+                appendLine 2 <| "member x." + cd.Name + " with get () = x." + cd.Name
             )
 
         appendLine 0 String.Empty
@@ -194,13 +282,14 @@ module DataModelToF =
         appendLine 2 "{"
 
         columns
-        |> Seq.iter(fun ({ColumnDescription=cd;MeasureOpt=measureText}) ->
-            let mapped = mapSqlType(cd.Type, cd.Nullable, measureText, useOptions)
+        |> Seq.iter(fun cd ->
+            let measureText = fMeasure cd.Name
+            let mapped = SqlTableColumnChoiceItem.MapSqlType measureText useOptions cd
             try
-                appendLine 2 (cd.ColumnName + " = " + (getDefaultValue mapped measureText))
+                appendLine 2 (cd.Name + " = " + (getDefaultValue mapped measureText))
             with ex ->
                 ex.Data.Add("mapped", mapped)
-                ex.Data.Add("ColumnName",cd.ColumnName)
+                ex.Data.Add("ColumnName",cd.Name)
                 ex.Data.Add("Measure", measureText)
                 reraise()
         )
@@ -221,38 +310,61 @@ module DataModelToF =
             else
                 camelCase
 
-    let generateFromStpMethod appendLine useOptions camelType (columns : SqlTableColumnMeta seq)=
+    let generateFromStpMethod appendLine useOptions camelType fMeasure (columns: SqlTableColumnChoice)=
+
         appendLine 0 String.Empty
 
         appendLine 1 ("let inline toRecordStp (" + camelType + ": ^a) =")
         appendLine 2 "{"
 
-        columns
-        |> Seq.iter(fun {ColumnDescription=cd;MeasureOpt=measureText} ->
-            let mapped = mapSqlType(cd.Type,cd.Nullable,measureText,useOptions)
+        columns.Destructure()
+        |> Seq.iter(fun cd ->
+            let measureText = fMeasure cd.Name
+            let mapped = SqlTableColumnChoiceItem.MapSqlType measureText useOptions cd
             let measureType =
                 match String.IsNullOrEmpty measureText || stringEqualsI mapped "string", cd.Nullable with
                 | true, _ -> String.Empty
                 | false, true -> sprintf "|> Nullable.map((*) 1<%s>)" measureText
                 | false, false -> sprintf " * 1<%s>" measureText
 
-            appendLine 3 <| sprintf "%s = (^a: (member %s: _) %s)%s" cd.ColumnName cd.ColumnName camelType measureType
+            appendLine 3 <| sprintf "%s = (^a: (member %s: _) %s)%s" cd.Name cd.Name camelType measureType
         )
 
         appendLine 2 "}"
         ()
 
-    let generateCreateSqlInsertTextMethod appendLine useOptions typeName schemaName tableName (columns:SqlTableColumnMeta seq) =
-        let canDoInsert = columns |> Seq.exists(fun {ColumnDescription=cd;MeasureOpt=measureText} -> cd.Type = "image" || cd.Type = "byte[]") |> not
+    let generateCreateSqlInsertTextMethod appendLine useOptions typeName schemaName tableName fMeasure (columns:SqlTableColumnChoice) =
+        let columns = columns.Destructure()
+        let canDoInsert = 
+            columns 
+            |> Seq.exists(
+                function
+                    | ManualItem x -> 
+                        match x.ColumnType with 
+                        | Bit
+                        | IntColumn
+                        | IdentityColumn
+                        | StringColumn _
+                        | StringMax
+                        | NStringMax
+                        | NStringColumn _
+                        | Floater _
+                        | DecimalColumn _
+                        | DateTimeColumn
+                        | UniqueIdentifier -> true
+                        | _ -> false
+                    | SqlTableColumnChoiceItem.SqlTableColumnMetaItem cd -> cd.Type = "image" || cd.Type = "byte[]"
+            ) 
+            |> not
         if canDoInsert then
             appendLine 0 String.Empty
             // idea: put what running the .Zero() record against this function would generate in a comment
             let insertStart = sprintf "insert into %s.%s(%s) values (%s)" schemaName tableName
             let hasIdentity =
                 columns
-                |> Seq.exists (fun {ColumnDescription=cd} -> cd.IsIdentity)
+                |> Seq.exists (fun cd -> cd.IsIdentity)
             columns
-            |> Seq.map (fun {ColumnDescription=cd;MeasureOpt=measureText} ->  cd.ColumnName, mapSqlType(cd.Type, cd.Nullable, measureText, useOptions) |> flip getDefaultValue null)
+            |> Seq.map (fun cd ->  cd.Name, SqlTableColumnChoiceItem.MapSqlType (fMeasure cd.Name) useOptions cd |> flip getDefaultValue null)
             |> List.ofSeq
             |> fun s -> s |> Seq.map fst, s |> Seq.map snd
             |> fun (names,values) ->
@@ -261,11 +373,24 @@ module DataModelToF =
                 |> appendLine 1
             let insertMethodName = if hasIdentity then "createInsertReturnIdentity" else "createInsert"
             appendLine 1 <| sprintf "let %s blacklist (r:I%s) =" insertMethodName typeName
-            let needsQuoted (c:ColumnDescription) = ["varchar"; "char"; "nvarchar"; "nchar";"datetime";"xml";"datetime2"] |> Seq.tryFind (fun n -> match c.Type with |IsTrue (containsI n) -> true | _ -> false)
+            let needsQuoted = 
+                function
+                | ManualItem x -> 
+                    if x.ColumnType.NeedsQuoted then
+                        Some  (sprintf "%A" x.ColumnType)
+                    else None
+
+                | SqlTableColumnMetaItem c ->
+                    ["varchar"; "char"; "nvarchar"; "nchar";"datetime";"xml";"datetime2"] 
+                    |> Seq.tryFind (fun n -> 
+                        match c.Type with 
+                        |IsTrue (containsI n) -> true
+                        | _ -> false
+                    )
 
             columns 
-            |> Seq.filter (fun {ColumnDescription=cd} -> not cd.IsIdentity) 
-            |> Seq.choose (fun {ColumnDescription=cd;MeasureOpt=measureText} -> cd |> needsQuoted) 
+            |> Seq.filter (fun cd -> not cd.IsIdentity) 
+            |> Seq.choose needsQuoted
             |> Seq.tryHead
             |> function
             | Some firstTypeToNeedQuoteF ->
@@ -274,8 +399,8 @@ module DataModelToF =
                 |> appendLine 2
             | None -> ()
 
-            let mapValue (cd:ColumnDescription, prefix:string) :string  =
-                let fullCName = prefix + cd.ColumnName
+            let mapValue (cd:SqlTableColumnChoiceItem, prefix:string) :string  =
+                let fullCName = prefix + cd.Name
                 match cd.Type.ToLower() with
                     |"varchar" -> sprintf "if String.IsNullOrEmpty %s then \"null\" else quoted %s" fullCName fullCName
                     |"int" ->
@@ -287,10 +412,9 @@ module DataModelToF =
             appendLine 2 "["
 
             columns
-            |> Seq.map (fun {ColumnDescription=cd} -> cd)
             |> Seq.filter (fun c -> not c.IsIdentity)
             |> Seq.iter(fun cd->
-                let mapped = "\"" + cd.ColumnName + "\", " + mapValue(cd,"r.")
+                let mapped = "\"" + cd.Name + "\", " + mapValue(cd,"r.")
                 appendLine 3 mapped
             )
 
@@ -303,7 +427,7 @@ module DataModelToF =
         ()
 
     /// generate the helper module
-    let generateModule (typeName:string, columns:SqlTableColumnMeta seq, schemaName:string, tableName:string, appendLine:int -> string -> unit, useOptions:bool ) =
+    let generateModule fMeasure (typeName:string, columns:SqlTableColumnChoice, schemaName:string, tableName:string, appendLine:int -> string -> unit, useOptions:bool ) =
         let moduleName = sprintf "%sHelpers" typeName
         let camelType = toCamelCase typeName
         appendLine 0 (sprintf "module %s =" moduleName)
@@ -314,10 +438,12 @@ module DataModelToF =
             appendLine 2 <| sprintf "let schemaName = \"%s\"" schemaName
 
         appendLine 2 <| sprintf "let tableName = \"%s\"" tableName
+        let columns' = columns
+        let columns = columns.Destructure()
         columns
-        |> Seq.iter (fun {ColumnDescription=c} ->
+        |> Seq.iter (fun c ->
             appendLine 2 <| generateColumnComment c
-            appendLine 2 <| sprintf "let %s = \"%s\"" c.ColumnName c.ColumnName
+            appendLine 2 <| sprintf "let %s = \"%s\"" c.Name c.Name
         )
         appendLine 0 String.Empty
 
@@ -325,9 +451,9 @@ module DataModelToF =
         appendLine 2 "{"
 
         columns
-        |> Seq.iter(fun {ColumnDescription=cd;MeasureOpt=measureText} ->
-            let _mapped = mapSqlType(cd.Type,cd.Nullable,measureText,useOptions)
-            appendLine 3 (cd.ColumnName + " = " + camelType + "." + cd.ColumnName)
+        |> Seq.iter(fun cd ->
+            let measureText = fMeasure cd.Name
+            appendLine 3 (cd.Name + " = " + camelType + "." + cd.Name)
         )
 
         appendLine 2 "}"
@@ -362,12 +488,13 @@ module DataModelToF =
         appendLine 2 "{"
 
         columns
-        |> Seq.iter(fun {ColumnDescription=cd;MeasureOpt=measureText} ->
-            let mapped = mapSqlType(cd.Type,cd.Nullable,measureText,useOptions)
+        |> Seq.iter(fun cd ->
+            let measureText = fMeasure cd.Name
+            let mapped = SqlTableColumnChoiceItem.MapSqlType measureText useOptions cd
 
             let converter = mapConverter(cd.Type)
-            appendLine 2 (cd.ColumnName + " = ")
-            appendLine 3 <| sprintf "match f \"%s\" with // %s" cd.ColumnName mapped
+            appendLine 2 (cd.Name + " = ")
+            appendLine 3 <| sprintf "match f \"%s\" with // %s" cd.Name mapped
             let measureType = if String.IsNullOrEmpty measureText || stringEqualsI mapped "string" then String.Empty else sprintf " |> (*) 1<%s>" measureText
 
             if cd.Nullable && nonNullables |> Seq.exists (stringEqualsI mapped) |> not then//(mapped <> typeof<string>.Name) && equalsI mapped "string" |> not  then
@@ -386,40 +513,39 @@ module DataModelToF =
 
         appendLine 1 "let FromF (camelTypeF:Func<string,obj option>) = fromf (Func<_>.invoke1 camelTypeF)"
 
-        generateFromStpMethod appendLine useOptions camelType columns
-        generateCreateSqlInsertTextMethod appendLine useOptions typeName schemaName tableName columns
+        generateFromStpMethod appendLine useOptions camelType fMeasure columns'
+        generateCreateSqlInsertTextMethod appendLine useOptions typeName schemaName tableName fMeasure columns'
         appendLine 0 String.Empty
 
-    let generateINotifyClass(typeName:string, columns:ColumnDescription seq, appendLine:int -> string -> unit, _useOptions:bool ) =
+    let generateINotifyClass(typeName:string, columns: SqlTableColumnChoice, appendLine:int -> string -> unit, _useOptions:bool ) =
         let mapFieldNameFromType(columnName:string) =
             match toCamelCase columnName with
             | "type" ->  "type'"
             | camel -> camel
-        appendLine 0 (generateTypeComment (Seq.length columns))
+        appendLine 0 (generateTypeComment columns.Length)
         appendLine 0 ("type "+ typeName + "N (model:" + typeName + "Record) = ")
         appendLine 0 String.Empty
         appendLine 1 "let propertyChanged = new Event<_, _>()"
         appendLine 0 String.Empty
-
+        let columns = columns.Destructure()
         appendLine 0 String.Empty
         for cd in columns do
-            let camel = mapFieldNameFromType(cd.ColumnName)
-            appendLine 1 ("let mutable "+ camel + " = model." + cd.ColumnName)
+            let camel = mapFieldNameFromType(cd.Name)
+            appendLine 1 ("let mutable "+ camel + " = model." + cd.Name)
 
         appendLine 0 String.Empty
         let interfaceName = sprintf "I%s" typeName
 
         appendLine 1 (sprintf "interface %s with" interfaceName)
-
         for cd in columns do
             appendLine 2 (generateColumnComment cd)
-            appendLine 2 ("member x." + cd.ColumnName + " with get () = x." + cd.ColumnName)
+            appendLine 2 ("member x." + cd.Name + " with get () = x." + cd.Name)
 
         appendLine 1 ("interface I" + typeName + "RW with")
 
         for cd in columns do
             appendLine 2 (generateColumnComment cd)
-            appendLine 2 ("member x." + cd.ColumnName + " with get () = x." + cd.ColumnName + " and set v = x." + cd.ColumnName + " <- v")
+            appendLine 2 ("member x." + cd.Name + " with get () = x." + cd.Name + " and set v = x." + cd.Name + " <- v")
 
         appendLine 0 String.Empty
         appendLine 1 (sprintf "member x.MakeRecord () = x :> %s |> %sHelpers.toRecord" interfaceName typeName)
@@ -442,17 +568,17 @@ module DataModelToF =
         appendLine 3 "true"
 
         for cd in columns do
-            let camel = mapFieldNameFromType cd.ColumnName
+            let camel = mapFieldNameFromType cd.Name
             appendLine 0 String.Empty
             appendLine 1 (generateColumnComment cd)
-            appendLine 1 ("member x." + cd.ColumnName)
+            appendLine 1 ("member x." + cd.Name)
             appendLine 2 ("with get() = " + camel)
             appendLine 2 "and set v = "
             //to consider: this might benefit from only setting/raising changed if the value is different
             appendLine 3 (camel + " <- v")
-            appendLine 3 ("x.RaisePropertyChanged \"" + cd.ColumnName + "\"")
+            appendLine 3 ("x.RaisePropertyChanged \"" + cd.Name + "\"")
 
-    type SqlTableMeta = {TI:TableIdentifier; TypeName:string; PrimaryKeys:string Set; Identities: string Set; Columns: SqlTableColumnMeta list}
+    type SqlTableMeta = {TI:TableIdentifier; TypeName:string; PrimaryKeys:string Set; Identities: string Set; Columns: SqlTableColumnChoice}
 
     let getSqlMeta appendLine cgsm tables fSingularizer =
         use cn = new SqlConnection(cgsm.CString)
@@ -465,19 +591,7 @@ module DataModelToF =
             function 
             |Unhappy(ti,ex) -> Unhappy(ti,ex)
             |Happy (ti, typeName, pks,columns,identities) ->
-                let result = 
-                    let mappedCs = 
-                        columns 
-                        |> Seq.map (fun c ->
-                            let measureType =
-                                cgsm.Measures
-                                |> Seq.tryFind (fun m -> cgsm.MeasuresBlacklist |> Seq.contains c.ColumnName |> not && containsI m c.ColumnName)
-                                |> Option.getOrDefault null
-                            
-                            {ColumnDescription=c; MeasureOpt=measureType}
-                        )
-                        |> List.ofSeq
-                    Happy {TI=ti; TypeName= typeName; PrimaryKeys=pks; Identities=identities; Columns= mappedCs}
+                let result = Happy {TI=ti; TypeName= typeName; PrimaryKeys=pks; Identities=identities; Columns=SqlTableColumnChoice.SqlTableColumnMeta columns}
                 result
         let tableData =
             tables
@@ -680,35 +794,67 @@ module DataModelToF =
                 sqlTableMeta
             | Unhappy (ti,exn), Some f ->
                 f ti exn
+                |> function
+                    | None -> raise <| InvalidOperationException("Failed to get sql data",exn)
+                    | Some x -> x
             | Unhappy(_,exn), None ->
                 raise <| InvalidOperationException("Failed to get sql data",exn)
             |> (fun sqlTableMeta ->
 
                 let startNewFile path = manager.StartNewFile path
                 let columns =
-                    let fIncludeColumn (c:ColumnDescription) : bool = isNull (box cgsm.ColumnBlacklist) || cgsm.ColumnBlacklist |> Map.containsKey sqlTableMeta.TI.Name |> not || cgsm.ColumnBlacklist.[sqlTableMeta.TI.Name] |> Seq.contains c.ColumnName |> not
                     sqlTableMeta.Columns
-                    |> Seq.filter (fun c -> c.ColumnDescription |> fIncludeColumn)
-                    |> Seq.map (fun cd ->
-                        if sqlTableMeta.Identities |> Seq.exists (stringEqualsI cd.ColumnDescription.ColumnName) then
-                            {cd with ColumnDescription = {cd.ColumnDescription with IsIdentity = true}}
-                        else 
-                            cd
-                    )
-                    |> Seq.map (fun cd ->
-                        if sqlTableMeta.PrimaryKeys |> Seq.exists (stringEqualsI cd.ColumnDescription.ColumnName) then
-                            {cd with ColumnDescription = {cd.ColumnDescription with IsPrimaryKey = true}} 
-                        else cd
-                    )
-                    |> List.ofSeq
+                    |> function
+                        |SqlTableColumnChoice.SqlTableColumnMeta columns ->
+                            let fIncludeColumn (c:ColumnDescription) : bool = isNull (box cgsm.ColumnBlacklist) || cgsm.ColumnBlacklist |> Map.containsKey sqlTableMeta.TI.Name |> not || cgsm.ColumnBlacklist.[sqlTableMeta.TI.Name] |> Seq.contains c.ColumnName |> not
+                            columns
+                            |> Seq.filter fIncludeColumn
+                            |> Seq.map (fun cd ->
+                                if sqlTableMeta.Identities |> Seq.exists (stringEqualsI cd.ColumnName) then
+                                    {cd with IsIdentity = true}
+                                else 
+                                    cd
+                            )
+                            |> Seq.map (fun cd ->
+                                if sqlTableMeta.PrimaryKeys |> Seq.exists (stringEqualsI cd.ColumnName) then
+                                    {cd with IsPrimaryKey = true}
+                                else cd
+                            )
+                            |> List.ofSeq
+                            |> SqlTableColumnChoice.SqlTableColumnMeta
+                        |SqlTableColumnChoice.Manual columns ->
+                            columns
+                            |> Seq.filter(fun c -> isNull (box cgsm.ColumnBlacklist) || cgsm.ColumnBlacklist |> Map.containsKey c.Name |> not)
+                            |> List.ofSeq
+                            |> SqlTableColumnChoice.Manual
+
                 //if sqlTableMeta.TI.Name = "Account" then 
                 //    Debugger.Launch() |> ignore
 
-                let columns = columns |> List.sortBy(fun cd -> cd.ColumnDescription.ColumnName)
+                let getMeasureType (columnName) =
+                        cgsm.Measures
+                        |> Seq.tryFind (fun m -> cgsm.MeasuresBlacklist |> Seq.contains columnName |> not && containsI m columnName)
+                        |> Option.getOrDefault null
+
+                let columns = 
+                    columns 
+                    |> function 
+                    | SqlTableColumnMeta items -> items|> List.sortBy(fun cd -> cd.ColumnName) |> SqlTableColumnMeta
+                    | SqlTableColumnChoice.Manual items -> items |> List.sortBy(fun x -> x.Name) |> SqlTableColumnChoice.Manual
                 columns
-                |> Seq.map (fun cd -> {cd with MeasureOpt = if String.IsNullOrEmpty cd.MeasureOpt then String.Empty else sprintf "<%s>" cd.MeasureOpt})
-                |> Seq.map (fun cd -> sprintf "%s%s" cd.ColumnDescription.ColumnName cd.MeasureOpt)
-                |> Seq.iter (appendLine' 1)
+                |> function
+                    | SqlTableColumnMeta items -> 
+                        items |> Seq.map (fun cd -> cd.ColumnName)
+                    | SqlTableColumnChoice.Manual items -> 
+                        items |> Seq.map (fun c -> c.Name )
+                    |> Seq.map (fun name ->
+                        match getMeasureType name with
+                        | ValueString m -> sprintf "<%s>" m
+                        | _ -> String.Empty
+                        |> sprintf "%s%s" name
+                    )
+                    |> Seq.iter (appendLine' 1)
+
 
                 match targetProjectFolder with
                 | Some targetProjectFolder -> Path.Combine(targetProjectFolder,sqlTableMeta.TI.Name + ".generated.fs")
@@ -734,7 +880,12 @@ module DataModelToF =
                 | None -> ()
                 | Some f ->
                     columns
-                    |> Seq.map (fun cd -> cd.MeasureOpt)
+                    |> function 
+                        | SqlTableColumnChoice.SqlTableColumnMeta items ->
+                            items |> Seq.map (fun cd -> cd.ColumnName)
+                        | SqlTableColumnChoice.Manual items ->
+                            items |> Seq.map (fun x -> x.Name)
+                        |> Seq.map getMeasureType
                     |> Seq.filter(String.IsNullOrWhiteSpace >> not)
                     |> Seq.distinct
                     |> Seq.map f
@@ -747,16 +898,16 @@ module DataModelToF =
 
                 let iga = {UseOptions=cgsm.UseOptionTypes;Writeable=false}
                 let tn = sqlTableMeta.TypeName
-                generateInterface (tn, columns, appendLine', iga)
+                generateInterface (tn, getMeasureType, columns, appendLine', iga)
                 appendEmpty()
 
-                generateInterface (tn, columns, appendLine', {iga with Writeable=true})
+                generateInterface (tn, getMeasureType,columns, appendLine', {iga with Writeable=true})
                 if cgsm.GenerateValueRecords then
-                    generateRecord cgsm.UseCliMutable tn (columns, appendLine', cgsm.UseOptionTypes, true)
+                    generateRecord cgsm.UseCliMutable tn getMeasureType (columns, appendLine', cgsm.UseOptionTypes, true)
 
-                generateRecord cgsm.UseCliMutable tn (columns, appendLine', cgsm.UseOptionTypes, false)
-                generateModule(tn, columns, sqlTableMeta.TI.Schema, sqlTableMeta.TI.Name, appendLine', cgsm.UseOptionTypes)
-                generateINotifyClass(tn, columns |> Seq.map (fun {ColumnDescription=cd} -> cd), appendLine', cgsm.UseOptionTypes)
+                generateRecord cgsm.UseCliMutable tn getMeasureType (columns, appendLine', cgsm.UseOptionTypes, false)
+                generateModule getMeasureType (tn, columns, sqlTableMeta.TI.Schema, sqlTableMeta.TI.Name, appendLine', cgsm.UseOptionTypes)
+                generateINotifyClass(tn, columns, appendLine', cgsm.UseOptionTypes)
 
                 manager.EndBlock()
             ))
