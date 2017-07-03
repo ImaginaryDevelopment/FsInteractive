@@ -351,8 +351,8 @@ module DataModelToF =
                         | Floater _
                         | DecimalColumn _
                         | DateTimeColumn
-                        | UniqueIdentifier -> true
-                        | _ -> false
+                        | UniqueIdentifier -> false
+                        | _ -> true
                     | SqlTableColumnChoiceItem.SqlTableColumnMetaItem cd -> cd.Type = "image" || cd.Type = "byte[]"
             ) 
             |> not
