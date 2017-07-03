@@ -101,7 +101,7 @@ module DataModelToF =
                     match x.ColumnType with
                     | Bit -> "bit"
                     | StringMax 
-                    | StringColumn _ -> "string"
+                    | StringColumn _ -> "varchar"
                     | Custom x -> x
                     | DateTimeColumn -> "datetime"
                     | DecimalColumn _ -> "decimal"
