@@ -196,7 +196,7 @@ let formatAttributes hasCombinationPK fKeyText nullability tableName (columnName
     else
         [
                 if isIdentity then yield "identity"
-                if isPk then yield "primary key"
+                if isPk && not hasCombinationPK then yield "primary key"
                 if allowNull then yield "null"
                 if not allowNull && (not isPk || (isPk && hasCombinationPK)) then yield "not null"
                 if isUnique then yield "CONSTRAINT UQ_" + tableName + "_" + columnName + " UNIQUE"

@@ -398,6 +398,8 @@ module DataModelToF =
                 |> sprintf "let quoted (s:string) = \"'\" + s.Replace(\"'\",\"''\") + \"'\" // %s"
                 |> appendLine 2
             | None -> ()
+            if columns |> Seq.exists(fun cd -> cd.Nullable && cd.Type.ToLower() = "bit") then
+                appendLine 2 ("let inline getValue x = (^a: (member Value: bool) x)")
 
             let mapValue (cd:SqlTableColumnChoiceItem, prefix:string) :string  =
                 let fullCName = prefix + cd.Name
@@ -407,7 +409,14 @@ module DataModelToF =
                         if cd.Nullable then
                             "if isNull (box " + fullCName + ") then \"null\" else " + fullCName + " |> string"
                         else fullCName + " |> string"
-                    |_ ->  if cd.Nullable then "if isNull (box " + fullCName + ") then \"null\" else " + fullCName + " |> string |> quoted" else fullCName + " |> string |> quoted"
+                    | "bit" ->
+                        if cd.Nullable then
+                            sprintf "if isNull (box %s) then \"null\" elif getValue %s then string 1 else string 0" fullCName fullCName
+                        else
+                            sprintf "if %s then string 1 else string 0" fullCName
+                    |x ->
+                        if cd.Nullable then "if isNull (box " + fullCName + ") then \"null\" else " + fullCName + " |> string |> quoted" else fullCName + " |> string |> quoted"
+                        |>fun setter -> sprintf "%s // type - %s" setter x
 
             appendLine 2 "["
 

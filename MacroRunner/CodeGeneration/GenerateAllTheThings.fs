@@ -44,7 +44,8 @@ type TableInput() =
      member val Columns:ColumnInput seq = Unchecked.defaultof<_> with get,set
 
 type SqlGenerationConfig = { TargetSqlProjectName: string; SqlItems: TableInput list; InsertionConfig: InsertsGenerationConfig option}
-type GenMapTableItem = 
+
+type GenMapTableItem =
     | DataModelOnly of TableIdentifier
     | Detailed of TableGenerationInfo
     with
@@ -57,6 +58,17 @@ type GenMapTableItem =
 //type SqlGenerationism =
 //    | Focused of InsertsGenerationConfig * (GenerationTarget list)
 //    | Multiple of (InsertsGenerationConfig * GenerationTarget list) list
+
+// TODO: more pulling apart of generation code from strong ties to dte
+type DteGenWrapper(dte:EnvDTE.DTE) =
+    let projects = Macros.VsMacros.getSP dte |> snd
+    member __.GetProjectNames() = projects |> Seq.map (fun proj -> proj.Name)
+    member __.GetTargetSqlProjectFolder targetSqlProjectName =
+        projects
+        |> Seq.tryFind(fun p -> p.Name = targetSqlProjectName)
+        |> function
+            | Some p -> p
+            | None -> failwithf "did not find project, names were %A" (projects |> Seq.map (fun p -> p.Name) |> List.ofSeq)
 
 /// generatorId something to identify the generator with, in the .tt days it was the DefaultProjectNamespace the .tt was running from.
 let runGeneration generatorId (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) manager (cgsm: CodeGeneration.DataModelToF.CodeGenSettingMap) toGen (dataModelOnlyItems:TableIdentifier list) =
@@ -98,7 +110,7 @@ let runGeneration generatorId (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) ma
 
     let codeGenAsm= typeof<CodeGeneration.SqlScriptGeneration.SqlObj>.Assembly
     let info = BReusable.Assemblies.getAssemblyFullPath(codeGenAsm)
-    let fileInfo = new System.IO.FileInfo(info)
+    let fileInfo = new IO.FileInfo(info)
     sb |> appendLine (sprintf "Using CodeGeneration.dll from %O" fileInfo.LastWriteTime) |> ignore
     genMapped
     |> Seq.map (fun (targetSqlProjectFolder,sgi,items) ->
@@ -111,18 +123,16 @@ let runGeneration generatorId (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) ma
                 targetSqlProjectFolder
                 items ic
         | None -> ()
-        let result = 
+        let result =
             (dataModelOnlyItems
             |> List.map DataModelOnly)@(items |> List.map GenMapTableItem.Detailed)
         result
     )
-    |> Seq.collect id
+    |> Seq.concat
     |> Seq.filter (
         function
-        | DataModelOnly ti -> 
-            ti
-        | Detailed details -> 
-            details.Id
+        | DataModelOnly ti -> ti
+        | Detailed details -> details.Id
         >> (fun x ->
         not <| cgsm.TypeGenerationBlacklist.Contains x.Name && 
             not <| cgsm.TypeGenerationBlacklist.Contains (sprintf "%s.%s" x.Schema x.Name)
@@ -151,9 +161,8 @@ let runGeneration generatorId (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) ma
                         Columns= SqlTableColumnChoice.Manual details.Columns
                     }
                     |> Some
-                | DataModelOnly dmInput ->
+                | DataModelOnly _dmInput ->
                     None
-
         ))
         cgsm
         (manager, sb, mappedTables |> Seq.map GenMapTableItem.GetTI)
@@ -173,6 +182,6 @@ let makeManager (dte:EnvDTE.DTE) =
     let templateProjectItem:EnvDTE.ProjectItem = dte.Solution.FindProjectItem(scriptFullPath)
     printfn "Script is at %s" scriptFullPath
     if not <| isNull templateProjectItem then
-        printfn "ProjectItem= %A" (templateProjectItem.FileNames(0s))
+        printfn "ProjectItem= %A" (templateProjectItem.FileNames 0s)
     let dteWrapper = wrapDte dte
     MultipleOutputHelper.Managers.VsManager(Some "HelloTesting.fake.tt", dteWrapper, sb, templateProjectItem)
