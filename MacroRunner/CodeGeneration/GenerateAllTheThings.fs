@@ -73,7 +73,6 @@ type DteGenWrapper(dte:EnvDTE.DTE) =
 /// generatorId something to identify the generator with, in the .tt days it was the DefaultProjectNamespace the .tt was running from.
 let runGeneration generatorId (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) manager (cgsm: CodeGeneration.DataModelToF.CodeGenSettingMap) toGen (dataModelOnlyItems:TableIdentifier list) =
 
-    let pluralizer = Macros.VsMacros.createPluralizer()
     let projects = snd <| Macros.VsMacros.getSP dte // RecurseSolutionProjects(Dte)
     let appendLine text (sb:System.Text.StringBuilder) =
         sb.AppendLine text
@@ -141,8 +140,6 @@ let runGeneration generatorId (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) ma
     |> List.ofSeq
     |> fun mappedTables ->
     DataModelToF.generate generatorId
-        pluralizer.Pluralize
-        pluralizer.Singularize
         (Some (fun ti (exn:exn) ->
             mappedTables
             |> Seq.find(function | Detailed details -> details.Id = ti | DataModelOnly dmTI -> dmTI = ti)
@@ -155,7 +152,7 @@ let runGeneration generatorId (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) ma
                         |> Option.getOrDefault null
 
                     {   SqlTableMeta.TI = details.Id
-                        TypeName=pluralizer.Singularize details.Id.Name
+                        TypeName=cgsm.Singularize details.Id.Name
                         PrimaryKeys=details.Columns |> Seq.choose (fun c -> if c.IsPrimaryKey then Some c.Name else None) |> Set.ofSeq
                         Identities= details.Columns |> Seq.choose (fun c -> if c.IsIdentity then Some c.Name else None) |> Set.ofSeq
                         Columns= SqlTableColumnChoice.Manual details.Columns

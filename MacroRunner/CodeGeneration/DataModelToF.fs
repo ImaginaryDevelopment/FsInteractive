@@ -50,6 +50,8 @@ module DataModelToF =
         /// - Func<_>.invoke1 ( type System.Func<'tResult> with static member invoke1<'t> (x:System.Func<'t,'tResult>) y = x.Invoke y)
         AdditionalNamespaces: string Set
         GetMeasureNamepace: (string -> string) option
+        Pluralize: string -> string
+        Singularize: string -> string
 
         MeasuresBlacklist: string Set
         IncludeNonDboSchemaInNamespace:bool
@@ -589,7 +591,7 @@ module DataModelToF =
 
     type SqlTableMeta = {TI:TableIdentifier; TypeName:string; PrimaryKeys:string Set; Identities: string Set; Columns: SqlTableColumnChoice}
 
-    let getSqlMeta appendLine cgsm tables fSingularizer =
+    let getSqlMeta appendLine cgsm tables =
         use cn = new SqlConnection(cgsm.CString)
         cn.Open()
         sprintf "Connected to %s,%s" cn.DataSource cn.Database
@@ -604,7 +606,7 @@ module DataModelToF =
                 result
         let tableData =
             tables
-            |> Seq.map (getTableGenerationData appendLine fSingularizer cn)
+            |> Seq.map (getTableGenerationData appendLine cgsm.Singularize cn)
             |> Seq.map fGenerated
             |> List.ofSeq
         tableData
@@ -743,7 +745,7 @@ module DataModelToF =
             )
 
         )
-    let generate generatorId (fPluralizer:string -> string) (fSingularizer:string -> string) (fMetaFallbackOpt) (cgsm:CodeGenSettingMap) (manager:MacroRunner.MultipleOutputHelper.IManager, generationEnvironment:StringBuilder, tables:TableIdentifier seq) =
+    let generate generatorId (fMetaFallbackOpt) (cgsm:CodeGenSettingMap) (manager:MacroRunner.MultipleOutputHelper.IManager, generationEnvironment:StringBuilder, tables:TableIdentifier seq) =
 
         log(sprintf "DataModelToF.generate:cgsm:%A" cgsm)
         let appendLine text = generationEnvironment.AppendLine(text) |> ignore
@@ -796,7 +798,7 @@ module DataModelToF =
         )
 
         appendEmpty()
-        getSqlMeta appendLine cgsm tables fSingularizer
+        getSqlMeta appendLine cgsm tables 
         |> Seq.iter ( fun result ->
             match result, fMetaFallbackOpt with
             | Happy (sqlTableMeta), _ ->
@@ -871,7 +873,7 @@ module DataModelToF =
                 |> startNewFile
 
                 (
-                    let subNamespaceName = fPluralizer sqlTableMeta.TypeName
+                    let subNamespaceName = cgsm.Pluralize sqlTableMeta.TypeName
                     match sqlTableMeta.TI.Schema, cgsm.IncludeNonDboSchemaInNamespace with
                     | "dbo", _
                     | _, false ->
@@ -941,11 +943,11 @@ module DataModelToF =
                         IncludeNonDboSchemaInNamespace= includeNonDboSchemaInNamespace
                         GenerateValueRecords=generateValueRecords
                         UseCliMutable=useCliMutable
+                        Pluralize= pluralizer.Invoke
+                        Singularize= singularizer.Invoke
                         TypeGenerationBlacklist = typeGenerationBlacklist |> Set.ofSeq
                         GetMeasureNamepace= Option.ofObj getMeasureNamespace |> Option.map (fun f -> f.Invoke) }
         generate generatorId
-            pluralizer.Invoke
-            singularizer.Invoke
             fFallback
             cgsm
             (manager, generationEnvironment, tables)
@@ -1045,10 +1047,10 @@ module GenerationSample =
     type GenerationStrategy =
         | UseMultipleOutputHelperCode
         | UseCustomManager
-    let _generate generatorId connectionString =
+    let _generate generatorId pluralize singularize connectionString =
         let sb = StringBuilder()
         let mutable currentFile:string = null
-        let pluralizer = Macros.VsMacros.createPluralizer()
+        //let pluralizer = Macros.VsMacros.createPluralizer()
 
         let getManager strat : IManager =
             match strat with
@@ -1103,12 +1105,14 @@ module GenerationSample =
                 GenerateValueRecords = false
                 UseCliMutable = false
                 GetMeasureNamepace = None
+                Pluralize = pluralize
+                Singularize = singularize
                 AdditionalNamespaces = Set.empty
                 TypeGenerationBlacklist = Set.empty
                 SprocSettingMap = None
             }
 
-            DataModelToF.generate generatorId pluralizer.Pluralize pluralizer.Singularize None cgsm (manager, sb, tablesToGen)
+            DataModelToF.generate generatorId None cgsm (manager, sb, tablesToGen)
 
 
         manager.GeneratedFileNames

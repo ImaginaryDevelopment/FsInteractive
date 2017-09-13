@@ -9,7 +9,11 @@ open Helpers
 module VsMacros =
   type CultureInfo = System.Globalization.CultureInfo
   type PluralizationService = System.Data.Entity.Design.PluralizationServices.PluralizationService
-  let createPluralizer () = PluralizationService.CreateService(CultureInfo "en") // https://msdn.microsoft.com/en-us/library/system.data.entity.design.pluralizationservices.pluralizationservice(v=vs.110).aspx
+  let createPluralizer () = 
+    try
+        PluralizationService.CreateService(CultureInfo "en") // https://msdn.microsoft.com/en-us/library/system.data.entity.design.pluralizationservices.pluralizationservice(v=vs.110).aspx
+        |> Choice1Of2
+    with ex -> Choice2Of2 ex
 
 // sources:
 // http://eduardoclaudio.wordpress.com/2011/07/04/creating-visual-studio-macros-in-f
