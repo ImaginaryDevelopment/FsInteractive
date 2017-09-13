@@ -58,22 +58,45 @@ type GenMapTableItem =
 //type SqlGenerationism =
 //    | Focused of InsertsGenerationConfig * (GenerationTarget list)
 //    | Multiple of (InsertsGenerationConfig * GenerationTarget list) list
+type IProject =
+        abstract member Name:string option
+        abstract member FullName:string option
+type ProjectWrapper internal (p:EnvDTE.Project) =
+    // swallowing? =(
+    let tryGet f = 
+        try
+            f p |> Some
+        with ex -> 
+            System.Diagnostics.Debug.WriteLine(sprintf "%A" ex)
+            None
+    member __.Name = tryGet (fun p -> p.Name)
+    member __.FullName = tryGet (fun p -> p.FullName)
+    interface IProject with
+        member x.Name = x.Name
+        member x.FullName = x.FullName
 
-// TODO: more pulling apart of generation code from strong ties to dte
+type IGenWrapper =
+    abstract member GetProjects:unit -> IProject seq
+    abstract member GetTargetSqlProjectFolder: string -> IProject
+
 type DteGenWrapper(dte:EnvDTE.DTE) =
-    let projects = Macros.VsMacros.getSP dte |> snd
+    let projects = Macros.VsMacros.getSP dte |> snd |> Seq.map ProjectWrapper |> Seq.cast<IProject> |> List.ofSeq
     member __.GetProjectNames() = projects |> Seq.map (fun proj -> proj.Name)
+    member __.GetProjects() = projects
     member __.GetTargetSqlProjectFolder targetSqlProjectName =
         projects
-        |> Seq.tryFind(fun p -> p.Name = targetSqlProjectName)
+        |> Seq.tryFind(fun p -> p.Name.Value = targetSqlProjectName)
         |> function
             | Some p -> p
             | None -> failwithf "did not find project, names were %A" (projects |> Seq.map (fun p -> p.Name) |> List.ofSeq)
+    interface IGenWrapper with
+        member x.GetProjects() = upcast x.GetProjects()
+        member x.GetTargetSqlProjectFolder targetSqlProjectName = x.GetTargetSqlProjectFolder targetSqlProjectName
 
 /// generatorId something to identify the generator with, in the .tt days it was the DefaultProjectNamespace the .tt was running from.
-let runGeneration generatorId (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) manager (cgsm: CodeGeneration.DataModelToF.CodeGenSettingMap) toGen (dataModelOnlyItems:TableIdentifier list) =
+let runGeneration generatorId (sb: System.Text.StringBuilder) (dte: IGenWrapper) manager (cgsm: CodeGeneration.DataModelToF.CodeGenSettingMap) toGen (dataModelOnlyItems: TableIdentifier list) =
 
-    let projects = snd <| Macros.VsMacros.getSP dte // RecurseSolutionProjects(Dte)
+    let projects = dte.GetProjects()
     let appendLine text (sb:System.Text.StringBuilder) =
         sb.AppendLine text
     sb
@@ -81,21 +104,21 @@ let runGeneration generatorId (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) ma
     |> ignore
 
     projects
-    |> Seq.iter (fun proj -> sb.AppendLine (sprintf "    %s" proj.Name) |> ignore)
-
+    |> Seq.choose (fun proj -> proj.Name)
+    |> Seq.iter (fun projName -> sb.AppendLine (sprintf "    %s" projName) |> ignore)
 
     let genMapped =
         toGen
         |> Seq.map (fun t ->
             let targetSqlProject =
                 projects
-                |> Seq.tryFind (fun p -> p.Name = t.TargetSqlProjectName)
+                |> Seq.tryFind (fun p -> p.Name.Value = t.TargetSqlProjectName)
                 |> function
                     | Some p -> p
                     | None -> failwithf "did not find project, names were %A" (projects |> Seq.map (fun p -> p.Name) |> List.ofSeq)
 
-            let targetSqlProjectFolder = Path.GetDirectoryName targetSqlProject.FullName
-            printfn "Going to generate into project %s via folder %s" targetSqlProject.Name targetSqlProjectFolder
+            let targetSqlProjectFolder = Path.GetDirectoryName targetSqlProject.FullName.Value
+            printfn "Going to generate into project %s via folder %s" targetSqlProject.Name.Value targetSqlProjectFolder
             targetSqlProjectFolder, t, t.SqlItems
                 |> Seq.map (fun tg ->
                     {   TableGenerationInfo.Id = {Name=tg.Name; Schema=tg.Schema}
@@ -112,7 +135,7 @@ let runGeneration generatorId (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) ma
     let fileInfo = new IO.FileInfo(info)
     sb |> appendLine (sprintf "Using CodeGeneration.dll from %O" fileInfo.LastWriteTime) |> ignore
     genMapped
-    |> Seq.map (fun (targetSqlProjectFolder,sgi,items) ->
+    |> Seq.collect (fun (targetSqlProjectFolder,sgi,items) ->
         SqlMeta.generateTablesAndReferenceTables(manager, sb, Some targetSqlProjectFolder, items)
         match sgi.InsertionConfig with
         | Some ic ->
@@ -127,7 +150,6 @@ let runGeneration generatorId (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) ma
             |> List.map DataModelOnly)@(items |> List.map GenMapTableItem.Detailed)
         result
     )
-    |> Seq.concat
     |> Seq.filter (
         function
         | DataModelOnly ti -> ti
@@ -146,11 +168,6 @@ let runGeneration generatorId (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) ma
             |> function
                 |Detailed details ->
                     // this is what should be happening on the main path too
-                    let getMeasureType (item:ColumnInput) =
-                        cgsm.Measures
-                        |> Seq.tryFind (fun m -> cgsm.MeasuresBlacklist |> Seq.contains item.Name |> not && containsI m item.Name)
-                        |> Option.getOrDefault null
-
                     {   SqlTableMeta.TI = details.Id
                         TypeName=cgsm.Singularize details.Id.Name
                         PrimaryKeys=details.Columns |> Seq.choose (fun c -> if c.IsPrimaryKey then Some c.Name else None) |> Set.ofSeq
@@ -162,7 +179,7 @@ let runGeneration generatorId (sb:System.Text.StringBuilder) (dte:EnvDTE.DTE) ma
                     None
         ))
         cgsm
-        (manager, sb, mappedTables |> Seq.map GenMapTableItem.GetTI)
+        (manager, sb, mappedTables |> List.map GenMapTableItem.GetTI)
 
 let sb = System.Text.StringBuilder()
 let appendLine text (sb:System.Text.StringBuilder) =
