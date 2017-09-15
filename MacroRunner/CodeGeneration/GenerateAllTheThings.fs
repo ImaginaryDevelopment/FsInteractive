@@ -63,7 +63,7 @@ type IProject =
         abstract member FullName:string option
 type ProjectWrapper internal (p:EnvDTE.Project) =
     // swallowing? =(
-    let tryGet f = 
+    let tryGet f =
         try
             f p |> Some
         with ex -> 
@@ -76,7 +76,7 @@ type ProjectWrapper internal (p:EnvDTE.Project) =
         member x.FullName = x.FullName
 
 type IGenWrapper =
-    abstract member GetProjects:unit -> IProject seq
+    abstract member GetProjects: unit -> IProject seq
     abstract member GetTargetSqlProjectFolder: string -> IProject
 
 type DteGenWrapper(dte:EnvDTE.DTE) =
@@ -130,7 +130,7 @@ let runGeneration generatorId (sb: System.Text.StringBuilder) (dte: IGenWrapper)
         |> List.ofSeq
     printfn "%i tables to generate" genMapped.Length
 
-    let codeGenAsm= typeof<CodeGeneration.SqlScriptGeneration.SqlObj>.Assembly
+    let codeGenAsm = typeof<CodeGeneration.SqlScriptGeneration.SqlObj>.Assembly
     let info = BReusable.Assemblies.getAssemblyFullPath(codeGenAsm)
     let fileInfo = new IO.FileInfo(info)
     sb |> appendLine (sprintf "Using CodeGeneration.dll from %O" fileInfo.LastWriteTime) |> ignore
@@ -161,25 +161,25 @@ let runGeneration generatorId (sb: System.Text.StringBuilder) (dte: IGenWrapper)
     )
     |> List.ofSeq
     |> fun mappedTables ->
-    DataModelToF.generate generatorId
-        (Some (fun ti (exn:exn) ->
-            mappedTables
-            |> Seq.find(function | Detailed details -> details.Id = ti | DataModelOnly dmTI -> dmTI = ti)
-            |> function
-                |Detailed details ->
-                    // this is what should be happening on the main path too
-                    {   SqlTableMeta.TI = details.Id
-                        TypeName=cgsm.Singularize details.Id.Name
-                        PrimaryKeys=details.Columns |> Seq.choose (fun c -> if c.IsPrimaryKey then Some c.Name else None) |> Set.ofSeq
-                        Identities= details.Columns |> Seq.choose (fun c -> if c.IsIdentity then Some c.Name else None) |> Set.ofSeq
-                        Columns= SqlTableColumnChoice.Manual details.Columns
-                    }
-                    |> Some
-                | DataModelOnly _dmInput ->
-                    None
-        ))
-        cgsm
-        (manager, sb, mappedTables |> List.map GenMapTableItem.GetTI)
+        DataModelToF.generate generatorId
+            (Some (fun ti (_exn:exn) ->
+                mappedTables
+                |> Seq.find(function | Detailed details -> details.Id = ti | DataModelOnly dmTI -> dmTI = ti)
+                |> function
+                    |Detailed details ->
+                        // this is what should be happening on the main path too
+                        {   SqlTableMeta.TI = details.Id
+                            TypeName=cgsm.Singularize details.Id.Name
+                            PrimaryKeys=details.Columns |> Seq.choose (fun c -> if c.IsPrimaryKey then Some c.Name else None) |> Set.ofSeq
+                            Identities= details.Columns |> Seq.choose (fun c -> if c.IsIdentity then Some c.Name else None) |> Set.ofSeq
+                            Columns= SqlTableColumnChoice.Manual details.Columns
+                        }
+                        |> Some
+                    | DataModelOnly _dmInput ->
+                        None
+            ))
+            cgsm
+            (manager, sb, mappedTables |> List.map GenMapTableItem.GetTI)
 
 let sb = System.Text.StringBuilder()
 let appendLine text (sb:System.Text.StringBuilder) =

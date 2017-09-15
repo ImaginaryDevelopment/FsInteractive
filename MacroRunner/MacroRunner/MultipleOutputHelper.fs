@@ -393,7 +393,6 @@ module MultipleOutputHelper =
                         |DteDirect (dte,tfOpt) -> tfOpt,dte
                         |ServiceProvider (sp,tfOpt) -> tfOpt, getSpFromIsp sp
 
-
                     // can dte.Solution even work when given String.Empty?
                     let templateProjectItem =
                         templateFileOpt
@@ -404,8 +403,6 @@ module MultipleOutputHelper =
                     let wrapper = wrapDte dte
 
                     VsManager(templateFileOpt,wrapper,sb,templateProjectItem)
-
-
 
                 static member FindParentProject logger (readableProjects:(string*ProjectWrapper) seq) childFileName =
                     readableProjects

@@ -33,7 +33,7 @@ module StringAssembler = //Abstract Data Type
             sb
 
 module SimplifiedInput =
-    type StringLength= |Length of int | UseMax
+    type StringLength = |Length of int | UseMax
     type NumberDetails = { Scale:int;Precision:int}
     type DbType =
         | String of StringLength
@@ -70,17 +70,17 @@ module ModelGenerator =
     let generateInterface gs sb (indent:string) (name:string) (props:seq<string*Type>) =
 
         let addProps i sb =
-            let suffix = match gs with |Readonly -> String.Empty |Writable -> " with get,set"
+            let suffix = match gs with |Readonly -> String.Empty |Writable -> sprintf " with get,set"
             props
             |> Seq.map (fun (name,t) ->
-                sprintf "/// %s" t.FullName, sprintf "abstract member %s:%s%s" name (mapTypeToF t) suffix
-                )
+                sprintf "%s/// %s" indent t.FullName, sprintf "%sabstract member %s:%s%s" indent name (mapTypeToF t) suffix
+            )
             |> Seq.iter (fun (comment,text) ->
                 sb
                 |> Sb.appendLine i comment
                 |> Sb.appendLine i text
                 |> ignore
-                )
+            )
             sb
 
         let iname = match gs with |Readonly -> "" |Writable -> "RW"

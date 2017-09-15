@@ -64,6 +64,7 @@ type TypeSpecification = | Type of Type | Kind of SyntaxKind
 type ClassDeclaration = { ClassAttributes: string list; Name:string; BaseClass :string option; Fields: string list; Members: ClassMember list; Interfaces : ClassMember list} with
     member x.AttributeText() = x.ClassAttributes |> Seq.map (fun ta -> sprintf "[<%s>]" ta) |> delimit "\r\n"
     member x.FieldText spacing = x.Fields |> Seq.map (fun f -> spacing + f) |> delimit "\r\n"
+
 module Array =
     let skip v = Seq.skip(v) >> Array.ofSeq
 module Seq =
@@ -151,6 +152,7 @@ module FileWalker =
                 |> List.ofSeq
             implementedInterfaces.Add(parentIdentifier,bases)
             base.VisitBaseList node
+
     let getSrcCode codeSrc =
         match codeSrc with
         | Text code -> code
@@ -197,19 +199,19 @@ let getFiles source =
 
 
 type PropertyInfoB = { IsINotify:bool; Type:string; FieldName: string option; PropertyName:string; Getter:AccessorDeclarationSyntax option; Setter:AccessorDeclarationSyntax option}
-let mapName s=
-        match trim s with
-        | "" -> failwithf "name cannot be empty"
-        | Id when Id.EndsWith("ID") -> Id |> before "ID" |> flip (+) "Id"
-        | _ as s -> s
 
+let mapName s =
+    match trim s with
+    | "" -> failwithf "name cannot be empty"
+    | Id when Id.EndsWith("ID") -> Id |> before "ID" |> flip (+) "Id"
+    | _ as s -> s
 
 let toFType promoteUninitializedStructsToNullable (t:string) =
-            match trim t with
-            | nullable when nullable.Contains("?") -> nullable |> before "?" |> sprintf "Nullable<%s>"
-            | x when x="Guid" || x = "System.Guid" -> if promoteUninitializedStructsToNullable then sprintf"(* NullableWithoutInit*) Nullable<%s>" x else x
-            | x when x="Image" -> "System.Drawing.Image"
-            | _ as type' -> type'
+        match trim t with
+        | nullable when nullable.Contains("?") -> nullable |> before "?" |> sprintf "Nullable<%s>"
+        | x when x="Guid" || x = "System.Guid" -> if promoteUninitializedStructsToNullable then sprintf"(* NullableWithoutInit*) Nullable<%s>" x else x
+        | x when x="Image" -> "System.Drawing.Image"
+        | _ as type' -> type'
 
 let toFull (node:#SyntaxNode) = node.ToFullString() |> trim
 
@@ -230,13 +232,12 @@ let mapPropertyDeclaration (prop:PropertyDeclarationSyntax) =
     let getter = tryFindAccessor SyntaxKind.GetAccessorDeclaration
     let setter = tryFindAccessor SyntaxKind.SetAccessorDeclaration
     {
-
-            IsINotify=prop.AccessorList.ToFullString().Contains("SetAndNotify")
-            Type = prop.Type.ToFullString()
-            PropertyName = prop.Identifier.ToFullString()
-            FieldName = None
-            Getter=getter
-            Setter=setter
+        IsINotify = prop.AccessorList.ToFullString().Contains("SetAndNotify")
+        Type = prop.Type.ToFullString()
+        PropertyName = prop.Identifier.ToFullString()
+        FieldName = None
+        Getter = getter
+        Setter = setter
     }
 
 let getProperties (root:CompilationUnitSyntax) =
@@ -272,7 +273,7 @@ type TranslateOptions = {
                 let spacing = List.replicate 4 " " |> delimit String.Empty
                 let getNextDebugState debugDelegate vote =
                     match debugDelegate with |DebugDelegate getDebugOpt -> getDebugOpt vote
-                let isDebugNodeResult (_text:string)= Abstain // example: if String.contains text "AddMinutes" then Promote else Abstain
+                let isDebugNodeResult (_text:string) = Abstain // example: if String.contains text "AddMinutes" then Promote else Abstain
 
                 let rec startDebugState state vote : DebugOpt * DebugDelegate =
                     let state =
@@ -316,11 +317,11 @@ let getFileInfoFromSource (source:(_*_*Dictionary<string,string list>) option se
         // (* already done on line 54 *)
         // where(Seq.contains "DataModelBase" bases)
         let properties = getProperties(root) |> List.ofSeq
-        select {FileInfoB.File=file;ClassName=cls;Bases =bases;Fields= root.DescendantNodes() |> Seq.ofType<FieldDeclarationSyntax> |> List.ofSeq ;Properties=properties}
+        select {FileInfoB.File = file; ClassName = cls; Bases = bases; Fields = root.DescendantNodes() |> Seq.ofType<FieldDeclarationSyntax> |> List.ofSeq; Properties = properties}
     }
 
 let findModel name fileInfoBseq  =
-    fileInfoBseq |> Seq.tryFind(fun fib -> fib.ClassName = name ||fib.ClassName.StartsWith(name))
+    fileInfoBseq |> Seq.tryFind(fun fib -> fib.ClassName = name || fib.ClassName.StartsWith name)
 
 module Declarations =
     let (|EmptyEnumerable|NonEmpty|) (items: _ IEnumerable) =
@@ -334,7 +335,6 @@ module Declarations =
             | EmptyEnumerable,EmptyEnumerable -> Some ()
             | _ -> None
         | _ -> None
-
 
 let getFileInfoFrom source =
     let files = getFiles source
@@ -364,7 +364,6 @@ let rec mapNode translateOptions promoteUninitializedStructsToNullable spacing (
     | :? ReturnStatementSyntax as rss -> "ReturnStatementSyntax", mapChildren  "\r\n" rss
     | :? InvocationExpressionSyntax as ies ->
 
-
         let expr = mapNodeP ies.Expression
         let expr =
             if memberNames.Contains(expr) then
@@ -375,7 +374,7 @@ let rec mapNode translateOptions promoteUninitializedStructsToNullable spacing (
         let ignoredResult = expr.StartsWith("builder.Append")
 
         //dump "ies details" <| sprintf "%A" (expr,ies.Expression.GetType().Name, ies.ArgumentList.Arguments, ies.ChildNodes())
-        let arguments= ies.ArgumentList.Arguments|> Seq.map mapNodeP |> delimit ","
+        let arguments = ies.ArgumentList.Arguments|> Seq.map mapNodeP |> delimit ","
         let iesText = sprintf "%s(%s)%s" expr arguments (if ignoredResult then "|> ignore" else String.Empty)
 
         "InvocationExpressionSyntax", iesText
@@ -434,7 +433,7 @@ let rec mapNode translateOptions promoteUninitializedStructsToNullable spacing (
         let statement = mapNodeP ifss.Statement
         let elseblock = if ifss.Else <> null then dumps "found else!" <| mapNodeP ifss.Else |> Some else None
         let elseblock,matchType = match elseblock with Some text -> sprintf " %s" text,"IfElseStatementSyntax" | _ -> String.Empty,"IfStatementSyntax"
-        let statements = if statement.Contains("\r\n") then "(*switchstatement multiline*)\r\n" + translateOptions.Spacing + (replace "\r\n" ("\r\n" + translateOptions.Spacing) statement) + "\r\n" else statement
+        let statements = if statement.Contains "\r\n" then "(*switchstatement multiline*)\r\n" + translateOptions.Spacing + (replace "\r\n" ("\r\n" + translateOptions.Spacing) statement) + "\r\n" else statement
         matchType, sprintf "if %s then %s%s" (mapNodeP ifss.Condition) statements elseblock
 
     | :? PrefixUnaryExpressionSyntax as pues -> "PrefixUnaryExpressionSyntax", sprintf "not <| ( %s )" (mapNodeP pues.Operand)
@@ -447,12 +446,12 @@ let rec mapNode translateOptions promoteUninitializedStructsToNullable spacing (
                 "SwitchSectionSyntax.nostatements", sprintf "%s" label
             else
                 let statement = statements |> Seq.map mapNodeP |> delimit ("(*switch section end*)\r\n") |> indent spacing
-                if String.IsNullOrEmpty(statement) then
+                if String.IsNullOrEmpty statement then
                     "SwitchSectionSyntax.labelOnly", sprintf "%s" label
                 else if statement |> trim |> String.contains "\r\n" then
                     "SwitchSectionSyntax.multiStatement", sprintf "%s ->\r\n%s" label statement
                 else
-                    "SwitchSectionSyntax", sprintf"%s ->%s" label statement
+                    "SwitchSectionSyntax", sprintf "%s ->%s" label statement
     | :? DefaultSwitchLabelSyntax as _dsls -> "DefaultSwitchLabelSyntax", "|_"
     | :? SwitchLabelSyntax as sls ->
         printNodeDiagnostics sls
@@ -491,8 +490,6 @@ let rec mapNode translateOptions promoteUninitializedStructsToNullable spacing (
                 | "string","." -> "string(maes)", (sprintf "%s.%s" "String" name|> dumps "maes result")
                 | x, _ when x.Contains("this.") -> "this.(maes)", x|> replace "this." "x."
                 |_ -> "MemberAccessExpressionSyntax", defaultPathResult
-//            if mt <> "MemberAccessExpressionSyntax" then Util.Break()
-//            if actualResult |> String.contains "x.x" then Util.Break()
             mt,actualResult
 
         maesResult
@@ -515,7 +512,6 @@ let rec mapNode translateOptions promoteUninitializedStructsToNullable spacing (
             let _exprType = ess.Expression.GetType().Name
             let children = ess.ChildNodes() |> Array.ofSeq
 
-//            Util.Break()
             box children = box ess.Expression |> ignore<bool>
             ()
 
@@ -531,20 +527,15 @@ let rec mapNode translateOptions promoteUninitializedStructsToNullable spacing (
         let ident = ins.Identifier
         if ident.ValueText = null then failwithf "no ValueText for ins %s" (toFull ins)
         let _value = mapName ident.ValueText
-        //dump "ins" <| sprintf "(parentType %A, parent %A, isVar %A, arity %A,identifier %A,kind %A)" (ins.Parent.GetType()) ins.Parent ins.IsVar ins.Arity ins.Identifier (ins.Kind())
 
         let insText =
-//            let isMemberAccess = memberNames.Contains value
-//            if isMemberAccess && not <| ins.Parent.contvalue.Contains "." then
-//                "Ins:(propName)", sprintf "x.%s" value
-//            else
-                let name = mapName ident.ValueText
-                if name.StartsWith("_") then
-                    "Ins:(_)", sprintf "%s" name
-                else  if ins.Parent :? ArgumentSyntax then
-                    "Ins:()", sprintf "%s" name
-                else
-                     "IdentifierNameSyntax", sprintf "%s" (mapName ident.ValueText)
+            let name = mapName ident.ValueText
+            if name.StartsWith("_") then
+                "Ins:(_)", sprintf "%s" name
+            else  if ins.Parent :? ArgumentSyntax then
+                "Ins:()", sprintf "%s" name
+            else
+                 "IdentifierNameSyntax", sprintf "%s" (mapName ident.ValueText)
         insText
     | :? PredefinedTypeSyntax as pts ->
         printNodeDiagnostics pts
@@ -569,7 +560,6 @@ let rec mapNode translateOptions promoteUninitializedStructsToNullable spacing (
 
         let _identifier = children.[0] :?> IdentifierNameSyntax
         let mappedChildren =
-
             mapChildren String.Empty fess.Statement
         let fessText = sprintf "for %s in %s do\r\n%s%s" (mapToken fess.Identifier) (mapNodeP children.[1]) spacing mappedChildren
         //let fessText = mapChildren String.Empty fess |> sprintf "for %s"
@@ -587,7 +577,7 @@ let rec mapNode translateOptions promoteUninitializedStructsToNullable spacing (
         if o |> String.contains "x.x" then Util.Break()
 #endif
         let debugOption,_getDebugOpt = translateOptions.GetNextDebugState getDebugOpt (translateOptions.GetIsDebugNodeResult o)
-        let dumpResult matchType r = dumpf matchType debugOption (fun r-> (node.GetType().Name + "," + matchType + "," + node.Kind().ToString()) + "=\""+ r.ToString()+"\"") r
+        let dumpResult matchType r = dumpf matchType debugOption (fun r -> (node.GetType().Name + "," + matchType + "," + node.Kind().ToString()) + "=\"" + r.ToString() + "\"") r
         let mapResult = dumpResult (sprintf "%s.%s" t <| node.Kind().ToString()) o
         let memberKnowsRaise = memberNames.Contains("RaisePropertyChanged")
         if not memberKnowsRaise && node.ToString().Contains("RaisePropertyChanged") then

@@ -4,6 +4,8 @@ open BReusable.Reflection
 open Macros.SqlMacros
 module TypeScript = 
     open System
+    open BReusable.StringHelpers
+
     module Option = 
         let ofBool =
             function
@@ -92,16 +94,23 @@ module TypeScript =
             |> sprintf "?:%s" 
         | t -> 
             mapType t
-
+            |> sprintf ":%s"
 
     type NamedProp = { Name:string; Type:Type}
+    type PropSource = | SimpleNamed of NamedProp | Custom of name:string*isOptional:Boolean*typeText:string
+
     let generateProp =
         function
-        |{NamedProp.Name=name;Type=t} ->
+        |SimpleNamed {NamedProp.Name=name;Type=t} ->
             mapTypeIsh t
             |> sprintf "%s%s" name
+        |Custom (n,isOp,t) ->
+            sprintf "%s%s:%s" n (if isOp then "?" else String.Empty) t
 
-    let generateInterface indent props = 
+    // does not handle complex types (interface/object child properties)
+    let generateInterface name interfaceIndent addlIndentForMembers props =
         props
         |> Seq.map generateProp
-        |> Seq.map(sprintf "%s%s" indent)
+        |> Seq.map(sprintf "%s%s%s" interfaceIndent addlIndentForMembers)
+        |> delimit "\r\n"
+        |> fun x -> sprintf "%s%s {\r\n%s\r\n%s}" interfaceIndent name x interfaceIndent
