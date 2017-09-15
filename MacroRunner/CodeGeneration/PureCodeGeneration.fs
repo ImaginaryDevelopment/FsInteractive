@@ -58,9 +58,6 @@ open System.Collections.Generic
 
 type TypeSpecification = | Type of Type | Kind of SyntaxKind
 
-//type DebugPredicate = |ByName of (string -> DebugOpt) |ByExpr of (SyntaxNode -> DebugOpt)
-
-
 type ClassDeclaration = { ClassAttributes: string list; Name:string; BaseClass :string option; Fields: string list; Members: ClassMember list; Interfaces : ClassMember list} with
     member x.AttributeText() = x.ClassAttributes |> Seq.map (fun ta -> sprintf "[<%s>]" ta) |> delimit "\r\n"
     member x.FieldText spacing = x.Fields |> Seq.map (fun f -> spacing + f) |> delimit "\r\n"

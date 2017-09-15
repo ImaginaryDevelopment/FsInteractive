@@ -113,4 +113,4 @@ module TypeScript =
         |> Seq.map generateProp
         |> Seq.map(sprintf "%s%s%s" interfaceIndent addlIndentForMembers)
         |> delimit "\r\n"
-        |> fun x -> sprintf "%s%s {\r\n%s\r\n%s}" interfaceIndent name x interfaceIndent
+        |> fun x -> sprintf "%sinterface %s {\r\n%s\r\n%s}" interfaceIndent name x interfaceIndent
