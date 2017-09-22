@@ -123,6 +123,7 @@ module StringHelpers =
     let startsWith (delimiter:string) (s:string) = s.StartsWith delimiter
     let startsWithI (delimiter:string) (s:string) = s.StartsWith(delimiter,String.defaultIComparison)
     let trim = String.trim
+    let trim1 (delim:string) (x:string) = x.Trim(delim |> Array.ofSeq)
 //    let after (delimiter:string) (x:string) =
 //        match x.IndexOf delimiter with
 //        | i when i < 0 -> failwithf "after called without matching substring in '%s'(%s)" x delimiter
@@ -160,6 +161,14 @@ module StringHelpers =
         }
         |> String.Concat
 open StringHelpers
+
+module Xml = 
+    open System.Xml.Linq
+    let getAttrValue name (x:XElement) = x.Attribute(XNamespace.None + name) |> Option.ofObj |> Option.map (fun x -> x.Value) 
+    type XElement with
+        static member GetElement1 name (x:XElement) = x.Element(XNamespace.None + name)
+        static member GetElements1 name (x:XElement) = x.Elements() |> Seq.filter(fun x -> x.Name.LocalName = name)
+        static member GetElements (x:XElement) = x.Elements()
 // I've also been struggling with the idea that Active patterns are frequently useful as just methods, so sometimes methods are duplicated as patterns
 [<AutoOpen>]
 module StringPatterns =
@@ -284,6 +293,17 @@ module Railways =
 module Seq =
     open System.Collections.Generic
     let any<'t> (items:'t seq) = items |> Seq.exists (fun _ -> true)
+
+    let trySortBy f x = x |> Seq.sortBy f
+    let trySortByDesc f x = x |> Seq.sortByDescending f
+    let single<'T> x = 
+            x
+            |> Seq.truncate 2
+            |> List.ofSeq
+            |> function
+                | (x:'T) :: [] -> x
+                | [] -> raise <| InvalidOperationException "Single called with no elements"
+                | _ -> raise <| InvalidOperationException "Single called with more than one element"
   /// Iterates over elements of the input sequence and groups adjacent elements.
   /// A new group is started when the specified predicate holds about the element
   /// of the sequence (and at the beginning of the iteration).
