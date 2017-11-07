@@ -131,7 +131,7 @@ let runGeneration generatorId (sb: System.Text.StringBuilder) (dte: IGenWrapper)
     printfn "%i tables to generate" genMapped.Length
 
     let codeGenAsm = typeof<CodeGeneration.SqlScriptGeneration.SqlObj>.Assembly
-    let info = BReusable.Assemblies.getAssemblyFullPath(codeGenAsm)
+    let info = BReusable.Reflection.Assemblies.getAssemblyFullPath(codeGenAsm)
     let fileInfo = new IO.FileInfo(info)
     sb |> appendLine (sprintf "Using CodeGeneration.dll from %O" fileInfo.LastWriteTime) |> ignore
     genMapped

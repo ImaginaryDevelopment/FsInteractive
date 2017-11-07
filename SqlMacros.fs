@@ -2,7 +2,6 @@
 open System
 open System.Data
 open BReusable
-open BReusable.Railways
 open BReusable.StringHelpers
 open System.Diagnostics
 
@@ -58,12 +57,12 @@ module Strict =
 
     type ObjectReference = {Schema:NonBracketedName;Name:NonBracketedName} with
         override x.ToString() = sprintf "[%O].[%O]" (x.Schema |> string) (x.Name |> string)
-        static member TryCreate schema name :Railway<_,string>=
+        static member TryCreate schema name :Rail<_,string>=
             match NonBracketedName schema, NonBracketedName name with
-            | Some nbSchema, Some nbName -> Success {Schema=nbSchema;Name=nbName}
-            | Some _, None -> Failure (sprintf "Could not read name '%s'" name)
-            | None, Some _ -> Failure (sprintf "Could not read schema '%s'" schema)
-            | None, None -> Failure (sprintf "Could not read schema nor name '%s','%s'" schema name)
+            | Some nbSchema, Some nbName -> Happy {Schema=nbSchema;Name=nbName}
+            | Some _, None -> Unhappy (sprintf "Could not read name '%s'" name)
+            | None, Some _ -> Unhappy (sprintf "Could not read schema '%s'" schema)
+            | None, None -> Unhappy (sprintf "Could not read schema nor name '%s','%s'" schema name)
     type ConflictedObjectReference = {Violated:ObjectReference;Conflicted:ObjectReference} //ConflictSchema:NonBracketedName;ConflictName:NonBracketedName
     type ObjectDefHolder() =
         member val Definition = String.Empty with get,set
@@ -141,7 +140,7 @@ let getTableData cn (tableIdentifier:TableIdentifier) =
             | None -> None
             | Some s ->
                 match s with
-                | ValueString ct -> if ct |> startsWithI "PRIMARY KEY" then Some() else None
+                | ValueString as ct -> if ct |> startsWithI "PRIMARY KEY" then Some() else None
                 | _ -> None
     let pks = 
         seq {
@@ -180,8 +179,8 @@ let tryGetMeta (fExecuteQuery:string -> ObjectDefHolder seq) sr t=
     fExecuteQuery text
     |> List.ofSeq
     |> function
-        | [x] -> Success x
-        | [] -> Failure (sprintf "No definition found for %s using %s" sr.Name.Value text)
+        | [x] -> Happy x
+        | [] -> Unhappy (sprintf "No definition found for %s using %s" sr.Name.Value text)
         | x -> failwithf "More than one result in seq %A" x
 
 let getObjExistsText sr t =

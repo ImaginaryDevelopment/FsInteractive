@@ -9,6 +9,7 @@
     <RootNamespace>MacroRunner</RootNamespace>
     <AssemblyName>MacroRunner</AssemblyName>
     <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
+    <TargetFrameworkProfile />
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|x86' ">
     <DebugSymbols>true</DebugSymbols>
@@ -69,6 +70,12 @@
     <Compile Include="..\..\ComMacros.fs">
       <Link>ComMacros.fs</Link>
     </Compile>
+    <Compile Include="..\..\SlnProjMacros.fs">
+      <Link>SlnProjMacros.fs</Link>
+    </Compile>
+    <Compile Include="..\..\EventStoreMacros.fs">
+      <Link>EventStoreMacros.fs</Link>
+    </Compile>
     <Compile Include="..\..\winformsmacros.fs">
       <Link>winformsmacros.fs</Link>
     </Compile>
@@ -79,6 +86,9 @@
     <Compile Include="Program.fs" />
     <None Include="Script.fsx" />
     <None Include="InvadeProcess.fsx" />
+    <Content Include="App.config">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
   <ItemGroup>
     <Reference Include="EnvDTE, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a" />

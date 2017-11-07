@@ -860,7 +860,7 @@ module DataModelToF =
                         items |> Seq.map (fun c -> c.Name )
                     |> Seq.map (fun name ->
                         match getMeasureType name with
-                        | ValueString m -> sprintf "<%s>" m
+                        | ValueString as m -> sprintf "<%s>" m
                         | _ -> String.Empty
                         |> sprintf "%s%s" name
                     )

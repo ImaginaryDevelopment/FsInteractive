@@ -151,9 +151,9 @@ let composeFKeyAndDefaultValue tableName columnName defaultValue fkeyOpt =
     let defaultValueText = Option.ofObj defaultValue |> Option.map (formatDefaultValue tableName columnName) |> Option.getOrDefault null
     // apparently null string + null string is empty string
     match fkeyText, defaultValueText with
-    | ValueString x, ValueString y -> sprintf "%s %s" x y
-    | ValueString x, _ -> x
-    | _, ValueString y -> y
+    | ValueString as x, (ValueString as y) -> sprintf "%s %s" x y
+    | ValueString as x, _ -> x
+    | _, (ValueString as y) -> y
     | _ -> null
 
 let (|RefValueComments|_|) x =

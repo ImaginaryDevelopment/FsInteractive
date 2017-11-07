@@ -4,7 +4,6 @@ open BReusable
 module ProcessMacros =
     open System.Collections.ObjectModel
     open System.IO
-    open BReusable.Railways
     open System.Diagnostics
 
     type RunProcResult = {Outputs:string ObservableCollection; Errors: string ObservableCollection; }
@@ -77,9 +76,9 @@ module ProcessMacros =
                     p.WaitForExit()
                     timer.Stop()
                     printfn "Finished %s after %A milliseconds" filename timer.ElapsedMilliseconds
-                    return Railway.Success(p,timer)
+                    return Happy(p,timer)
                 with ex ->
-                    return Railway.Failure ex
+                    return Unhappy ex
             }
         onFinish
 
@@ -94,11 +93,11 @@ module ProcessMacros =
             async {
                 let! result = onFinish
                 match result with
-                | Railway.Success t ->
+                | Happy t ->
                     let p,timer = t
-                    return Railway.Success(outputs,errors)
-                | Railway.Failure ex ->
-                    return Railway.Failure ex
+                    return Happy(outputs,errors)
+                | Unhappy ex ->
+                    return Unhappy ex
             }
         resultTask
 

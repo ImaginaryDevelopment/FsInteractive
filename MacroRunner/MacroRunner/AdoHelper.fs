@@ -265,7 +265,7 @@ module Commands =
     #endif
     let encodeStringParam s =
         match s with
-        |ValueString s -> s |> replace "'" "''"
+        |ValueString as s -> s |> replace "'" "''"
         | _ -> s
 
     [<NoComparison;NoEquality>]

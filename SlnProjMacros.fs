@@ -41,16 +41,16 @@ module PackageConfigs =
         |> Seq.map (fun (path, x) ->
             x |> Seq.map(fun x ->
                 let text = x |> string
-                let pId = x |> getAttrValue "id" |> Option.getOrDefault String.Empty
-                {Src=path; Name=pId; Version=getAttrValue "version" x |> Option.getOrDefault String.Empty |> PackageRef;Raw=text}
+                let pId = x |> getAttribVal "id" |> Option.getOrDefault String.Empty
+                {Src=path; Name=pId; Version=getAttribVal "version" x |> Option.getOrDefault String.Empty |> PackageRef;Raw=text}
             )
         )
         |> Seq.concat
-        |> Seq.trySortByDesc(fun x -> x.Version)
+        |> Seq.sortByDescending(fun x -> x.Version)
         |> Seq.groupBy(fun x -> x.Name)
         |> Seq.map listFrom2nd
         |> Seq.filter(fun (_,x) -> x.Length > 1 && x |> Seq.map (fun x -> x.Version) |> Seq.distinct |> Seq.length |> fun x -> x > 1)
-        |> Seq.trySortBy (fun (x,_) -> x <> "FSharp.Core")
+        |> Seq.sortBy (fun (x,_) -> x <> "FSharp.Core")
         
 module AppWebConfigs =
     //open System.Linq
@@ -83,10 +83,10 @@ module AppWebConfigs =
                 try
                     let elements = x.Elements() |> Seq.map string |> List.ofSeq |> Seq.ofList
                     let br =  x |> XElement.GetElements1 "bindingRedirect" |> Seq.single
-                    let nv = br |> getAttrValue "newVersion" |> Option.getOrDefault String.Empty 
-                    let ov = br |> getAttrValue "oldVersion" |> Option.getOrDefault String.Empty 
+                    let nv = br |> getAttribVal "newVersion" |> Option.getOrDefault String.Empty 
+                    let ov = br |> getAttribVal "oldVersion" |> Option.getOrDefault String.Empty 
                     let ct = ConfigType.Config(nv,ov)
-                    {   Name= x |> XElement.GetElements1 "assemblyIdentity" |> Seq.single |> getAttrValue "name" |> Option.getOrDefault String.Empty
+                    {   Name= x |> XElement.GetElements1 "assemblyIdentity" |> Seq.single |> getAttribVal "name" |> Option.getOrDefault String.Empty
                         Version= ct
                         Raw= elements |> delimit "\r\n"
                         Src=path |> after targetFolder |> before ".config" |> trim1 "\\"

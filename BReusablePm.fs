@@ -5,18 +5,76 @@ open System.Collections.Generic
 open System.Diagnostics
 // for statically typed parameters in an active pattern see: http://stackoverflow.com/questions/7292719/active-patterns-and-member-constraint
 //consider pulling in useful functions from https://gist.github.com/ruxo/a9244a6dfe5e73337261
-
+let cast<'T> (x:obj) = x :?> 'T
 //https://blogs.msdn.microsoft.com/dsyme/2009/11/08/equality-and-comparison-constraints-in-f/
-module IComparable = 
+type System.Int32 with
+    static member tryParse x =
+        System.Int32.TryParse x
+        |> function
+            | true, x -> Some x
+            | _ -> None
+
+module Choices =
+    let private allOrNone fChoose items =
+        match items with
+        | [] -> None
+        | items ->
+            List.foldBack(fun item state ->
+                match state with
+                | None -> None
+                | Some items ->
+                    match fChoose item with
+                    | Some item ->
+                        item::items
+                        |> Some
+                    | None -> None
+            ) items (Some [])
+
+    let (|Homogenous1Of2|_|) items = allOrNone (function | Choice1Of2 x -> Some x | _ -> None) items
+
+    let (|Homogenous2Of2|_|) items = allOrNone (function | Choice2Of2 x -> Some x | _ -> None) items
+    let (|Just1sOf2|) items =
+        items
+        |> List.choose(function | Choice1Of2 x -> Some x | _ -> None)
+        |> Some
+    let (|Just2sOf2|) items =
+        items
+        |> List.choose(function | Choice2Of2 x -> Some x | _ -> None)
+
+
+module IComparable =
     let equalsOn f x (yobj:obj) =
         match yobj with
         | :? 'T as y -> (f x = f y)
         | _ -> false
-    let hashOn f x =  hash (f x) 
+    let hashOn f x =  hash (f x)
     let compareOn f x (yobj: obj) =
         match yobj with
         | :? 'T as y -> compare (f x) (f y)
         | _ -> invalidArg "yobj" "cannot compare values of different types"
+
+#nowarn "0042"
+// http://fssnip.net/7SK
+// allows using units of measure on other types
+module IGUoM =
+    open System
+    type UoM = class end
+        with
+            static member inline Tag< ^W, ^t, ^tm when (^W or ^t) : (static member IsUoM : ^t * ^tm -> unit)> (t : ^t) = (# "" t : ^tm #)
+            static member inline UnTag< ^W, ^t, ^tm when (^W or ^t) : (static member IsUoM : ^t * ^tm -> unit)> (t : ^tm) = (# "" t : ^t #)
+
+    let inline tag (x : 't) : 'tm = UoM.Tag<UoM, 't, 'tm> x
+    let inline untag (x : 'tm) : 't = UoM.UnTag<UoM, 't, 'tm> x
+
+    [<MeasureAnnotatedAbbreviation>]
+    type string<[<Measure>] 'Measure> = string
+
+    type UoM with
+        // Be *very* careful when writing this; bad args will result in invalid IL
+        static member IsUoM(_ : string, _ : string<'Measure>) = ()
+    [<Measure>] type FullName = class end
+    [<Measure>] type FirstName= class end
+
 
 /// this doesn't account for cases where the identity is longer than signed int holds
 type ValidIdentity<[<Measure>] 'T> private(i:int<'T>) =
@@ -29,7 +87,8 @@ type ValidIdentity<[<Measure>] 'T> private(i:int<'T>) =
             ValidIdentity<'T>(i) |> Some
         else None
     static member get (vi:ValidIdentity<_>) : int<'T> = vi.Value
-    member private x.ToDump() = i |> string // linqpad friendly
+    static member OptionOfInt x = if fIsValid x then Some x else None
+    member private __.ToDump() = i |> string // linqpad friendly
     override x.ToString() =
         x.ToDump()
     override x.Equals y = IComparable.equalsOn ValidIdentity.get x y
@@ -50,7 +109,7 @@ module FunctionalHelpersAuto =
     /// take a dead-end function and curry the input
     let tee f x = f x; x
     // take a value and adjust it to fall within the range of vMin .. vMax
-    let clamp vMin vMax v = 
+    let clamp vMin vMax v =
         max v vMin
         |> min vMax
 
@@ -77,7 +136,7 @@ module FunctionalHelpersAuto =
         result
 
     // allows you to pattern match against non-nullables to check for null (in case c# calls)
-    let (|NonNull|UnsafeNull|) x = 
+    let (|NonNull|UnsafeNull|) x =
         match box x with
         | null -> UnsafeNull
         | _ -> NonNull
@@ -143,6 +202,8 @@ type System.String with
     static member startsWithI (toMatch:string) (x:string) = not <| isNull x && not <| isNull toMatch && toMatch.Length > 0 && x.StartsWith(toMatch, String.defaultIComparison)
     static member isNumeric (x:string) = not <| isNull x && x.Length > 0 && x |> String.forall Char.IsNumber
     static member splitLines(x:string) = x.Split([| "\r\n";"\n"|], StringSplitOptions.None)
+    static member before (delimiter:string) s = s |> String.substring2 0 (s.IndexOf delimiter)
+    static member beforeOrSelf (delimiter:string) x = if x|> String.contains delimiter then x |> String.before delimiter else x
     static member beforeAnyOf (delimiters:string list) (x:string) =
         let index, _ =
             delimiters
@@ -151,6 +212,7 @@ type System.String with
             |> Seq.minBy (fun (index, _) -> index)
         x.Substring(0,index)
     static member replace (target:string) (replacement) (str:string) = if String.IsNullOrEmpty target then invalidOp "bad target" else str.Replace(target,replacement)
+
 // comment/concern/critique auto-opening string functions may pollute (as there are so many string functions)
 // not having to type `String.` on at least the used constantly is a huge reduction in typing
 // also helps with point-free style
@@ -227,7 +289,6 @@ module StringHelpers =
                     yield l
         }
         |> String.Concat
-
 
 // I've also been struggling with the idea that Active patterns are frequently useful as just methods, so sometimes methods are duplicated as patterns
 [<AutoOpen>]
@@ -344,6 +405,55 @@ module Xml =
 //        e.nodes
 //        XElement(nsNone + e.Name.LocalName, content = e.Nodes)
     ()
+module Caching =
+
+    let (|IsUnderXMinutes|_|) maxAgeMinutes (dt:DateTime) =
+        let minutes =
+            DateTime.Now - dt
+            |> fun x -> x.TotalMinutes
+        if minutes < maxAgeMinutes then
+            Some()
+        else None
+    type Result =
+        | Success
+        | Failed
+
+    [<NoEquality>]
+    [<NoComparison>]
+    type CacheAccess<'TKey,'TValue when 'TKey: comparison> = {Getter: 'TKey -> 'TValue option; Setter : 'TKey -> 'TValue -> unit; GetSetter: 'TKey -> (unit -> 'TValue) -> 'TValue} with
+        // C# helper(s)
+        member x.GetSetterFuncy (k,f:Func<_>)=
+            x.GetSetter k f.Invoke
+
+    let iDictTryFind<'T,'TValue> (k:'T) (d:IDictionary<'T,'TValue>) =
+        if d.ContainsKey k then
+            Some d.[k]
+        else None
+
+    let createTimedCache<'TKey,'TValue when 'TKey:comparison> (fIsYoungEnough) =
+        let cache = System.Collections.Concurrent.ConcurrentDictionary<'TKey,DateTime*'TValue>()
+        //let cache: Map<'TKey,DateTime*'TValue> = Map.empty
+        let getter k =
+            let result = cache |> iDictTryFind k |> Option.filter( fst >> fIsYoungEnough) |> Option.map snd
+            match result with
+            | Some v ->
+                printfn "Cache hit for %A" k
+                Some v
+            | None ->
+                printfn "Cache miss for %A" k
+                None
+
+        let setter k v =
+            cache.[k] <- (DateTime.Now,v)
+
+        let getSetter k f =
+            match getter k with
+            | Some v -> v
+            | _ ->
+                let v = f()
+                setter k v
+                v
+        {Getter=getter;Setter =setter; GetSetter=getSetter}
 
 module Debug =
     open System.Collections.ObjectModel
@@ -745,7 +855,6 @@ let buildCmdString fs arg i :string*string*obj =
         |> replace "'%d'"
     applied,replaced, upcast arg
 
-
 let inline SetAndNotify eq setter notifier=
     if eq() then false
     else
@@ -790,6 +899,11 @@ module Diagnostics =
         let msg = sprintf "<%s %s>%s</%s>%s" topic attrs s topic Environment.NewLine
         System.IO.File.AppendAllText(filename,msg)
 
+    let logToEventLog s =
+        use eventLog = new EventLog("Application")
+        eventLog.Source <- "Application"
+        eventLog.WriteEntry s
+
     let logS topic attrs s =
         if not <| String.IsNullOrEmpty s then
             printfn "%s" s
@@ -800,8 +914,17 @@ module Diagnostics =
         let fileLog= logToFile filename dt topic attrs
         try
             fileLog s
-        with |ex ->
+        with ex ->
             printfn "Exception attemping to log:%A" ex
+            try
+                sprintf "Failed to write to file: %s" filename
+                |> logToEventLog
+            with _ ->
+                printfn "Failed to log to event log"
+        try
+            logToEventLog s
+        with _ ->
+            printfn "Failed to log to event log"
 
     let LogS topic s =
         logS (isNullOrEmptyToOpt topic) [] s
@@ -809,7 +932,7 @@ module Diagnostics =
     let inline addDataIfPresent (ex:#exn) (s:string) =
         if not <| isNull ex.Data && ex.Data.Keys.Count > 0 then
             let extractString (v:obj) =
-                match v with 
+                match v with
                 | :? string as s -> s
                 | x -> sprintf "%A" x
                 |> replace "\"" "\\\""
@@ -826,12 +949,12 @@ module Diagnostics =
             s
 
     // this needs to account for ex.Data information
-    let logObj topic sOpt (x:obj) = 
-        match sOpt with 
+    let logObj topic sOpt (x:obj) =
+        match sOpt with
         | Some s -> sprintf "%s:%A" s x
         | None -> sprintf "%A" x
         |> fun s ->
-            match x with 
+            match x with
             | :? exn as x -> s |> addDataIfPresent x
             | _ -> s
         |> logS topic []
@@ -849,7 +972,7 @@ module Diagnostics =
         with ex ->
             logObj (Some "error adding exception data") None ex
 
-    let logExS topic s ex = logObj topic s ex 
+    let logExS topic s ex = logObj topic s ex
 
     let BeginLogScope scopeName=
         let pid = Process.GetCurrentProcess().Id
@@ -1167,54 +1290,71 @@ module Ideas =
 // encapsulate INPC such that, fields can hold INPC values
 module Inpc =
     open System.ComponentModel
-    let checkComparerOpt fComparerOpt oldValue newValue = 
+    let checkComparerOpt fComparerOpt oldValue newValue =
         match fComparerOpt with
-        | Some f -> 
+        | Some f ->
             if f oldValue newValue then
                 printfn "Value was the same, keeping value %A = %A" oldValue newValue
                 None
-            else 
+            else
                 printfn "Value was different changing value! %A <> %A" oldValue newValue
                 Some newValue
         | None -> Some newValue
 
-            
+
     let triggerPropChanged (event:Event<PropertyChangedEventHandler,PropertyChangedEventArgs>) name () =
         event.Trigger(null, PropertyChangedEventArgs(name))
+    [<NoComparison>]
+    [<NoEquality>]
+    type InpcOptions<'T> = {    FComparerOpt: ('T -> 'T -> bool) option;
+                                FDisplayNameOpt: ('T -> string) option
+                                FDebugStringifyOpt: ('T -> string) option}
+
     // consider adding a param for comparison, so the inpc won't fire if they are equal
     // or the parent property exposure could do it?
-    type InpcWrapper<'T> (fNotifier, defaultValue:'T, comparerOpt) =
+    type InpcWrapper<'T> (fNotifier: unit -> unit, inpcArgs:InpcOptions<'T>, defaultValue:'T) =
         let mutable field = defaultValue
+        let fStringify x =
+            match inpcArgs.FDebugStringifyOpt with
+            | Some f -> f x
+            | None -> (box x) |> string
         // consider:
         //member x.UnsafeSet v = field <- v
         member val IsDebug = false with get,set
-        member val DisplayName : string = null with get,set
+        member val DisplayName : string =
+            inpcArgs.FDisplayNameOpt |> Option.map (fun f -> f field) |> function | None -> null | Some x -> x
+            with get,set
         member x.Value
-            with get() = field
+            with get() =
+                if x.IsDebug then
+                    printfn "Getting value from %s (%s)" x.DisplayName (fStringify field)
+                field
             and set v =
                 let oldValue = field
-                let compareResult = checkComparerOpt comparerOpt field v
-                if x.IsDebug then
-                    printfn "InpcWrapper%s (hasComparer %b, comparerSaysChangeValue %b) from %A to %A"
+                let compareResult = checkComparerOpt inpcArgs.FComparerOpt field v
+                // before the change show what's in v
+                // after changing show what's in the field which should be the same as what came out from v
+                let printDebug (o:'T) =
+                    printfn "InpcWrapper%s (hasComparer %b, comparerSaysChangeValue %b) from %s to %s"
                         (if not <| isNull x.DisplayName then " " + x.DisplayName else String.Empty)
-                        (Option.isSome comparerOpt)
+                        (Option.isSome inpcArgs.FComparerOpt)
                         (Option.isSome compareResult)
-                        oldValue v
+                        (fStringify oldValue) (fStringify o)
+                if x.IsDebug then
+                    printDebug v
                 compareResult
                 |> Option.iter(fun v ->
                     field <- v
-                    fNotifier()
+                    inpcArgs.FDisplayNameOpt
+                    |> Option.iter(fun f -> x.DisplayName <- f field)
+                    x.Notify()
                     if x.IsDebug then
-                        printfn "InpcWrapper%s (hasComparer %b, comparerSaysChangeValue %b) from %A to %A"
-                            (if not <| isNull x.DisplayName then " " + x.DisplayName else String.Empty)
-                            (Option.isSome comparerOpt)
-                            (Option.isSome compareResult)
-                            oldValue field
+                        printDebug field
                 )
         member __.Notify() = fNotifier()
 
     // because you can't use this when initializing a C# property to call notifyproperty changed, let the notifier be set later
-    type InpcWrapperDeferredNotifier<'T>(defaultValue: 'T, comparerOpt) = 
+    type InpcWrapperDeferredNotifier<'T>(defaultValue: 'T, comparerOpt) =
         let mutable notifier: Action = Action(ignore)
         let mutable field = defaultValue
         member __.Notifier
@@ -1233,8 +1373,13 @@ module Inpc =
         member __.Notify() = if not <| isNull notifier then notifier.Invoke()
 
     // instead of using a parent/base class: use this method!
-    let createInpc event name comparer defaultValue = InpcWrapper(triggerPropChanged event name, defaultValue, comparer)
-    //let CreateInpc 
+
+    let createInpc event name options defaultValue =
+        let fNotifier = triggerPropChanged event name
+        match options with
+        | Some options -> InpcWrapper(fNotifier, options, defaultValue)
+        | None -> InpcWrapper(fNotifier,{FComparerOpt=None; FDisplayNameOpt=None; FDebugStringifyOpt=None}, defaultValue)
+    //let CreateInpc
 
     // sample class for the createInpc method above
     type InpcEventWrappedSample () =
