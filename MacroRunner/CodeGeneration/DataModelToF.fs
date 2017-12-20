@@ -76,15 +76,15 @@ module DataModelToF =
 
 
 
-    type SqlTableColumnChoiceItem = 
+    type SqlTableColumnChoiceItem =
         |SqlTableColumnMetaItem of ColumnDescription
         |ManualItem of ColumnInput
-        with 
-            member x.IsPrimaryKey = 
+        with
+            member x.IsPrimaryKey =
                 match x with
                 |SqlTableColumnMetaItem cd -> cd.IsPrimaryKey
                 |ManualItem x -> x.IsPrimaryKey
-            member x.Name = 
+            member x.Name =
                 match x with
                 | SqlTableColumnMetaItem cd -> cd.ColumnName
                 | ManualItem x -> x.Name
@@ -92,17 +92,17 @@ module DataModelToF =
                 match x with
                 | SqlTableColumnMetaItem cd -> cd.IsIdentity
                 | ManualItem x -> x.IsIdentity
-            member x.Nullable = 
+            member x.Nullable =
                 match x with
                 | SqlTableColumnMetaItem cd -> cd.Nullable
                 | ManualItem x -> match x.Nullability with Nullability.AllowNull -> true | _ -> false
             member x.Type =
-                match x with 
+                match x with
                 | SqlTableColumnMetaItem cd -> cd.Type
-                | ManualItem x -> 
+                | ManualItem x ->
                     match x.ColumnType with
                     | Bit -> "bit"
-                    | StringMax 
+                    | StringMax
                     | StringColumn _ -> "varchar"
                     | Custom x -> x
                     | DateTimeColumn -> "datetime"
@@ -110,10 +110,10 @@ module DataModelToF =
                     | Floater _ -> "float"
                     | IntColumn
                     | IdentityColumn -> "int"
-                    | NStringMax 
+                    | NStringMax
                     | NStringColumn _ -> "nvarchar"
                     | UniqueIdentifier -> "uniqueidentifier"
-            static member MapSqlType measureText useOptions (x:SqlTableColumnChoiceItem)= 
+            static member MapSqlType measureText useOptions (x:SqlTableColumnChoiceItem)=
                 // take the sql type and give back what .net type we're using
                 let type' = x.Type
                 let nullable = x.Nullable
@@ -136,20 +136,20 @@ module DataModelToF =
                     |_ -> if isNull type' then String.Empty else type'
 
 
-    type SqlTableColumnChoice = 
+    type SqlTableColumnChoice =
         | SqlTableColumnMeta of ColumnDescription list
         | Manual of ColumnInput list
-        with 
-            member x.Length = 
+        with
+            member x.Length =
                 x |> function
                     | Manual x -> x.Length
                     | SqlTableColumnMeta x -> x.Length
-            member x.Destructure() = 
+            member x.Destructure() =
                 x
                 |> function
                     | Manual x -> x |> List.map (ManualItem)
                     | SqlTableColumnMeta x -> x |> List.map (SqlTableColumnMetaItem)
-               
+
     let generateColumnComment =
         function
         | SqlTableColumnMetaItem cd ->
@@ -165,7 +165,7 @@ module DataModelToF =
             typeName,suffixes,nullability,cd.Length
         | ManualItem x ->
             let typeName = sprintf "%A" x.ColumnType
-            let suffixes = 
+            let suffixes =
                 [
                     if x.IsIdentity then
                         yield "identity"
@@ -173,13 +173,13 @@ module DataModelToF =
                         yield "primaryKey"
                 ]
             let nullability = match x.Nullability with | AllowNull -> "null" | _ -> "not null"
-            let length = 
+            let length =
                 match x.ColumnType with
                 |ColumnTyping.StringColumn x -> x
                 |ColumnTyping.NStringColumn x -> x
                 | _ -> 0
             typeName,suffixes, nullability,length
-                
+
         >> fun (typeName,suffixes,nullability,length) ->
         //let identity = if cd.IsIdentity then " identity" else String.Empty
             let suffix = if suffixes |> Seq.any then suffixes |> delimit " " |> (+) " " else String.Empty
@@ -244,12 +244,12 @@ module DataModelToF =
         // - a record that is fully nullable so that all fields can indicate if a value was provided (in cases where the default value has a meaning like set the value to null)
         // - something that always uses options, instead of allowing nullables?
         // - something without the pk?
-        let columns = 
+        let columns =
             columns.Destructure()
             |> fun columns ->
-                if generateValueRecord then 
-                    columns 
-                    |> Seq.filter(fun cd -> not cd.IsPrimaryKey) 
+                if generateValueRecord then
+                    columns
+                    |> Seq.filter(fun cd -> not cd.IsPrimaryKey)
                     |> List.ofSeq else columns
 
         let recordTypeName = if generateValueRecord then sprintf "type %sValueRecord" typeName else sprintf "type %sRecord" typeName
@@ -263,7 +263,7 @@ module DataModelToF =
         appendLine 1 "{"
 
         columns
-        |> Seq.iter (fun x -> 
+        |> Seq.iter (fun x ->
             appendLine 1 <| generateColumnComment x
             let mt = fMeasure x.Name
             let mapped = SqlTableColumnChoiceItem.MapSqlType mt useOptions x
@@ -337,12 +337,12 @@ module DataModelToF =
 
     let generateCreateSqlInsertTextMethod appendLine useOptions typeName schemaName tableName fMeasure (columns:SqlTableColumnChoice) =
         let columns = columns.Destructure()
-        let canDoInsert = 
-            columns 
+        let canDoInsert =
+            columns
             |> Seq.exists(
                 function
-                    | ManualItem x -> 
-                        match x.ColumnType with 
+                    | ManualItem x ->
+                        match x.ColumnType with
                         | Bit
                         | IntColumn
                         | IdentityColumn
@@ -356,7 +356,7 @@ module DataModelToF =
                         | UniqueIdentifier -> false
                         | _ -> true
                     | SqlTableColumnChoiceItem.SqlTableColumnMetaItem cd -> cd.Type = "image" || cd.Type = "byte[]"
-            ) 
+            )
             |> not
         if canDoInsert then
             appendLine 0 String.Empty
@@ -375,23 +375,23 @@ module DataModelToF =
                 |> appendLine 1
             let insertMethodName = if hasIdentity then "createInsertReturnIdentity" else "createInsert"
             appendLine 1 <| sprintf "let %s blacklist (r:I%s) =" insertMethodName typeName
-            let needsQuoted = 
+            let needsQuoted =
                 function
-                | ManualItem x -> 
+                | ManualItem x ->
                     if x.ColumnType.NeedsQuoted then
                         Some  (sprintf "%A" x.ColumnType)
                     else None
 
                 | SqlTableColumnMetaItem c ->
-                    ["varchar"; "char"; "nvarchar"; "nchar";"datetime";"xml";"datetime2"] 
-                    |> Seq.tryFind (fun n -> 
-                        match c.Type with 
+                    ["varchar"; "char"; "nvarchar"; "nchar";"datetime";"xml";"datetime2"]
+                    |> Seq.tryFind (fun n ->
+                        match c.Type with
                         |IsTrue (containsI n) -> true
                         | _ -> false
                     )
 
-            columns 
-            |> Seq.filter (fun cd -> not cd.IsIdentity) 
+            columns
+            |> Seq.filter (fun cd -> not cd.IsIdentity)
             |> Seq.choose needsQuoted
             |> Seq.tryHead
             |> function
@@ -599,7 +599,7 @@ module DataModelToF =
         |> printfn "%s"
         appendLine String.Empty
         let fGenerated =
-            function 
+            function
             |Unhappy(ti,ex) -> Unhappy(ti,ex)
             |Happy (ti, typeName, pks,columns,identities) ->
                 let result = Happy {TI=ti; TypeName= typeName; PrimaryKeys=pks; Identities=identities; Columns=SqlTableColumnChoice.SqlTableColumnMeta columns}
@@ -798,7 +798,7 @@ module DataModelToF =
         )
 
         appendEmpty()
-        getSqlMeta appendLine cgsm tables 
+        getSqlMeta appendLine cgsm tables
         |> Seq.iter ( fun result ->
             match result, fMetaFallbackOpt with
             | Happy (sqlTableMeta), _ ->
@@ -823,7 +823,7 @@ module DataModelToF =
                             |> Seq.map (fun cd ->
                                 if sqlTableMeta.Identities |> Seq.exists (stringEqualsI cd.ColumnName) then
                                     {cd with IsIdentity = true}
-                                else 
+                                else
                                     cd
                             )
                             |> Seq.map (fun cd ->
@@ -839,7 +839,7 @@ module DataModelToF =
                             |> List.ofSeq
                             |> SqlTableColumnChoice.Manual
 
-                //if sqlTableMeta.TI.Name = "Account" then 
+                //if sqlTableMeta.TI.Name = "Account" then
                 //    Debugger.Launch() |> ignore
 
                 let getMeasureType (columnName) =
@@ -847,16 +847,16 @@ module DataModelToF =
                         |> Seq.tryFind (fun m -> cgsm.MeasuresBlacklist |> Seq.contains columnName |> not && containsI m columnName)
                         |> Option.getOrDefault null
 
-                let columns = 
-                    columns 
-                    |> function 
+                let columns =
+                    columns
+                    |> function
                     | SqlTableColumnMeta items -> items|> List.sortBy(fun cd -> cd.ColumnName) |> SqlTableColumnMeta
                     | SqlTableColumnChoice.Manual items -> items |> List.sortBy(fun x -> x.Name) |> SqlTableColumnChoice.Manual
                 columns
                 |> function
-                    | SqlTableColumnMeta items -> 
+                    | SqlTableColumnMeta items ->
                         items |> Seq.map (fun cd -> cd.ColumnName)
-                    | SqlTableColumnChoice.Manual items -> 
+                    | SqlTableColumnChoice.Manual items ->
                         items |> Seq.map (fun c -> c.Name )
                     |> Seq.map (fun name ->
                         match getMeasureType name with
@@ -891,7 +891,7 @@ module DataModelToF =
                 | None -> ()
                 | Some f ->
                     columns
-                    |> function 
+                    |> function
                         | SqlTableColumnChoice.SqlTableColumnMeta items ->
                             items |> Seq.map (fun cd -> cd.ColumnName)
                         | SqlTableColumnChoice.Manual items ->
@@ -922,7 +922,7 @@ module DataModelToF =
 
                 manager.EndBlock()
             ))
-            
+
 
 //    // purpose: make an alias to the 'generate' method that is more C# friendly
 //    // would having C# to construct the type directly with null values in the delegates, then letting this translate only those be a better option?
