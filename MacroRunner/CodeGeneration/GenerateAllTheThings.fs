@@ -138,12 +138,10 @@ let generateCode generatorId cgsm manager sb mappedTables =
             |> List.map(fun x -> x.TI, getGenMapItem x, x)
             |> List.iter(
                 function // need tableIdentifier and column props
-                | ti, _, {SqlTableMeta.Columns=Manual columns}
-                | ti, Detailed {Columns=columns}, _ ->
-                    ti, columns |> List.map mapColumnInput
-                    //ti, stcm |> List.map(fun (c:ColumnDescription) -> PropSource.Custom (c.ColumnName,c.Nullable, c.Type) )
                 | ti, _, {Columns=SqlTableColumnMeta stcm} ->
                     ti, stcm |> List.map(fun c -> PropSource.Custom(c.ColumnName, c.Nullable, c.Type))
+                | ti, _, {SqlTableMeta.Columns=Manual columns}
+                | ti, Detailed {Columns=columns}, _ -> ti, columns |> List.map mapColumnInput
                 >> fun (ti, columns) -> ti, columns |> List.filter (fun c -> fIncludeColumn ti.Name c.Name)
                 >> fun (tid,c) -> GenerateJS.TypeScript.generateInterface ((if tid.Schema = "dbo" then String.Empty else tid.Schema) + tid.Name) String.Empty "  " c
                 >> (fun text ->

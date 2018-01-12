@@ -85,6 +85,8 @@ module TypeScript =
             "number"
         | TypeOf(isType:DateTime)-> "Date"
         | TypeOf(isType:string) -> "string"
+        | TypeOf(isType:Boolean) -> "boolean"
+
         | t -> t.Name
 
     let mapTypeIsh =
@@ -106,6 +108,7 @@ module TypeScript =
         | "datetime" -> typeof<DateTime> |> Choice1Of2
         | "boolean"
         | "Boolean"
+        | "Bit"
         | "bit" -> typeof<bool> |> Choice1Of2
         | x -> Choice2Of2 x
 
