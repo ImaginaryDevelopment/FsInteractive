@@ -714,7 +714,7 @@ module DataModelToF =
                 |> appendLine 1
             ()
 
-    let generateSprocComponent cn targetNamespace appendLine (ssm:CodeGenSprocSettingMap) =
+    let generateSprocComponent cn targetNamespace appendLine (ssm:CodeGenSprocSettingMap) (startSprocFile:unit -> IDisposable) =
         let sprocs =
             cn |> getSqlSprocs |> Seq.sortBy (fun sp -> sp.SpecificCatalog, sp.SpecificSchema, sp.SpecificName)
             |> Seq.filter(fun sp ->
@@ -726,10 +726,11 @@ module DataModelToF =
         if sprocs.Length < 1 then
             ()
         else
-            // this would go into the default block, not a specific and we aren't currently capturing the default block to anywhere
+            // goes into the default block, not a specific
             sprocs |> Seq.iter (fun sp ->
-                printfn "%s.%s.%s" sp.SpecificCatalog sp.SpecificSchema sp.SpecificName
+                appendLine 1 <| sprintf "%s.%s.%s" sp.SpecificCatalog sp.SpecificSchema sp.SpecificName
             )
+            use __ = startSprocFile() // start the specific sproc file
             if sprocs.Length > 0 && not <| (sprocs |> Seq.forall(fun sp -> sp.SpecificCatalog = sprocs.[0].SpecificCatalog)) then
                 failwithf "Multiple catalogs not expected"
             // consider: having this generated after the tables, and using the generated types to map sprocs that match table shapes to accept type records as arguments instead
@@ -789,14 +790,19 @@ module DataModelToF =
         |> Option.iter (fun ssm ->
             appendEmpty()
             appendLine "Sprocs"
-            match targetProjectFolder with
-            | Some x -> Path.Combine(x, "Sprocs.generated.fs")
-            | None -> "Sprocs.generated.fs"
-            |> manager.StartNewFile
+            let fStartSprocFile () =
+                match targetProjectFolder with
+                    | Some x -> Path.Combine(x, "Sprocs.generated.fs")
+                    | None -> "Sprocs.generated.fs"
+                |> manager.StartNewFile
 
-            generateSprocComponent (Connector.CreateCString cgsm.CString) cgsm.TargetNamespace appendLine' ssm
+                {
+                    new IDisposable with
+                        member __.Dispose() = manager.EndBlock()
+                }
 
-            manager.EndBlock()
+            generateSprocComponent (Connector.CreateCString cgsm.CString) cgsm.TargetNamespace appendLine' ssm fStartSprocFile
+
         )
 
         appendEmpty()
