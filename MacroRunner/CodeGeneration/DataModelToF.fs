@@ -723,28 +723,30 @@ module DataModelToF =
             |> List.ofSeq
 
         printfn "Sprocs! %i" sprocs.Length
-
-        // this would go into the default block, not a specific and we aren't currently capturing the default block to anywhere
-        sprocs |> Seq.iter (fun sp ->
-            printfn "%s.%s.%s" sp.SpecificCatalog sp.SpecificSchema sp.SpecificName
-        )
-        if sprocs.Length > 0 && not <| (sprocs |> Seq.forall(fun sp -> sp.SpecificCatalog = sprocs.[0].SpecificCatalog)) then
-            failwithf "Multiple catalogs not expected"
-        // consider: having this generated after the tables, and using the generated types to map sprocs that match table shapes to accept type records as arguments instead
-        appendLine 0 <| sprintf "module %s.%s" targetNamespace "StoredProcedures"
-        appendLine 0 "open System"
-        sprocs
-        |> Seq.groupBy (fun sp -> sp.SpecificSchema)
-        |> Seq.iter (fun (schema, schemaSprocs) ->
-            appendLine 0 <| sprintf "module %s = " (toPascalCase schema)
-            schemaSprocs |> Seq.iter(fun sp ->
-                // the next line is at least partially because there is no nameof operator, but also, because even if there were, sprocNames wouldn't be somewhere you could use it
-                appendLine 1 <| sprintf "let %s = \"%s\"" sp.SpecificName sp.SpecificName
-                if ssm.SprocInputMapBlacklist |> Seq.exists (fun x -> x = sp.SpecificName || x = (sprintf "%s.%s" sp.SpecificSchema sp.SpecificName)) |> not then
-                    mapSprocParams cn appendLine sp
+        if sprocs.Length < 1 then
+            ()
+        else
+            // this would go into the default block, not a specific and we aren't currently capturing the default block to anywhere
+            sprocs |> Seq.iter (fun sp ->
+                printfn "%s.%s.%s" sp.SpecificCatalog sp.SpecificSchema sp.SpecificName
             )
+            if sprocs.Length > 0 && not <| (sprocs |> Seq.forall(fun sp -> sp.SpecificCatalog = sprocs.[0].SpecificCatalog)) then
+                failwithf "Multiple catalogs not expected"
+            // consider: having this generated after the tables, and using the generated types to map sprocs that match table shapes to accept type records as arguments instead
+            appendLine 0 <| sprintf "module %s.%s" targetNamespace "StoredProcedures"
+            appendLine 0 "open System"
+            sprocs
+            |> Seq.groupBy (fun sp -> sp.SpecificSchema)
+            |> Seq.iter (fun (schema, schemaSprocs) ->
+                appendLine 0 <| sprintf "module %s = " (toPascalCase schema)
+                schemaSprocs |> Seq.iter(fun sp ->
+                    // the next line is at least partially because there is no nameof operator, but also, because even if there were, sprocNames wouldn't be somewhere you could use it
+                    appendLine 1 <| sprintf "let %s = \"%s\"" sp.SpecificName sp.SpecificName
+                    if ssm.SprocInputMapBlacklist |> Seq.exists (fun x -> x = sp.SpecificName || x = (sprintf "%s.%s" sp.SpecificSchema sp.SpecificName)) |> not then
+                        mapSprocParams cn appendLine sp
+                )
 
-        )
+            )
     let generate generatorId (fMetaFallbackOpt) (cgsm:CodeGenSettingMap) (manager:MacroRunner.MultipleOutputHelper.IManager, generationEnvironment:StringBuilder, tables:TableIdentifier seq) =
 
         log(sprintf "DataModelToF.generate:cgsm:%A" cgsm)

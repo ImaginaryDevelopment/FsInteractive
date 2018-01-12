@@ -88,7 +88,7 @@ type DteGenWrapper(dte:EnvDTE.DTE) =
         |> Seq.tryFind(fun p -> p.Name.Value = targetSqlProjectName)
         |> function
             | Some p -> p
-            | None -> failwithf "did not find project, names were %A" (projects |> Seq.map (fun p -> p.Name) |> List.ofSeq)
+            | None -> failwithf "did not find project %s, names were %A" targetSqlProjectName (projects |> Seq.map (fun p -> p.Name) |> List.ofSeq)
     interface IGenWrapper with
         member x.GetProjects() = upcast x.GetProjects()
         member x.GetTargetSqlProjectFolder targetSqlProjectName = x.GetTargetSqlProjectFolder targetSqlProjectName
@@ -109,13 +109,14 @@ let runGeneration generatorId (sb: System.Text.StringBuilder) (dte: IGenWrapper)
 
     let genMapped =
         toGen
+        |> Seq.filter(fun t -> t.SqlItems.Length > 0)
         |> Seq.map (fun t ->
             let targetSqlProject =
                 projects
                 |> Seq.tryFind (fun p -> p.Name.Value = t.TargetSqlProjectName)
                 |> function
                     | Some p -> p
-                    | None -> failwithf "did not find project, names were %A" (projects |> Seq.map (fun p -> p.Name) |> List.ofSeq)
+                    | None -> failwithf "did not find project %s, names were %A for %A sqlItems" t.TargetSqlProjectName (projects |> Seq.map (fun p -> p.Name) |> List.ofSeq) (t.SqlItems.Length)
 
             let targetSqlProjectFolder = Path.GetDirectoryName targetSqlProject.FullName.Value
             printfn "Going to generate into project %s via folder %s" targetSqlProject.Name.Value targetSqlProjectFolder
@@ -134,22 +135,22 @@ let runGeneration generatorId (sb: System.Text.StringBuilder) (dte: IGenWrapper)
     let info = BReusable.Reflection.Assemblies.getAssemblyFullPath(codeGenAsm)
     let fileInfo = new IO.FileInfo(info)
     sb |> appendLine (sprintf "Using CodeGeneration.dll from %O" fileInfo.LastWriteTime) |> ignore
-    genMapped
-    |> Seq.collect (fun (targetSqlProjectFolder,sgi,items) ->
-        SqlMeta.generateTablesAndReferenceTables(manager, sb, Some targetSqlProjectFolder, items)
-        match sgi.InsertionConfig with
-        | Some ic ->
-            SqlMeta.generateInserts
-                (fun s -> appendLine s sb |> ignore)
-                manager
-                targetSqlProjectFolder
-                items ic
-        | None -> ()
-        let result =
-            (dataModelOnlyItems
-            |> List.map DataModelOnly)@(items |> List.map GenMapTableItem.Detailed)
-        result
-    )
+    let detailed = 
+        genMapped
+        |> Seq.collect (fun (targetSqlProjectFolder,sgi,items) ->
+            SqlMeta.generateTablesAndReferenceTables(manager, sb, Some targetSqlProjectFolder, items)
+            match sgi.InsertionConfig with
+            | Some ic ->
+                SqlMeta.generateInserts
+                    (fun s -> appendLine s sb |> ignore)
+                    manager
+                    targetSqlProjectFolder
+                    items ic
+            | None -> ()
+            items
+        )
+        |> List.ofSeq
+    (dataModelOnlyItems|> List.map DataModelOnly)@(detailed |> List.map GenMapTableItem.Detailed)
     |> Seq.filter (
         function
         | DataModelOnly ti -> ti
