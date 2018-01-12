@@ -91,10 +91,23 @@ module TypeScript =
         function
         | MaybeIsh t ->
             mapType t
-            |> sprintf "?:%s" 
+            |> sprintf "?:%s"
         | t -> 
             mapType t
             |> sprintf ":%s"
+    let mapTypeText =
+        function
+        | "int" -> typeof<int> |> Choice1Of2
+        | "float" -> typeof<float> |> Choice1Of2
+        | "decimal" -> typeof<decimal> |> Choice1Of2
+        | "nchar"
+        | "varchar" -> typeof<string> |> Choice1Of2
+        | "date"
+        | "datetime" -> typeof<DateTime> |> Choice1Of2
+        | "boolean"
+        | "Boolean"
+        | "bit" -> typeof<bool> |> Choice1Of2
+        | x -> Choice2Of2 x
 
     type NamedProp = { Name:string; Type:Type}
     type PropSource = | SimpleNamed of NamedProp | Custom of name:string*isOptional:Boolean*typeText:string
@@ -105,12 +118,17 @@ module TypeScript =
             mapTypeIsh t
             |> sprintf "%s%s" name
         |Custom (n,isOp,t) ->
-            sprintf "%s%s:%s" n (if isOp then "?" else String.Empty) t
+            mapTypeText t
+            |> function
+                | Choice1Of2 t -> mapTypeIsh t
+                | Choice2Of2 x -> x
+            |> sprintf "%s%s%s" n (if isOp then "?" else String.Empty) 
 
     // does not handle complex types (interface/object child properties)
     let generateInterface name interfaceIndent addlIndentForMembers props =
+        printfn "Generating type %s" name
         props
         |> Seq.map generateProp
-        |> Seq.map(sprintf "%s%s%s" interfaceIndent addlIndentForMembers)
+        |> Seq.map(sprintf "%s%s%s;" interfaceIndent addlIndentForMembers)
         |> delimit "\r\n"
         |> fun x -> sprintf "%sinterface %s {\r\n%s\r\n%s}" interfaceIndent name x interfaceIndent

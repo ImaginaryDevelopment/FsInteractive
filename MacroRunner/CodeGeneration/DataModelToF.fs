@@ -38,6 +38,7 @@ module DataModelToF =
     type TypeScriptGenSettingMap = {
         TargetProjectName:string
         ColumnBlacklist:Map<string, string Set>
+        TargetFolderOpt: string option
     }
     type CodeGenSettingMap = {
         TargetProjectName:string

@@ -115,6 +115,8 @@ let generateCode generatorId cgsm manager sb mappedTables =
             ))
             cgsm
             (manager, sb, mappedTables |> List.map GenMapTableItem.GetTI)
+        // why do we need this, it shouldn't happen I'd think?
+        |> List.distinctBy(fun x -> x.TI)
     let getGenMapItem x = mappedTables |> List.find(GenMapTableItem.GetTI >> (=) x.TI)
     let mapColumnInput (c:ColumnInput) = PropSource.Custom(c.Name, c.Nullability.IsNullable, c.ColumnType.ToString())
 
@@ -127,6 +129,7 @@ let generateCode generatorId cgsm manager sb mappedTables =
                 manager.DteWrapperOpt |> Option.map (fun dte -> dte.GetProjects())
                 |> Option.map (Seq.find (fun p -> p.GetName() = tsgsm.TargetProjectName))
                 |> Option.map (fun tp -> tp.GetFullName() |> Path.GetDirectoryName)
+                |> Option.map (fun fp -> match tsgsm.TargetFolderOpt with | Some x -> Path.Combine(fp,x) | None -> fp)
                 |> function
                     | Some tpf -> tpf
                     | None -> failwithf "Could not locate ts target %A" tsgsm.TargetProjectName
