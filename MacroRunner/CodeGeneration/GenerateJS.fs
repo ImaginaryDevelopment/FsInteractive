@@ -111,6 +111,10 @@ module TypeScript =
 
     type NamedProp = { Name:string; Type:Type}
     type PropSource = | SimpleNamed of NamedProp | Custom of name:string*isOptional:Boolean*typeText:string
+        with member x.Name =
+                match x with
+                | SimpleNamed {Name=n} -> n
+                | Custom (n,_,_) -> n
 
     let generateProp =
         function

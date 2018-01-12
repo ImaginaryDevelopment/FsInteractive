@@ -119,7 +119,7 @@ let generateCode generatorId cgsm manager sb mappedTables =
         |> List.distinctBy(fun x -> x.TI)
     let getGenMapItem x = mappedTables |> List.find(GenMapTableItem.GetTI >> (=) x.TI)
     let mapColumnInput (c:ColumnInput) = PropSource.Custom(c.Name, c.Nullability.IsNullable, c.ColumnType.ToString())
-
+    let fIncludeColumn tableName columnName : bool = isNull (box cgsm.ColumnBlacklist) || cgsm.ColumnBlacklist |> Map.containsKey tableName |> not || cgsm.ColumnBlacklist.[tableName] |> Seq.contains columnName |> not
     cgsm.TypeScriptGenSettingMap
     |> Option.iter(fun tsgsm ->
         match meta with
@@ -138,13 +138,13 @@ let generateCode generatorId cgsm manager sb mappedTables =
             |> List.map(fun x -> x.TI, getGenMapItem x, x)
             |> List.iter(
                 function // need tableIdentifier and column props
-                | ti, Detailed d, _ ->
-                    ti, d.Columns |> List.map mapColumnInput
+                | ti, _, {SqlTableMeta.Columns=Manual columns}
+                | ti, Detailed {Columns=columns}, _ ->
+                    ti, columns |> List.map mapColumnInput
                     //ti, stcm |> List.map(fun (c:ColumnDescription) -> PropSource.Custom (c.ColumnName,c.Nullable, c.Type) )
-                | ti, _, ({Columns=SqlTableColumnMeta stcm} as stm) ->
+                | ti, _, {Columns=SqlTableColumnMeta stcm} ->
                     ti, stcm |> List.map(fun c -> PropSource.Custom(c.ColumnName, c.Nullable, c.Type))
-                | ti, _, ({SqlTableMeta.Columns=Manual stcm} as stm) ->
-                    ti, stcm |> List.map mapColumnInput
+                >> fun (ti, columns) -> ti, columns |> List.filter (fun c -> fIncludeColumn ti.Name c.Name)
                 >> fun (tid,c) -> GenerateJS.TypeScript.generateInterface ((if tid.Schema = "dbo" then String.Empty else tid.Schema) + tid.Name) String.Empty "  " c
                 >> (fun text ->
                     sb.AppendLine(text) |> ignore
