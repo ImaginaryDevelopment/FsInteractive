@@ -15,6 +15,7 @@ open CodeGeneration.SqlMeta.ColumnTyping
 
 open CodeGeneration.DataModelToF
 open BReusable.StringHelpers
+open CodeGeneration.GenerateJS.TypeScript
 
 
 let failing s=
@@ -66,7 +67,7 @@ type ProjectWrapper internal (p:EnvDTE.Project) =
     let tryGet f =
         try
             f p |> Some
-        with ex -> 
+        with ex ->
             System.Diagnostics.Debug.WriteLine(sprintf "%A" ex)
             None
     member __.Name = tryGet (fun p -> p.Name)
@@ -93,6 +94,62 @@ type DteGenWrapper(dte:EnvDTE.DTE) =
         member x.GetProjects() = upcast x.GetProjects()
         member x.GetTargetSqlProjectFolder targetSqlProjectName = x.GetTargetSqlProjectFolder targetSqlProjectName
 
+let generateCode generatorId cgsm manager sb mappedTables =
+    let meta =
+        DataModelToF.generate generatorId
+            (Some (fun ti (_exn:exn) ->
+                mappedTables
+                |> Seq.find(function | Detailed details -> details.Id = ti | DataModelOnly dmTI -> dmTI = ti)
+                |> function
+                    |Detailed details ->
+                        // this is what should be happening on the main path too
+                        {   SqlTableMeta.TI = details.Id
+                            TypeName=cgsm.Singularize details.Id.Name
+                            PrimaryKeys=details.Columns |> Seq.choose (fun c -> if c.IsPrimaryKey then Some c.Name else None) |> Set.ofSeq
+                            Identities= details.Columns |> Seq.choose (fun c -> if c.IsIdentity then Some c.Name else None) |> Set.ofSeq
+                            Columns= SqlTableColumnChoice.Manual details.Columns
+                        }
+                        |> Some
+                    | DataModelOnly _dmInput ->
+                        None
+            ))
+            cgsm
+            (manager, sb, mappedTables |> List.map GenMapTableItem.GetTI)
+    let getGenMapItem x = mappedTables |> List.find(GenMapTableItem.GetTI >> (=) x.TI)
+    let mapColumnInput (c:ColumnInput) = PropSource.Custom(c.Name, c.Nullability.IsNullable, c.ColumnType.ToString())
+
+    cgsm.TypeScriptGenSettingMap
+    |> Option.iter(fun tsgsm ->
+        match meta with
+        | [] -> ()
+        | tableMeta ->
+            let targetProjectFolder =
+                manager.DteWrapperOpt |> Option.map (fun dte -> dte.GetProjects())
+                |> Option.map (Seq.find (fun p -> p.GetName() = tsgsm.TargetProjectName))
+                |> Option.map (fun tp -> tp.GetFullName() |> Path.GetDirectoryName)
+                |> function
+                    | Some tpf -> tpf
+                    | None -> failwithf "Could not locate ts target %A" tsgsm.TargetProjectName
+            manager.StartNewFile (Path.Combine(targetProjectFolder, "generated.ts"))
+            meta
+            |> List.map(fun x -> x.TI, getGenMapItem x, x)
+            |> List.iter(
+                function // need tableIdentifier and column props
+                | ti, Detailed d, _ ->
+                    ti, d.Columns |> List.map mapColumnInput
+                    //ti, stcm |> List.map(fun (c:ColumnDescription) -> PropSource.Custom (c.ColumnName,c.Nullable, c.Type) )
+                | ti, _, ({Columns=SqlTableColumnMeta stcm} as stm) ->
+                    ti, stcm |> List.map(fun c -> PropSource.Custom(c.ColumnName, c.Nullable, c.Type))
+                | ti, _, ({SqlTableMeta.Columns=Manual stcm} as stm) ->
+                    ti, stcm |> List.map mapColumnInput
+                >> fun (tid,c) -> GenerateJS.TypeScript.generateInterface ((if tid.Schema = "dbo" then String.Empty else tid.Schema) + tid.Name) String.Empty "  " c
+                >> (fun text ->
+                    sb.AppendLine(text) |> ignore
+                )
+            )
+            manager.EndBlock()
+            ()
+    )
 /// generatorId something to identify the generator with, in the .tt days it was the DefaultProjectNamespace the .tt was running from.
 let runGeneration generatorId (sb: System.Text.StringBuilder) (dte: IGenWrapper) manager (cgsm: CodeGeneration.DataModelToF.CodeGenSettingMap) toGen (dataModelOnlyItems: TableIdentifier list) =
 
@@ -133,9 +190,9 @@ let runGeneration generatorId (sb: System.Text.StringBuilder) (dte: IGenWrapper)
 
     let codeGenAsm = typeof<CodeGeneration.SqlScriptGeneration.SqlObj>.Assembly
     let info = BReusable.Reflection.Assemblies.getAssemblyFullPath(codeGenAsm)
-    let fileInfo = new IO.FileInfo(info)
+    let fileInfo = IO.FileInfo(info)
     sb |> appendLine (sprintf "Using CodeGeneration.dll from %O" fileInfo.LastWriteTime) |> ignore
-    let detailed = 
+    let detailed =
         genMapped
         |> Seq.collect (fun (targetSqlProjectFolder,sgi,items) ->
             SqlMeta.generateTablesAndReferenceTables(manager, sb, Some targetSqlProjectFolder, items)
@@ -156,31 +213,12 @@ let runGeneration generatorId (sb: System.Text.StringBuilder) (dte: IGenWrapper)
         | DataModelOnly ti -> ti
         | Detailed details -> details.Id
         >> (fun x ->
-        not <| cgsm.TypeGenerationBlacklist.Contains x.Name && 
+        not <| cgsm.TypeGenerationBlacklist.Contains x.Name &&
             not <| cgsm.TypeGenerationBlacklist.Contains (sprintf "%s.%s" x.Schema x.Name)
         )
     )
     |> List.ofSeq
-    |> fun mappedTables ->
-        DataModelToF.generate generatorId
-            (Some (fun ti (_exn:exn) ->
-                mappedTables
-                |> Seq.find(function | Detailed details -> details.Id = ti | DataModelOnly dmTI -> dmTI = ti)
-                |> function
-                    |Detailed details ->
-                        // this is what should be happening on the main path too
-                        {   SqlTableMeta.TI = details.Id
-                            TypeName=cgsm.Singularize details.Id.Name
-                            PrimaryKeys=details.Columns |> Seq.choose (fun c -> if c.IsPrimaryKey then Some c.Name else None) |> Set.ofSeq
-                            Identities= details.Columns |> Seq.choose (fun c -> if c.IsIdentity then Some c.Name else None) |> Set.ofSeq
-                            Columns= SqlTableColumnChoice.Manual details.Columns
-                        }
-                        |> Some
-                    | DataModelOnly _dmInput ->
-                        None
-            ))
-            cgsm
-            (manager, sb, mappedTables |> List.map GenMapTableItem.GetTI)
+    |> generateCode generatorId cgsm manager sb
 
 let sb = System.Text.StringBuilder()
 let appendLine text (sb:System.Text.StringBuilder) =

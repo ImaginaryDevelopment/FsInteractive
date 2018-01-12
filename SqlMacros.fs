@@ -11,7 +11,7 @@ type FKeyIdentifier = {Table: TableIdentifier; Column:string}
 type ColumnLength = |Max | Length of int
 type DecimalInfo = {Precision:int; Scale:int}
 
-type SqlColumnType = 
+type SqlColumnType =
     |Decimal of DecimalInfo option
     |VarChar of ColumnLength
     |NVarChar of ColumnLength
@@ -19,17 +19,18 @@ type SqlColumnType =
     |NChar of ColumnLength
     |Other of Type
 
-type Nullability = 
+type Nullability =
     | AllowNull
     | NotNull
     | PrimaryKey
+    with member x.IsNullable = match x with |AllowNull -> true | _ -> false
 type Uniqueness =
     | Unique
     | NotUnique
 
-type ColumnInfo = 
+type ColumnInfo =
     { 
-        Name:string; 
+        Name:string
         SqlType:SqlColumnType
         AllowNull:Nullability
         Attributes: string list
@@ -37,7 +38,7 @@ type ColumnInfo =
         FKeyOpt:FKeyIdentifier option
     }
     with
-        static member Zero ct = 
+        static member Zero ct =
             {Name=null; SqlType = ct; AllowNull = NotNull;IsUnique=Uniqueness.NotUnique; Attributes = List.empty; FKeyOpt = None}
 type TableInfo = { Id:TableIdentifier; Columns: ColumnInfo list}
 // ColumnInfo looks superior to this, but perhaps this shape is needed somewhere specific
@@ -73,16 +74,16 @@ module Strict =
     type ObjectManager = {R:ObjectReference; Add: string; Drop: string; ObjectId:int}
 
 
-let dbNullToOption (x:obj) : obj option= 
-        if System.DBNull.Value.Equals x then 
+let dbNullToOption (x:obj) : obj option=
+        if System.DBNull.Value.Equals x then
             None
         else Some x
 
 module Seq = 
     open System.Data
     // requires f instead of just turning r into a Seq, to help guard/remind that typically, the source is:  one way, one iteration limited
-    let unfoldRows f (r:IDataReader) = 
-        r |> Seq.unfold(fun r -> 
+    let unfoldRows f (r:IDataReader) =
+        r |> Seq.unfold(fun r ->
             if r.Read() then
                 Some(r :> IDataRecord, r)
             else None
@@ -102,7 +103,7 @@ let getTableData cn (tableIdentifier:TableIdentifier) =
             raise ex
 
     r.NextResult() |> Debug.Assert // ignore the first table
-    let columns = 
+    let columns =
         r
         |> Seq.unfoldRows (fun r ->
             let columnName = r.["Column_name"] |> string
@@ -115,7 +116,7 @@ let getTableData cn (tableIdentifier:TableIdentifier) =
 
     r.NextResult() |> Debug.Assert
 
-    let identities = 
+    let identities =
         r
         |> Seq.unfoldRows (fun r ->
             match r.["Seed"] |> dbNullToOption with

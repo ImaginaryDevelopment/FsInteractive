@@ -2,11 +2,11 @@
 
 open BReusable.Reflection
 open Macros.SqlMacros
-module TypeScript = 
+module TypeScript =
     open System
     open BReusable.StringHelpers
 
-    module Option = 
+    module Option =
         let ofBool =
             function
             | true -> Some()
@@ -50,8 +50,8 @@ module TypeScript =
         |> Option.ofBool
 
     // matches if the type is Option<_> or Nullable<_>
-    let(|MaybeIsh|_|) (x:Type) = 
-        if not x.IsGenericType then 
+    let(|MaybeIsh|_|) (x:Type) =
+        if not x.IsGenericType then
             None
         else
             if x.GenericTypeArguments.Length <> 1 then
@@ -60,19 +60,19 @@ module TypeScript =
                 Some x.GenericTypeArguments.[0]
             else None
 
-    let (|JSNumberish|_|) (x:Type) = 
+    let (|JSNumberish|_|) (x:Type) =
         match x with
         | JSNumber -> Some()
         | MaybeIsh JSNumber -> Some()
         | _ -> None
 
-    let (|Dateish|_|) x = 
+    let (|Dateish|_|) x =
         match x with
         | TypeOf (isType:DateTime) -> Some()
         | MaybeIsh(TypeOf(isType:DateTime)) -> Some()
         | _ -> None
 
-    let (|Number|Date|Bool|Obj|) = 
+    let (|Number|Date|Bool|Obj|) =
         function
         | JSNumberish -> Number
         | Dateish -> Date

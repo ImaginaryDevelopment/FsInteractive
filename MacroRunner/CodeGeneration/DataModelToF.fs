@@ -35,10 +35,14 @@ module DataModelToF =
         SprocInputMapBlacklist: string Set
         GenerateSprocInputRecords: bool
     }
-
+    type TypeScriptGenSettingMap = {
+        TargetProjectName:string
+        ColumnBlacklist:Map<string, string Set>
+    }
     type CodeGenSettingMap = {
         TargetProjectName:string
         TargetNamespace: string
+        TypeScriptGenSettingMap:TypeScriptGenSettingMap option
         CString:string
         UseOptionTypes:bool
         ColumnBlacklist:Map<string, string Set>
@@ -806,8 +810,9 @@ module DataModelToF =
         )
 
         appendEmpty()
-        getSqlMeta appendLine cgsm tables
-        |> Seq.iter ( fun result ->
+        let meta = getSqlMeta appendLine cgsm tables
+        meta
+        |> List.collect( fun result ->
             match result, fMetaFallbackOpt with
             | Happy (sqlTableMeta), _ ->
                 sqlTableMeta
@@ -929,7 +934,16 @@ module DataModelToF =
                 generateINotifyClass(tn, columns, appendLine', cgsm.UseOptionTypes)
 
                 manager.EndBlock()
-            ))
+            )
+            meta
+            |> List.choose(
+                function
+                |Happy x -> Some x
+                |Unhappy (ti,ex) -> 
+                    printfn "Bad time generating %s.%s exception: %A" ti.Schema ti.Name ex
+                    None
+            )
+        )
 
 
 //    // purpose: make an alias to the 'generate' method that is more C# friendly
@@ -943,6 +957,7 @@ module DataModelToF =
                         SprocSettingMap = sprocSettings |> Option.ofUnsafeNonNullable
                         AdditionalNamespaces= addlNamespaces |> Set.ofSeq
                         TargetNamespace=targetNamespace
+                        TypeScriptGenSettingMap = None
                         CString=cString
                         UseOptionTypes=useOptions
                         ColumnBlacklist = columnBlacklist
@@ -1104,6 +1119,7 @@ module GenerationSample =
             let cgsm = {
                 TargetProjectName= null
                 TargetNamespace="Pm.Schema"
+                TypeScriptGenSettingMap = None
                 CString=connectionString
                 UseOptionTypes=false
                 ColumnBlacklist = Map.empty
