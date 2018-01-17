@@ -89,6 +89,10 @@ type ColumnInput = {
             match x.ColumnType with 
             | IdentityColumn -> true
             | _ -> false
+        member x.IsComputed =
+            match x.Nullability with
+            | Computed a -> a
+            | _ -> false
 
 
 //type TableInfo = { Id:TableIdentifier; Columns: ColumnInfo list}

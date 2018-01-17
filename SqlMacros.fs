@@ -22,8 +22,9 @@ type SqlColumnType =
 type Nullability =
     | AllowNull
     | NotNull
+    | Computed of isNullable:bool
     | PrimaryKey
-    with member x.IsNullable = match x with |AllowNull -> true | _ -> false
+    with member x.IsNullable = match x with |AllowNull -> true |Computed a -> a | _ -> false
 type Uniqueness =
     | Unique
     | NotUnique
@@ -42,7 +43,7 @@ type ColumnInfo =
             {Name=null; SqlType = ct; AllowNull = NotNull;IsUnique=Uniqueness.NotUnique; Attributes = List.empty; FKeyOpt = None}
 type TableInfo = { Id:TableIdentifier; Columns: ColumnInfo list}
 // ColumnInfo looks superior to this, but perhaps this shape is needed somewhere specific
-type ColumnDescription = {ColumnName:string; Type:string; Length:int; Nullable:bool; IsPrimaryKey:bool; IsIdentity:bool}
+type ColumnDescription = {ColumnName:string; Type:string; Length:int; Nullable:bool; IsPrimaryKey:bool; IsIdentity:bool; IsComputed:bool}
 
 module Strict = 
     open BReusable.StringHelpers
@@ -108,10 +109,10 @@ let getTableData cn (tableIdentifier:TableIdentifier) =
         |> Seq.unfoldRows (fun r ->
             let columnName = r.["Column_name"] |> string
             let type' = r.["Type"] |> string
-            // var computed = r["Computed"];
+            let computed = r.["Computed"] |> string
             let length = Convert.ToInt32 r.["Length"]
             // var prec = r["Prec"];
-            {ColumnName=columnName; Type= type'; Length=length; Nullable = r.["Nullable"].ToString() ="yes"; IsIdentity = false; IsPrimaryKey = false}
+            {ColumnName=columnName; Type= type'; Length=length; Nullable = r.["Nullable"].ToString() ="yes"; IsIdentity = false; IsPrimaryKey = false; IsComputed = computed = "yes"}
         )
 
     r.NextResult() |> Debug.Assert

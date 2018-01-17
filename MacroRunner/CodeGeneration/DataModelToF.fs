@@ -97,6 +97,10 @@ module DataModelToF =
                 match x with
                 | SqlTableColumnMetaItem cd -> cd.IsIdentity
                 | ManualItem x -> x.IsIdentity
+            member x.IsComputed =
+                match x with
+                | SqlTableColumnMetaItem cd -> cd.IsComputed
+                | ManualItem x -> x.IsComputed
             member x.Nullable =
                 match x with
                 | SqlTableColumnMetaItem cd -> cd.Nullable
@@ -165,6 +169,8 @@ module DataModelToF =
                         yield "identity"
                     if cd.IsPrimaryKey then
                         yield "primaryKey"
+                    if cd.IsComputed then
+                        yield "computed"
                 ]
             let nullability = if cd.Nullable then "null" else "not null"
             typeName,suffixes,nullability,cd.Length
@@ -176,6 +182,8 @@ module DataModelToF =
                         yield "identity"
                     if x.IsPrimaryKey then
                         yield "primaryKey"
+                    if x.IsComputed then
+                        yield "computed"
                 ]
             let nullability = match x.Nullability with | AllowNull -> "null" | _ -> "not null"
             let length =
@@ -209,7 +217,7 @@ module DataModelToF =
             let measureText = fMeasure item.Name
             let mapped = SqlTableColumnChoiceItem.MapSqlType measureText interfaceGeneratorArgs.UseOptions item
 
-            appendLine 1 <| sprintf "abstract member %s:%s with get%s" item.Name mapped (if interfaceGeneratorArgs.Writeable then ",set" else String.Empty)
+            appendLine 1 <| sprintf "abstract member %s:%s with get%s" item.Name mapped (if interfaceGeneratorArgs.Writeable && not item.IsComputed then ",set" else String.Empty)
         )
 
         appendLine 0 String.Empty
@@ -257,6 +265,7 @@ module DataModelToF =
                     |> Seq.filter(fun cd -> not cd.IsPrimaryKey)
                     |> List.ofSeq else columns
 
+        // value record would omit the primary key (and computed columns?)
         let recordTypeName = if generateValueRecord then sprintf "type %sValueRecord" typeName else sprintf "type %sRecord" typeName
         appendLine 0 (generateTypeComment (Seq.length columns))
         if not useOptions then
@@ -285,7 +294,7 @@ module DataModelToF =
             )
 
         appendLine 0 String.Empty
-        appendLine 1 "static member Zero () = "
+        appendLine 1 "static member Zero () ="
         appendLine 2 "{"
 
         columns
@@ -365,19 +374,35 @@ module DataModelToF =
             |> not
         if canDoInsert then
             appendLine 0 String.Empty
-            // idea: put what running the .Zero() record against this function would generate in a comment
-            let insertStart = sprintf "insert into %s.%s(%s) values (%s)" schemaName tableName
+
+            let insertStart = sprintf "insert into %s.%s(%s) values" schemaName tableName
             let hasIdentity =
                 columns
                 |> Seq.exists (fun cd -> cd.IsIdentity)
-            columns
-            |> Seq.map (fun cd ->  cd.Name, SqlTableColumnChoiceItem.MapSqlType (fMeasure cd.Name) useOptions cd |> flip getDefaultValue null)
-            |> List.ofSeq
-            |> fun s -> s |> Seq.map fst, s |> Seq.map snd
-            |> fun (names,values) ->
-                insertStart (names |> delimit ",") (values |> delimit ",")
-                |> sprintf "//%s"
-                |> appendLine 1
+            // idea: put what running the .Zero() record against this function would generate in a comment
+            (
+                let mapDefaultRawValue handleQuoting (cd:SqlTableColumnChoiceItem) :string  =
+                    if cd.Nullable then "null"
+                    else
+                        match cd.Type.ToLower() with
+                        |"varchar" -> if handleQuoting then "''" else String.Empty
+                        |"bit"
+                        |"int" -> "0"
+                        | _ ->
+                            cd.Name
+                columns
+                |> Seq.filter(fun cd -> cd.IsComputed |> not)
+                |> Seq.map (fun cd ->  cd.Name, cd |> mapDefaultRawValue true)
+                |> List.ofSeq
+                |> fun s -> s |> Seq.map fst, s |> Seq.map snd
+                |> fun (names,values) ->
+                    insertStart (names |> delimit ",") 
+                    |> sprintf "// %s"
+                    |> appendLine 1
+                    (values |> delimit ",")
+                    |> sprintf "// (%s)"
+                    |> appendLine 1
+            )
             let insertMethodName = if hasIdentity then "createInsertReturnIdentity" else "createInsert"
             appendLine 1 <| sprintf "let %s blacklist (r:I%s) =" insertMethodName typeName
             let needsQuoted =
@@ -396,7 +421,7 @@ module DataModelToF =
                     )
 
             columns
-            |> Seq.filter (fun cd -> not cd.IsIdentity)
+            |> Seq.filter (fun cd -> not cd.IsIdentity && not cd.IsComputed)
             |> Seq.choose needsQuoted
             |> Seq.tryHead
             |> function
@@ -423,12 +448,12 @@ module DataModelToF =
                             sprintf "if %s then string 1 else string 0" fullCName
                     |x ->
                         if cd.Nullable then "if isNull (box " + fullCName + ") then \"null\" else " + fullCName + " |> string |> quoted" else fullCName + " |> string |> quoted"
-                        |>fun setter -> sprintf "%s // type - %s" setter x
+                        |> fun setter -> sprintf "%s // type - %s" setter x
 
             appendLine 2 "["
 
             columns
-            |> Seq.filter (fun c -> not c.IsIdentity)
+            |> Seq.filter (fun c -> not c.IsIdentity && not c.IsComputed)
             |> Seq.iter(fun cd->
                 let mapped = "\"" + cd.Name + "\", " + mapValue(cd,"r.")
                 appendLine 3 mapped
@@ -436,7 +461,7 @@ module DataModelToF =
 
             appendLine 2 "]"
             appendLine 2 <| "|> Seq.filter (fun kvp -> blacklist |> Seq.contains (fst kvp) |> not)"
-            appendLine 2 <| sprintf "|> fun pairs -> sprintf \"%s\" (String.Join(\",\", pairs |> Seq.map fst )) (String.Join(\",\", pairs |> Seq.map snd))" (insertStart "%s" "%s")
+            appendLine 2 <| sprintf "|> fun pairs -> sprintf \"%s (%%s)\" (String.Join(\",\", pairs |> Seq.map fst )) (String.Join(\",\", pairs |> Seq.map snd))" (insertStart "%s")
             // this should not be happening if there is no identity on the table
             if hasIdentity then
                 appendLine 2 <| "|> sprintf \"%s;select SCOPE_IDENTITY()\""
@@ -447,8 +472,8 @@ module DataModelToF =
         let moduleName = sprintf "%sHelpers" typeName
         let camelType = toCamelCase typeName
         appendLine 0 (sprintf "module %s =" moduleName)
-        appendLine 1 String.Empty
-        appendLine 1 "module Meta = "
+        appendLine 0 String.Empty
+        appendLine 1 "module Meta ="
 
         if not <| String.IsNullOrEmpty schemaName then
             appendLine 2 <| sprintf "let schemaName = \"%s\"" schemaName
@@ -500,7 +525,7 @@ module DataModelToF =
 
         let nonNullables = ["string";"byte[]"]
 
-        appendLine 1 "let fromf (f:string -> obj option) = "
+        appendLine 1 "let fromf (f:string -> obj option) ="
         appendLine 2 "{"
 
         columns
@@ -509,7 +534,7 @@ module DataModelToF =
             let mapped = SqlTableColumnChoiceItem.MapSqlType measureText useOptions cd
 
             let converter = mapConverter(cd.Type)
-            appendLine 2 (cd.Name + " = ")
+            appendLine 2 (cd.Name + " =")
             appendLine 3 <| sprintf "match f \"%s\" with // %s" cd.Name mapped
             let measureType = if String.IsNullOrEmpty measureText || stringEqualsI mapped "string" then String.Empty else sprintf " |> (*) 1<%s>" measureText
 
@@ -539,7 +564,7 @@ module DataModelToF =
             | "type" ->  "type'"
             | camel -> camel
         appendLine 0 (generateTypeComment columns.Length)
-        appendLine 0 ("type "+ typeName + "N (model:" + typeName + "Record) = ")
+        appendLine 0 ("type "+ typeName + "N (model:" + typeName + "Record) =")
         appendLine 0 String.Empty
         appendLine 1 "let propertyChanged = new Event<_, _>()"
         appendLine 0 String.Empty
@@ -561,7 +586,10 @@ module DataModelToF =
 
         for cd in columns do
             appendLine 2 (generateColumnComment cd)
-            appendLine 2 ("member x." + cd.Name + " with get () = x." + cd.Name + " and set v = x." + cd.Name + " <- v")
+            if cd.IsComputed then
+                appendLine 2 <| "member x." + cd.Name + " with get () = x." + cd.Name
+            else 
+                appendLine 2 <| "member x." + cd.Name + " with get () = x." + cd.Name + " and set v = x." + cd.Name + " <- v"
 
         appendLine 0 String.Empty
         appendLine 1 (sprintf "member x.MakeRecord () = x :> %s |> %sHelpers.toRecord" interfaceName typeName)
@@ -589,7 +617,7 @@ module DataModelToF =
             appendLine 1 (generateColumnComment cd)
             appendLine 1 ("member x." + cd.Name)
             appendLine 2 ("with get() = " + camel)
-            appendLine 2 "and set v = "
+            appendLine 2 "and set v ="
             //to consider: this might benefit from only setting/raising changed if the value is different
             appendLine 3 (camel + " <- v")
             appendLine 3 ("x.RaisePropertyChanged \"" + cd.Name + "\"")
@@ -744,7 +772,7 @@ module DataModelToF =
             sprocs
             |> Seq.groupBy (fun sp -> sp.SpecificSchema)
             |> Seq.iter (fun (schema, schemaSprocs) ->
-                appendLine 0 <| sprintf "module %s = " (toPascalCase schema)
+                appendLine 0 <| sprintf "module %s =" (toPascalCase schema)
                 schemaSprocs |> Seq.iter(fun sp ->
                     // the next line is at least partially because there is no nameof operator, but also, because even if there were, sprocNames wouldn't be somewhere you could use it
                     appendLine 1 <| sprintf "let %s = \"%s\"" sp.SpecificName sp.SpecificName

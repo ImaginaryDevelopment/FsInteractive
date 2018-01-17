@@ -130,10 +130,11 @@ module PropConversion =
             let mapNode = mapNode translateOptions promote spacing memberNames
             let fDec getter setter matchType=
                 let spc = translateOptions.Spacing
+                let declaration = sprintf "member x.%s //%s\r\n" pib.PropertyName matchType
                 match getter,setter with
-                | Some getter, Some setter -> sprintf "member x.%s //%s\r\n%swith get() = %s\r\n%sand set value = %s\r\n" pib.PropertyName matchType spc getter spc setter
-                | Some getter, None -> sprintf "member x.%s //%s\r\n%swith get() = %s\r\n" pib.PropertyName matchType spc getter
-                | None, Some setter -> sprintf "member x.%s //%s\r\n%swith set v = %s\r\n" pib.PropertyName matchType spc setter
+                | Some getter, Some setter -> sprintf "%s%swith get() = %s\r\n%sand set value = %s\r\n" declaration spc getter spc setter
+                | Some getter, None -> sprintf "%s%swith get() = %s\r\n" declaration spc getter
+                | None, Some setter -> sprintf "%s%swith set v = %s\r\n" declaration spc setter
                 | None,None -> sprintf "//could not declare property %s" matchType
             let inline simpleSet fieldName = sprintf "%s <- v" fieldName
             let inline iNotifyProp fieldName propName =
@@ -145,33 +146,28 @@ module PropConversion =
                 let debugOpt,_getDebugOpt =if Option.isSome expr then translateOptions.GetNextDebugState getDebugOpt (translateOptions.GetIsDebugNode expr.Value) else debugOpt,getDebugOpt
                 debugLines debugOpt lines
             let mapNode x :string = mapNode getDebugOpt x
-            let mapAccessor name type' (nodes:SyntaxNode[]) =
+            let mapAccessor type' (nodes:SyntaxNode[]) =
 
 //                let dumpNodeKindInfo =
 //                    nodes |> Seq.map(fun n -> (n :?> CSharpSyntaxNode).Kind()) |> (dumps <| sprintf "%s nodes for %s" type' pib.PropertyName <| debugOpt)
 //                    |> ignore
                 if Seq.isEmpty nodes then //autoprop
                     failwithf "map %s is not set up for empty nodes" type'
-                //let mapped = nodes |> Seq.map mapNode // why are you a warning? the type has been constrainted to be SyntaxNode
-                // Script.fsx(615,47): warning FS0064:
-                (* This construct causes code to be less generic than indicated by its type annotations.
-                    The type variable implied by the use of a '#', '_' or other type annotation at or near 'Script.fsx(605,46)-(605,57)'
-                    has been constrained to be type 'SyntaxNode'.
-                *)
-                let mapped = nodes |> Seq.map (fun n -> mapNode (downcast n))
+                let mapped = nodes |> Seq.map mapNode
 
                 let mapped = delimit spacing mapped
                 let mapped = if mapped.Contains("\r\n") then "\r\n" + mapped else mapped
                 dumps "MapAccessorNodesResult" debugOpt mapped
 
-            let mapGetter name = mapAccessor name "getter"
-            let mapSetter name = mapAccessor name "setter"
+            let mapGetter = mapAccessor "getter"
+            let mapSetter = mapAccessor "setter"
 
             let mapAccessor map childnodes =
                 childnodes
                 |> Seq.toArray
-                |> map pib.PropertyName
-                |> replace "\r\n" (sprintf "\r\n%s" (spacing + spacing)) |> Some
+                |> map
+                |> replace "\r\n" (sprintf "\r\n%s" (spacing + spacing)) 
+                |> Some
             let mapGetter (getter:AccessorDeclarationSyntax) = getter.ChildNodes()|> mapAccessor mapGetter
             let mapSetter (setter:AccessorDeclarationSyntax) = setter.ChildNodes()|> mapAccessor mapSetter
             let value = match pib.Type with | "bool" -> "false" | _ -> "null"

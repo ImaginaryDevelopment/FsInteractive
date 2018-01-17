@@ -30,6 +30,7 @@ module CodeGeneration =
                  Length = 1
                  Nullable = false
                  IsPrimaryKey = false
+                 IsComputed = false
                  IsIdentity = false}
             ]
         let sb = StringBuilder()
