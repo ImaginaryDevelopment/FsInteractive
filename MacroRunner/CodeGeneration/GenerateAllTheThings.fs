@@ -233,9 +233,11 @@ sb
 let makeManager (dte:EnvDTE.DTE) =
     // if this script is in the solution it is modifying, we need the EnvDTE.ProjectItem representing it, otherwise where does the main (non sub-file) output go?
     let scriptFullPath = Path.Combine(__SOURCE_DIRECTORY__,__SOURCE_FILE__)
-    let templateProjectItem:EnvDTE.ProjectItem = dte.Solution.FindProjectItem(scriptFullPath)
+    let templateProjectItem:EnvDTE.ProjectItem option = dte.Solution.FindProjectItem scriptFullPath |> Option.ofObj
     printfn "Script is at %s" scriptFullPath
-    if not <| isNull templateProjectItem then
+    templateProjectItem
+    |> Option.iter(fun templateProjectItem ->
         printfn "ProjectItem= %A" (templateProjectItem.FileNames 0s)
+    )
     let dteWrapper = wrapDte dte
     MultipleOutputHelper.Managers.VsManager(Some "HelloTesting.fake.tt", dteWrapper, sb, templateProjectItem)

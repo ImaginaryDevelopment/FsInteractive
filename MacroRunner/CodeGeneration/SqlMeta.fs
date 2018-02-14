@@ -19,26 +19,26 @@ type FKey =
     |FKeyIdentifier of FKeyIdentifier
     |FKeyWithReference of ReferenceData
 
-module ColumnTyping = 
-    type Precision private(p) = 
+module ColumnTyping =
+    type Precision private(p) =
         member __.P = p
         static member Default = Precision(18uy)
-        static member Create p = 
+        static member Create p =
             if 1uy <= p && p <= 38uy then
                 Precision(p)
                 |> Some
             else None
-    type Scale private (s) = 
+    type Scale private (s) =
         member __.S = s
         static member Default = Scale(0uy)
-        static member Create p = 
+        static member Create p =
             if 0uy <= p && p <= 38uy then
                 Scale(p)
                 |> Some
             else None
     type ColumnPS = {Precision:Precision; Scale: Scale}
     // only accounting for varchar text fields currently
-    type ColumnType = 
+    type ColumnType =
         | Bit
         ///// 0 - 255
         //| TinyIntColumn
@@ -57,10 +57,10 @@ module ColumnTyping =
         | UniqueIdentifier
         // in case you want small datetime for a datetime
         | Custom of string
-        with 
+        with
             member x.NeedsQuoted =
                 match x with
-                | StringColumn _ 
+                | StringColumn _
                 | StringMax
                 | NStringMax
                 | NStringColumn _
@@ -82,11 +82,11 @@ type ColumnInput = {
 //        GenerateReferenceTable: bool
 //        ReferenceValuesWithComment: IDictionary<string,string>
         IsUnique: Uniqueness
-    } with 
-        member x.IsPrimaryKey = 
+    } with
+        member x.IsPrimaryKey =
             match x.Nullability with |PrimaryKey -> true | _ -> false
         member x.IsIdentity =
-            match x.ColumnType with 
+            match x.ColumnType with
             | IdentityColumn -> true
             | _ -> false
         member x.IsComputed =
@@ -119,7 +119,7 @@ let formatFKey (table:string) column (fKey:FKeyIdentifier) : string =
     let fKeyColumn = if isNull fKey.Column then column else fKey.Column
     sprintf "CONSTRAINT [FK_%s_%s_%s_%s] FOREIGN KEY ([%s]) REFERENCES [%s].[%s] ([%s])" table column fKey.Table.Name fKeyColumn column fKey.Table.Schema fKey.Table.Name fKeyColumn
 
-let formatDefaultValue (table:string) column defaultValue : string = 
+let formatDefaultValue (table:string) column defaultValue : string =
     sprintf "CONSTRAINT [DF_%s_%s] DEFAULT %s" table column defaultValue
 
 let mapTypeToSql =
@@ -142,8 +142,8 @@ let mapTypeToSql =
     | NStringMax -> "nvarchar(MAX)"
     | UniqueIdentifier -> sprintf "uniqueidentifier"
 
-let composeFKeyAndDefaultValue tableName columnName defaultValue fkeyOpt = 
-    let fkeyText = 
+let composeFKeyAndDefaultValue tableName columnName defaultValue fkeyOpt =
+    let fkeyText =
         fkeyOpt
         |> Option.map (
             function
@@ -211,15 +211,15 @@ let formatAttributes hasCombinationPK fKeyText nullability tableName (columnName
         |> delimit " "
         |> trim
 
-let generateColumn doDiag (tableId:TableIdentifier) appendLine appendLine' hasCombinationPK isLastColumn ci = 
+let generateColumn doDiag (tableId:TableIdentifier) appendLine appendLine' hasCombinationPK isLastColumn ci =
     let fKeyTextOpt = composeFKeyAndDefaultValue tableId.Name ci.Name ci.DefaultValue ci.FKey
     let hasMultipleComments,comment = formatColumnComments doDiag appendLine appendLine' tableId.Name ci
-    let attribs = 
+    let attribs =
         let isIdentity = match ci.ColumnType with | IdentityColumn -> true | _ -> false
-        formatAttributes 
-            hasCombinationPK 
-            fKeyTextOpt 
-            ci.Nullability 
+        formatAttributes
+            hasCombinationPK
+            fKeyTextOpt
+            ci.Nullability
             tableId.Name
             (ci.Name, (match ci.IsUnique with | Unique -> true | _ -> false), isIdentity)
 
@@ -275,7 +275,7 @@ let generateTable doDiag (manager:IManager) (generationEnvironment:StringBuilder
     manager.EndBlock()
 
 type TitledReferenceData =
-    | TitledReferenceData of title:string* (ReferenceData list)
+    | TitledReferenceData of title:string * (ReferenceData list)
 let generateReferenceInsert appendLine =
     function
     | TitledReferenceData(title, referenceData) ->
@@ -337,7 +337,7 @@ let generateInserts appendLine (manager:IManager) targetProjectFolder (tables:#s
             t.Columns
             |> Seq.exists(fun c ->
                 match c.FKey with
-                | Some(FKeyIdentifier fk) -> false
+                | Some(FKeyIdentifier _) -> false
                 | Some(FKeyWithReference rd) -> rd.ValuesWithComment.Any()
                 | _ -> false
             )
@@ -407,15 +407,7 @@ let generateTablesAndReferenceTables(manager:IManager, generationEnvironment:Str
                 reraise()
         )
     )
-//     Name:string
-//        Type: ColumnTyping.ColumnType
-//        AllowNull: Nullability
-//        FKey:FKey option
-//        DefaultValue: string
-//        Comments: string list
-////        GenerateReferenceTable: bool
-////        ReferenceValuesWithComment: IDictionary<string,string>
-//        IsUnique: Uniqueness
+
 let makeStrFkey50 name fkey = {ColumnInput.Name=name; DefaultValue=null; ColumnType=ColumnType.StringColumn 50; IsUnique=NotUnique; Nullability = NotNull; FKey = Some (FKeyIdentifier fkey); Comments = List.empty}
 let makeStrRefFkey50 name fkey = {ColumnInput.Name=name; DefaultValue=null; ColumnType=ColumnType.StringColumn 50; IsUnique=NotUnique; Nullability = NotNull; FKey = Some (FKeyWithReference fkey); Comments = List.empty}
 let makeIntFkey name fkey = {Name=name; DefaultValue=null; ColumnType=ColumnType.IntColumn; IsUnique=NotUnique; Nullability = NotNull; FKey=Some fkey; Comments = List.empty}

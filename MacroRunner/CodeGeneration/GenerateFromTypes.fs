@@ -42,21 +42,52 @@ module SimplifiedInput =
     type ColumnInfo = {Name:string; Type:Type; Length: int option; Precision: int option; Scale: int option; UseMax:bool}
     type TableInfo = {Name:string; Schema: string; Columns: ColumnInfo seq}
 
-//let dc = new TypedDataContext()
-    // 't is a container type of some sort, in LinqPad it would be Table<_>
-    [<Obsolete("this doesn't work, typedefof<'t> isn't referring to a real arg")>]
-    let extractTypeInfo (t:Type) =
+module Reflect=
+    type ContextTableInfo = {PropertyName:string;TypeName:string; Fields:(string*Type) seq; Properties:(string*Type) seq}
+    let getFields (t:Type) = t.GetFields() |> Seq.map(fun f -> f.Name, f.FieldType)
+    // group by or split on container prop vs. not
+    let getProps (t:Type) = t.GetProperties() |> Seq.map(fun f -> f.Name, f.PropertyType)
+    let getFieldsAndProps (t:Type) =
+        let fields = getFields t
+        let props = getProps t
+        fields
+        |> Seq.append props
+        |> List.ofSeq
+
+    // 't is a container type of some sort, in LinqPad it would be Table<_> or EntitySet<_>
+    // needs work to properly work on both l2sql and EF
+    let extractContainerTypeInfo (t:Type) =
+#if LINQPAD
+        t.Name.Dump("extracting")
+#endif
         t
         |> fun t -> t.GetProperties()
         |> Seq.filter (fun p -> p.Name.StartsWith("_") |> not)
-        |> Seq.filter (fun p -> p.PropertyType.IsGenericType && p.PropertyType.GetGenericTypeDefinition() = typedefof<'t> )
-        |> Seq.map (fun p -> p.Name, p.PropertyType.GenericTypeArguments.[0])
-        |> Seq.map (fun (name,t) -> name, t.Name, t.GetFields() |> Seq.map(fun f -> f.Name, f.FieldType))
+        // no idea what the typedefof thing was supposed to be doing
+        |> Seq.filter (fun p -> p.PropertyType.IsGenericType) // && p.PropertyType.GetGenericTypeDefinition() = typedefof<'t> )
+        |> Seq.map (fun p -> p.Name, p.PropertyType.GenericTypeArguments.[0], p.PropertyType.GetGenericTypeDefinition())
+        |> Seq.map (fun (name,t,gtd) -> {PropertyName=name;TypeName= t.Name;Fields= getFields t;Properties=getProps t},gtd)
 
-    [<Obsolete("this doesn't work")>]
-    let extractInfo<'t> () = extractTypeInfo typeof<'t>
-
-//let generateFromType<'t>() =
+    let extractContainerInfo<'t> () = extractContainerTypeInfo typeof<'t>
+open Reflect
+#if DEBUG
+module ReflectSample =
+    type TestChild() =
+        [<DefaultValue>]
+        val mutable public Bar:string
+    type Test() =
+        member val Foo:string = null with get,set
+        member val Items:seq<TestChild> = null with get,set
+    #if LINQPAD
+    [
+        extractInfo<TypedDataContext>
+        extractInfo<Table<Accidents>>
+        extractInfo<Test>
+        ].[0]()
+    |> Dump
+    |> ignore
+    #endif
+#endif
 
 module ModelGenerator =
     type GenerationStyle =
@@ -103,13 +134,12 @@ module ModelGenerator =
     let dumpt (t:string) x = printfn "%s:%A" t x; x
     #endif
 
-//let generateRecord typeName
     let sampleGeneratorCall() =
         let limit = 5
         let sb = Sb.startAssembler()
         let types =
             getTypeToGen()
-            |> SimplifiedInput.extractTypeInfo
+            |> Reflect.extractContainerTypeInfo
             |> Seq.take 5
             |> Array.ofSeq
 
@@ -119,14 +149,17 @@ module ModelGenerator =
 
         try
             types
-            |> Seq.map (fun (_,name,t) -> name, generateInterface Readonly sb String.Empty name t)
+            // fields only we only want the properties of the type, not navigation/fkey properties
+            // in linq2sql they are fields, in EF they are properties =(
+            |> Seq.map (fun (ct,_) -> ct.TypeName, generateInterface Readonly sb String.Empty ct.TypeName ct.Fields)
             |> Seq.iter (fun (name,s)-> (s |> string |> dumpt name) |> ignore<string>)
         finally
             types
             |> dumpt "typeInfo"
             |> ignore
-
-let sampleShapeInput =
+#if DEBUG
+// this sample is legacy, before the conversion to using ContextTableInfo
+let sampleShapeOutput =
     """[
   {
     "Item1": "Accidents",
@@ -231,3 +264,4 @@ let sampleShapeInput =
     ]
   }
 ]"""
+#endif

@@ -317,7 +317,7 @@ let getFileInfoFromSource (source:(_*_*Dictionary<string,string list>) option se
         select {FileInfoB.File = file; ClassName = cls; Bases = bases; Fields = root.DescendantNodes() |> Seq.ofType<FieldDeclarationSyntax> |> List.ofSeq; Properties = properties}
     }
 
-let findModel name fileInfoBseq  =
+let findModel name fileInfoBseq =
     fileInfoBseq |> Seq.tryFind(fun fib -> fib.ClassName = name || fib.ClassName.StartsWith name)
 
 module Declarations =

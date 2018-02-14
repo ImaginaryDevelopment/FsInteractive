@@ -253,8 +253,8 @@ module MultipleOutputHelper =
                     let footerText = tryGetByStartEnd footer.Start footer.Length
                     let outputPath =
                         match templateFilePathOpt with
-                        | Some templateFile -> Path.GetDirectoryName templateFile
-                        | None -> String.Empty // Path.Combine ignores string.empty, but throws on null
+                        | Some (ValueString as templateFile) -> Path.GetDirectoryName templateFile
+                        | _ -> String.Empty // Path.Combine ignores string.empty, but throws on null
                     log <| sprintf "outputPath is: %s" outputPath
                     files.Reverse()
                     files
@@ -325,8 +325,9 @@ module MultipleOutputHelper =
                 override __.GeneratedFileNames = upcast generatedFileNames
                 override __.GetTextSize() = sb.Length
 
-        and VsManager (templateFilePathOpt,dteWrapper:DteWrapper,sb,templateProjectItem:ProjectItem) =
-                inherit Manager(templateFilePathOpt,sb)
+        and VsManager (templateFilePathOpt,dteWrapper:DteWrapper,sb,templateProjectItem:ProjectItem option) =
+                inherit Manager(templateFilePathOpt |> Option.bind Option.ofObj,sb)
+                let templateProjectItem = templateProjectItem |> Option.bind Option.ofObj
                 let dteWrapper =
                     {dteWrapper with Log =
                                         fun s ->
@@ -344,8 +345,8 @@ module MultipleOutputHelper =
                 override __.DefaultProjectNamespace
                     with get() =
                         match templateProjectItem with
-                        | null -> null
-                        | _ ->
+                        | None -> null
+                        | Some templateProjectItem ->
                             if isNull templateProjectItem then failwithf "templateProjectItem is null"
                             if isNull templateProjectItem.ContainingProject then failwithf "templateProjectItem.ContainingProject is null"
                             if isNull templateProjectItem.Properties then failwithf "templateProjectItem.ContainingProject.Properties is null"
@@ -359,7 +360,7 @@ module MultipleOutputHelper =
                     let results = base.Process split
                     log "VsManager: Finished base.Process"
 
-                    VsManager.ProjectSyncScriptWrapped dteWrapper templateProjectItem base.GeneratedFileNames
+                    VsManager.ProjectSyncScriptWrapped dteWrapper (templateProjectItem |> Option.getOrDefault null) base.GeneratedFileNames
                     results
 
                 override x.CreateFileIfDifferent fileName content =
@@ -396,10 +397,9 @@ module MultipleOutputHelper =
                     // can dte.Solution even work when given String.Empty?
                     let templateProjectItem =
                         templateFileOpt
-                        |> Option.getOrDefault String.Empty
-                        |> dte.Solution.FindProjectItem
+                        |> Option.bind (dte.Solution.FindProjectItem >> Option.ofUnsafeNonNullable)
 
-                    if isNull templateProjectItem then failwithf "VsManager.new: templateProjectItem is null"
+                    //if isNull templateProjectItem then failwithf "VsManager.new: templateProjectItem is null"
                     let wrapper = wrapDte dte
 
                     VsManager(templateFileOpt,wrapper,sb,templateProjectItem)

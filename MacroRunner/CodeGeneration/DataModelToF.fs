@@ -40,6 +40,7 @@ module DataModelToF =
         ColumnBlacklist:Map<string, string Set>
         TargetFolderOpt: string option
     }
+    type Mutability = | Immutable | CliMutable | Mutable
     type CodeGenSettingMap = {
         TargetProjectName:string
         TargetNamespace: string
@@ -63,7 +64,7 @@ module DataModelToF =
         // not functional yet, right?
         GenerateValueRecords:bool
         SprocSettingMap: CodeGenSprocSettingMap option
-        UseCliMutable:bool
+        UseCliMutable:Mutability
     }
 
     let mapNullableType(targetType:string, nullable:bool, measureType:string, useOptions:bool ) =
@@ -159,7 +160,7 @@ module DataModelToF =
                     | Manual x -> x |> List.map (ManualItem)
                     | SqlTableColumnMeta x -> x |> List.map (SqlTableColumnMetaItem)
 
-    let generateColumnComment =
+    let generateColumnComment = // (ci:ColumnInput) =
         function
         | SqlTableColumnMetaItem cd ->
             let typeName = if isNull cd.Type then "null" else cd.Type
@@ -252,8 +253,8 @@ module DataModelToF =
                 |_ -> "null"
 
     ///useCliMutable : enables simple serialization see also http://blog.ploeh.dk/2013/10/15/easy-aspnet-web-api-dtos-with-f-climutable-records/
-    let generateRecord useCliMutable (typeName:string) (fMeasure:string -> string) (columns: SqlTableColumnChoice, appendLine:int -> string -> unit, useOptions:bool, generateValueRecord:bool) =
-        // what is a value record?
+    let generateRecord mutability (typeName:string) (fMeasure:string -> string) (columns: SqlTableColumnChoice, appendLine:int -> string -> unit, useOptions:bool, generateValueRecord:bool) =
+        // what could be a value record?
         // - a record that is fully nullable so that all fields can indicate if a value was provided (in cases where the default value has a meaning like set the value to null)
         // - something that always uses options, instead of allowing nullables?
         // - something without the pk?
@@ -270,8 +271,10 @@ module DataModelToF =
         appendLine 0 (generateTypeComment (Seq.length columns))
         if not useOptions then
             appendLine 0 "[<NoComparison>]"
-        if useCliMutable then
+        match mutability  with
+        | CliMutable ->
             appendLine 0 "[<CLIMutable>]"
+        | _ -> ()
 
         appendLine 0 <| sprintf "%s =" recordTypeName //"type " + typeName + "Record =")
         appendLine 1 "{"
@@ -280,7 +283,12 @@ module DataModelToF =
         |> Seq.iter (fun x ->
             appendLine 1 <| generateColumnComment x
             let mt = fMeasure x.Name
-            let mapped = SqlTableColumnChoiceItem.MapSqlType mt useOptions x
+            let mapped =
+                let base' = SqlTableColumnChoiceItem.MapSqlType mt useOptions x
+                match mutability with
+                | Mutable -> sprintf "mutable %s" base'
+                | _ -> base'
+
             appendLine 1 <| x.Name + ":" + mapped
         )
 
@@ -1156,7 +1164,7 @@ module GenerationSample =
                 MeasuresBlacklist= Set.empty
                 IncludeNonDboSchemaInNamespace= false
                 GenerateValueRecords = false
-                UseCliMutable = false
+                UseCliMutable = Mutability.Immutable
                 GetMeasureNamepace = None
                 Pluralize = pluralize
                 Singularize = singularize
