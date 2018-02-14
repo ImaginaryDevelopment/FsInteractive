@@ -7,8 +7,10 @@ open PureCodeGeneration
 open BReusable
 open BReusable.StringHelpers
 
+open PureCodeGeneration.TranslateCSharp
 
 module FieldConversion =
+
 //    open Declarations
 
     type FieldInfoB = {Type:string; Name:string; Initial:string option; Declaration:VariableDeclarationSyntax}
@@ -113,7 +115,6 @@ module FieldConversion =
         fields
 
 module PropConversion =
-    open PureCodeGeneration.Declarations
     open System.Text.RegularExpressions
 
     let (|RegexMatch|_|) pattern input =
@@ -172,7 +173,7 @@ module PropConversion =
             let mapSetter (setter:AccessorDeclarationSyntax) = setter.ChildNodes()|> mapAccessor mapSetter
             let value = match pib.Type with | "bool" -> "false" | _ -> "null"
             match pib.Getter,pib.Setter with
-            | AutoProperty ->
+            | Declarations.AutoProperty ->
                 debugPropLines pib.PropertyName None [sprintf "AutoProperty type,value:(%s,%s)" pib.Type value]
                 let autoProp= sprintf "%smember val %s : %s = %s with get, set\r\n" spacing pib.PropertyName pib.Type value
                 autoProp
@@ -240,7 +241,7 @@ module FileConversion =
         | CodeGenTarget.Class (propertyPrefs,promote) ->
             let spacing = translateOptions.Spacing
             let classD = {
-                ClassAttributes = typeAttrs
+                Attributes = typeAttrs
                 Name=cls.ClassName
                 BaseClass=
                     match propertyPrefs with
@@ -248,7 +249,6 @@ module FileConversion =
                     |_ -> if cls.Bases |> Seq.any then cls.Bases |> Seq.head |> sprintf "inherit %s()" |> Some else None
                 Fields=  List.empty
                 Members = List.empty
-                Interfaces = List.empty
                 }
             let classD =
                 cls.Bases |> dumpt "bases" |> ignore

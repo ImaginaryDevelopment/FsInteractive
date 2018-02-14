@@ -201,6 +201,19 @@ module StringHelpers =
         }
         |> String.Concat
 
+    /// assumes all that is needed is the first char changed, does not account for underscoring
+    let toCamelCase s = // https://github.com/ayoung/Newtonsoft.Json/blob/master/Newtonsoft.Json/Utilities/StringUtils.cs
+        if String.IsNullOrEmpty s then
+            s
+        elif not <| Char.IsUpper s.[0] then
+            s
+        else
+            let camelCase = Char.ToLower(s.[0], System.Globalization.CultureInfo.InvariantCulture).ToString(System.Globalization.CultureInfo.InvariantCulture)
+            if (s.Length > 1) then
+                camelCase + (s.Substring 1)
+            else
+                camelCase
+
 open StringHelpers
 
 
