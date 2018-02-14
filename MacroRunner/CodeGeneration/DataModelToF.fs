@@ -889,7 +889,7 @@ module DataModelToF =
                     generateRecord genIgr tn cgsm.Mutable cgsm.UseOptionTypes true purishColumns //cgsm.Mutable tn getMeasureType (columns, appendLine', cgsm.UseOptionTypes, true)
 
                 generateRecord genIgr tn cgsm.Mutable cgsm.UseOptionTypes false purishColumns
-                generateModule getMeasureType (tn, columns, sqlTableMeta.TI.Schema, sqlTableMeta.TI.Name, appendLine', cgsm.UseOptionTypes)
+                generateHelperModule getMeasureType (tn, columns, sqlTableMeta.TI.Schema, sqlTableMeta.TI.Name, appendLine', cgsm.UseOptionTypes)
                 generateINotifyClass(tn, columns, appendLine', cgsm.UseOptionTypes)
 
                 manager.EndBlock()

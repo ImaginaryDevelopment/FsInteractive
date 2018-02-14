@@ -278,7 +278,7 @@ let generateHelperModule (x:IGenerateHelper<_>) useOptions rawHelperItems (typeN
         let mapped = x.GetBaseType measureText useOptions cd
 
         let converter = mapConverter mapped
-        appendLine 2 (cd.Name + " =")
+        appendLine 2 <| cd.Name + " ="
         appendLine 3 <| sprintf "match f \"%s\" with // %s" cd.Name mapped
         let measureType = if String.IsNullOrEmpty measureText || stringEqualsI mapped "string" then String.Empty else sprintf " |> (*) 1<%s>" measureText
 
