@@ -67,16 +67,16 @@ module DataModelToF =
         Mutable:Mutability
     }
 
-    let mapNullableType(targetType:string, nullable:bool, measureType:string, useOptions:bool ) =
+    let mapNullableType(targetType:string, nullable:bool, measureType:PureMeasure option, useOptions:bool ) =
         let nullability =
             match nullable, useOptions with
             | true,true -> " option"
             | true,false -> " Nullable"
             | _ -> String.Empty
         let measureType =
-            match String.IsNullOrEmpty measureType with
-            | true -> String.Empty
-            | false -> sprintf "<%s>" measureType
+            match measureType with
+            | None -> String.Empty
+            | Some pm -> sprintf "<%s>" pm.Value
 
         sprintf "%s%s%s" targetType measureType nullability
 
@@ -107,7 +107,7 @@ module DataModelToF =
                 match x with
                 | SqlTableColumnMetaItem cd -> cd.Nullable
                 | ManualItem x -> match x.Nullability with Nullability.AllowNull -> true | _ -> false
-            member x.Type =
+            member x.SqlType =
                 match x with
                 | SqlTableColumnMetaItem cd -> cd.Type
                 | ManualItem x ->
@@ -124,9 +124,31 @@ module DataModelToF =
                     | NStringMax
                     | NStringColumn _ -> "nvarchar"
                     | UniqueIdentifier -> "uniqueidentifier"
-            static member MapSqlType measureText useOptions (x:SqlTableColumnChoiceItem)=
+            static member GetNetType (x:SqlTableColumnChoiceItem) useOptions (pm:PureMeasure option) nullable =
+                let type' = x.SqlType
+                match type'.ToLower() with
+                    |"char"
+                    |"nchar"
+                    |"nvarchar"
+                    |"xml"
+                    |"varchar" -> "string"
+                    |"bit" -> mapNullableType("bool", nullable, pm, useOptions)
+                    |"date"
+                    |"datetime"
+                    |"datetime2"
+                    |"smalldatetime" -> mapNullableType("DateTime", nullable, pm, useOptions)
+                    |"image" -> "byte[]"
+                    |"uniqueidentifier" -> mapNullableType("Guid",nullable, pm, useOptions)
+                    |"int" -> mapNullableType("int", nullable, pm, useOptions)
+                    |"decimal" -> mapNullableType("decimal", nullable, pm, useOptions)
+                    |"float" -> mapNullableType("float", nullable, pm, useOptions)
+                    |_ -> if isNull type' then String.Empty else type'
+            // do not include nullable or option part of type, no measures either
+            member x.NetBaseType = SqlTableColumnChoiceItem.GetNetType x false None false
+            member x.GetNetFullType useOptions measureText = SqlTableColumnChoiceItem.GetNetType x useOptions measureText x.Nullable
+            static member MapSqlType (pm:PureMeasure option) useOptions (x:SqlTableColumnChoiceItem)=
                 // take the sql type and give back what .net type we're using
-                let type' = x.Type
+                let type' = x.SqlType
                 let nullable = x.Nullable
                 match type'.ToLower() with
                     |"char"
@@ -134,16 +156,16 @@ module DataModelToF =
                     |"nvarchar"
                     |"xml"
                     |"varchar" -> "string"
-                    |"bit" -> mapNullableType("bool", nullable, measureText, useOptions)
+                    |"bit" -> mapNullableType("bool", nullable, pm, useOptions)
                     |"date"
                     |"datetime"
                     |"datetime2"
-                    |"smalldatetime" -> mapNullableType("DateTime", nullable, measureText, useOptions)
+                    |"smalldatetime" -> mapNullableType("DateTime", nullable, pm, useOptions)
                     |"image" -> "byte[]"
-                    |"uniqueidentifier" -> mapNullableType("Guid",nullable, measureText, useOptions)
-                    |"int" -> mapNullableType("int", nullable, measureText, useOptions)
-                    |"decimal" -> mapNullableType("decimal", nullable, measureText, useOptions)
-                    |"float" -> mapNullableType("float", nullable, measureText, useOptions)
+                    |"uniqueidentifier" -> mapNullableType("Guid",nullable, pm, useOptions)
+                    |"int" -> mapNullableType("int", nullable, pm, useOptions)
+                    |"decimal" -> mapNullableType("decimal", nullable, pm, useOptions)
+                    |"float" -> mapNullableType("float", nullable, pm, useOptions)
                     |_ -> if isNull type' then String.Empty else type'
 
 
@@ -198,12 +220,10 @@ module DataModelToF =
         >> fun (typeName,suffixes,nullability,length) ->
         //let identity = if cd.IsIdentity then " identity" else String.Empty
             let suffix = if suffixes |> Seq.any then suffixes |> delimit " " |> (+) " " else String.Empty
-            sprintf "/// %s (%i) %s%s" typeName length nullability suffix
+            sprintf "// %s (%i) %s%s" typeName length nullability suffix
 
 
     type InterfaceGeneratorArgs = { Writeable:bool; UseOptions:bool}
-
-
 
     let generateInterface (typeName:string, fMeasure, columns: SqlTableColumnChoice, appendLine:int -> string -> unit, interfaceGeneratorArgs ) =
         appendLine 0 <| sprintf "// typeName:%s writeable:%A useOptions:%A" typeName interfaceGeneratorArgs.Writeable interfaceGeneratorArgs.UseOptions
@@ -214,8 +234,8 @@ module DataModelToF =
 
         columns.Destructure()
         |> Seq.iter(fun item ->
-            appendLine 1 (item |> generateColumnSqlComment )
-            let measureText = fMeasure item.Name
+            appendLine 1 (item |> generateColumnSqlComment |> sprintf "/%s" )
+            let measureText : PureMeasure option = fMeasure item.Name
             let mapped = SqlTableColumnChoiceItem.MapSqlType measureText interfaceGeneratorArgs.UseOptions item
 
             appendLine 1 <| sprintf "abstract member %s:%s with get%s" item.Name mapped (if interfaceGeneratorArgs.Writeable && not item.IsComputed then ",set" else String.Empty)
@@ -235,13 +255,13 @@ module DataModelToF =
 
         columns.Destructure()
         |> Seq.iter(fun cd ->
-            let measureText = fMeasure cd.Name
-            let mapped = SqlTableColumnChoiceItem.MapSqlType measureText useOptions cd
+            let pm : PureMeasure option = fMeasure cd.Name
             let measureType =
-                match String.IsNullOrEmpty measureText || stringEqualsI mapped "string", cd.Nullable with
-                | true, _ -> String.Empty
-                | false, true -> sprintf "|> Nullable.map((*) 1<%s>)" measureText
-                | false, false -> sprintf " * 1<%s>" measureText
+                match pm, cd.Nullable with
+                | Some x, _ when x.Value |> stringEqualsI "string" -> String.Empty
+                | None, _ -> String.Empty
+                | Some pm, true -> sprintf "|> Nullable.map((*) 1<%s>)" pm.Value
+                | Some pm, false -> sprintf " * 1<%s>" pm.Value
 
             appendLine 3 <| sprintf "%s = (^a: (member %s: _) %s)%s" cd.Name cd.Name camelType measureType
         )
@@ -249,7 +269,7 @@ module DataModelToF =
         appendLine 2 "}"
         ()
 
-    let generateCreateSqlInsertTextMethod appendLine useOptions typeName schemaName tableName fMeasure (columns:SqlTableColumnChoice) =
+    let generateCreateSqlInsertTextMethod appendLine typeName schemaName tableName (columns:SqlTableColumnChoice) =
         let columns = columns.Destructure()
         let canDoInsert =
             columns
@@ -284,7 +304,7 @@ module DataModelToF =
                 let mapDefaultRawValue handleQuoting (cd:SqlTableColumnChoiceItem) :string  =
                     if cd.Nullable then "null"
                     else
-                        match cd.Type.ToLower() with
+                        match cd.SqlType.ToLower() with
                         |"varchar" -> if handleQuoting then "''" else String.Empty
                         |"bit"
                         |"int" -> "0"
@@ -316,7 +336,7 @@ module DataModelToF =
                     ["varchar"; "char"; "nvarchar"; "nchar";"datetime";"xml";"datetime2"]
                     |> Seq.tryFind (fun n ->
                         match c.Type with
-                        |IsTrue (containsI n) -> true
+                        |ContainsI n _ -> true
                         | _ -> false
                     )
 
@@ -330,12 +350,12 @@ module DataModelToF =
                 |> sprintf "let quoted (s:string) = \"'\" + s.Replace(\"'\",\"''\") + \"'\" // %s"
                 |> appendLine 2
             | None -> ()
-            if columns |> Seq.exists(fun cd -> cd.Nullable && cd.Type.ToLower() = "bit") then
+            if columns |> Seq.exists(fun cd -> cd.Nullable && cd.SqlType.ToLower() = "bit") then
                 appendLine 2 ("let inline getValue x = (^a: (member Value: bool) x)")
 
             let mapValue (cd:SqlTableColumnChoiceItem, prefix:string) :string  =
                 let fullCName = prefix + cd.Name
-                match cd.Type.ToLower() with
+                match cd.SqlType.ToLower() with
                     |"varchar" -> sprintf "if String.IsNullOrEmpty %s then \"null\" else quoted %s" fullCName fullCName
                     |"int" ->
                         if cd.Nullable then
@@ -366,97 +386,45 @@ module DataModelToF =
             if hasIdentity then
                 appendLine 2 <| "|> sprintf \"%s;select SCOPE_IDENTITY()\""
         ()
+    let toPurish fMeasure (columns:SqlTableColumnChoice) =
+        //let getMeasureType columnName =
+        //        measures
+        //        |> Seq.tryFind (fun m -> measuresBlacklist |> Seq.contains columnName |> not && containsI m columnName)
+        //        |> Option.getOrDefault null
+        columns.Destructure()
+        |> List.map(fun cd ->
+            let measure :PureMeasure option = fMeasure cd.Name
+            let colName =
+                //let raw = SqlTableColumnChoiceItem.MapSqlType measure useOptions cd
+                cd.NetBaseType
+
+                |> PureColumnTypeName.Create
+                |> function
+                    | Some x -> x
+                    | None -> failwithf "couldn't get column name from %s:%s" cd.Name cd.SqlType
+
+            {   new PureColumnInput<_> with
+                    member __.IsPrimaryKey = cd.IsPrimaryKey
+                    member __.Item = cd
+                    member __.Name = cd.Name
+                    member __.TypeName = colName
+                    member __.AllowsNull = cd.Nullable
+                    member __.MeasureText = measure
+            }
+        )
 
     /// generate the helper module
-    let generateHelperModule fMeasure (typeName:string, columns:SqlTableColumnChoice, schemaName:string, tableName:string, appendLine:int -> string -> unit, useOptions:bool ) =
-        let moduleName = sprintf "%sHelpers" typeName
-        let camelType = toCamelCase typeName
-        appendLine 0 (sprintf "module %s =" moduleName)
-        appendLine 0 String.Empty
-        appendLine 1 "module Meta ="
-
-        if not <| String.IsNullOrEmpty schemaName then
-            appendLine 2 <| sprintf "let schemaName = \"%s\"" schemaName
-
-        appendLine 2 <| sprintf "let tableName = \"%s\"" tableName
-        let columns' = columns
-        let columns = columns.Destructure()
-        columns
-        |> Seq.iter (fun c ->
-            appendLine 2 <| generateColumnSqlComment c
-            appendLine 2 <| sprintf "let %s = \"%s\"" c.Name c.Name
-        )
-        appendLine 0 String.Empty
-
-        appendLine 1 <| sprintf "let inline toRecord (%s:I%s) =" camelType typeName
-        appendLine 2 "{"
-
-        columns
-        |> Seq.iter(fun cd ->
-            let measureText = fMeasure cd.Name
-            appendLine 3 (cd.Name + " = " + camelType + "." + cd.Name)
-        )
-
-        appendLine 2 "}"
-        // start the fromF series
-        appendLine 0 String.Empty
-
-        // Convert.ToWhat? what method off the Convert class should we use? What's the overhead for using convert instead of cast? what are the advantages?
-        let mapConverter(type' : string) =
-            match type'.ToLower() with
-                |"char"
-                |"nchar"
-                |"nvarchar"
-                |"xml"
-                |"varchar" -> "ToString"
-                |"bit" -> "ToBoolean"
-                // from BReusable
-                |"image" -> "ToBinaryData"
-                |"date"
-                |"datetime"
-                |"datetime2"
-                |"smalldatetime" -> "ToDateTime"
-                // from BReusable
-                |"uniqueidentifier" -> "ToGuid" // invalid
-                |"int" -> "ToInt32"
-                |"decimal" -> "ToDecimal"
-                |"float"  -> "ToDouble"
-                |_ -> if isNull type' then String.Empty else type'
-
-        let nonNullables = ["string";"byte[]"]
-
-        appendLine 1 "let fromf (f:string -> obj option) ="
-        appendLine 2 "{"
-
-        columns
-        |> Seq.iter(fun cd ->
-            let measureText = fMeasure cd.Name
-            let mapped = SqlTableColumnChoiceItem.MapSqlType measureText useOptions cd
-
-            let converter = mapConverter(cd.Type)
-            appendLine 2 (cd.Name + " =")
-            appendLine 3 <| sprintf "match f \"%s\" with // %s" cd.Name mapped
-            let measureType = if String.IsNullOrEmpty measureText || stringEqualsI mapped "string" then String.Empty else sprintf " |> (*) 1<%s>" measureText
-
-            if cd.Nullable && nonNullables |> Seq.exists (stringEqualsI mapped) |> not then//(mapped <> typeof<string>.Name) && equalsI mapped "string" |> not  then
-                sprintf "|Some x -> x |> Convert.%s%s |> Nullable" converter measureType
-            else
-                sprintf "|Some x -> x |> Convert.%s%s" converter measureType
-            |> appendLine 3
-
-            let dv = getDefaultValue mapped measureText
-            appendLine 3 (sprintf "|None -> %s" dv)
-        )
-
-        appendLine 2 "}"
-
-        appendLine 0 String.Empty
-
-        appendLine 1 "let FromF (camelTypeF:Func<string,obj option>) = fromf (Func<_>.invoke1 camelTypeF)"
-
-        generateFromStpMethod appendLine useOptions camelType fMeasure columns'
-        generateCreateSqlInsertTextMethod appendLine useOptions typeName schemaName tableName fMeasure columns'
-        appendLine 0 String.Empty
+    let generateHelperModule fMeasure (typeName:string, columns:SqlTableColumnChoice, schemaName:string, tableName:string, appendLine:int -> string -> unit, useOptions:bool ):unit=
+        let igh = {new IGenerateHelper<SqlTableColumnChoiceItem> with
+                       member __.AppendLine indentations text = appendLine indentations text
+                       member __.GetBaseType = (fun  useOptions measure item -> SqlTableColumnChoiceItem.MapSqlType measure useOptions item.Item)
+                       member __.GetMeasureForColumnName(columnName) = fMeasure columnName
+                       member __.MakeColumnComments = fun (item:PureColumnInput<SqlTableColumnChoiceItem>) -> generateColumnSqlComment item.Item
+        }
+        let purishColumns = toPurish igh.GetMeasureForColumnName columns
+        let fOtherHelpers =
+            fun apline -> generateCreateSqlInsertTextMethod apline typeName schemaName tableName columns
+        generateHelperModule igh useOptions [sprintf "let schemaName = \"%s\"" schemaName; sprintf "let tableName = \"%s\"" tableName] (typeName, purishColumns) fOtherHelpers
 
     let generateINotifyClass(typeName:string, columns: SqlTableColumnChoice, appendLine:int -> string -> unit, _useOptions:bool ) =
         let mapFieldNameFromType(columnName:string) =
@@ -514,9 +482,9 @@ module DataModelToF =
         for cd in columns do
             let camel = mapFieldNameFromType cd.Name
             appendLine 0 String.Empty
-            appendLine 1 (generateColumnSqlComment cd)
-            appendLine 1 ("member x." + cd.Name)
-            appendLine 2 ("with get() = " + camel)
+            appendLine 1 <| "/" + generateColumnSqlComment cd
+            appendLine 1 <| "member x." + cd.Name
+            appendLine 2 <| "with get() = " + camel
             appendLine 2 "and set v ="
             //to consider: this might benefit from only setting/raising changed if the value is different
             appendLine 3 (camel + " <- v")
@@ -787,7 +755,7 @@ module DataModelToF =
                 let getMeasureType columnName =
                         cgsm.Measures
                         |> Seq.tryFind (fun m -> cgsm.MeasuresBlacklist |> Seq.contains columnName |> not && containsI m columnName)
-                        |> Option.getOrDefault null
+                        |> Option.map (fun m -> PureMeasure.create m |> Option.getOrFailMsg (sprintf "%s is not a valid measure" m))
 
                 let columns =
                     columns
@@ -802,7 +770,7 @@ module DataModelToF =
                         items |> Seq.map (fun c -> c.Name )
                     |> Seq.map (fun name ->
                         match getMeasureType name with
-                        | ValueString as m -> sprintf "<%s>" m
+                        | Some pm -> sprintf "<%s>" pm.Value
                         | _ -> String.Empty
                         |> sprintf "%s%s" name
                     )
@@ -839,9 +807,9 @@ module DataModelToF =
                         | SqlTableColumnChoice.Manual items ->
                             items |> Seq.map (fun x -> x.Name)
                         |> Seq.map getMeasureType
-                    |> Seq.filter(String.IsNullOrWhiteSpace >> not)
+                    |> Seq.choose id
                     |> Seq.distinct
-                    |> Seq.map f
+                    |> Seq.map (fun x -> f x.Value)
                     |> Seq.distinct
                     |> Seq.iter(sprintf "open %s" >> appendLine)
 
@@ -858,33 +826,15 @@ module DataModelToF =
                 let genIgr =
                     {   new IGenerateRecords<SqlTableColumnChoiceItem> with
                             //type GetBaseTypeTextDelegate<'T> = MeasureText -> UseOptions -> PureColumnInput<'T> -> string
-                            member __.GetBaseType :GetBaseTypeTextDelegate<_> = (fun  measure useOptions item -> SqlTableColumnChoiceItem.MapSqlType measure useOptions item.Item)
+                            member __.GetBaseType :GetBaseTypeTextDelegate<_> = (fun  measure useOptions item -> SqlTableColumnChoiceItem.MapSqlType useOptions measure item.Item)
                             member __.MakeColumnComments = fun  (item:PureColumnInput<SqlTableColumnChoiceItem>) -> generateColumnSqlComment item.Item
                             member __.AppendLine i txt = appendLine' i txt
                             member __.GetDefaultValueForType x measure = getDefaultValue x measure
                             member __.GetMeasureForColumnName x = getMeasureType x
                     }
 
-                let purishColumns =
-                    columns.Destructure()
-                    |> List.map(fun cd ->
-                        let measure = getMeasureType cd.Name
-                        let colName = 
-                            let raw = SqlTableColumnChoiceItem.MapSqlType measure iga.UseOptions cd 
-                            raw
-                            |> PureColumnTypeName.Create
-                            |> function
-                                | Some x -> x
-                                | None -> failwithf "couldn't get column name from %s" raw
+                let purishColumns = toPurish getMeasureType columns
 
-                        {   new PureColumnInput<_> with
-                                member __.IsPrimaryKey = cd.IsPrimaryKey
-                                member __.Item = cd
-                                member __.Name = cd.Name
-                                member __.TypeName = colName
-                                member __.AllowsNull = cd.Nullable
-                        }
-                    )
                 if cgsm.GenerateValueRecords then
                     generateRecord genIgr tn cgsm.Mutable cgsm.UseOptionTypes true purishColumns //cgsm.Mutable tn getMeasureType (columns, appendLine', cgsm.UseOptionTypes, true)
 

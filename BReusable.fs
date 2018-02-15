@@ -7,7 +7,8 @@ open System.Diagnostics
 [<AutoOpen>]
 module MatchHelpers =
     // purpose: 'when clauses' require binding variable names, and if two cases should have the same result, but one has a condition on the bound variable, it can no longer point to the same exact path
-    let (|IsTrue|_|) f x = if f x then Some() else None
+    let (|IsTrue|_|) f x = if f x then Some x else None
+    let (|IsAnyOf|_|) items x = if items |> Seq.exists((=) x) then Some x else None
 
 [<AutoOpen>]
 module FunctionalHelpersAuto =
@@ -112,6 +113,7 @@ type System.String with
     static member emptyToNull (x:string) = if String.IsNullOrEmpty x then null else x
     static member equalsI (x:string) (x2:string) = not <| isNull x && not <| isNull x2 && x.Equals(x2, String.defaultIComparison)
     static member startsWithI (toMatch:string) (x:string) = not <| isNull x && not <| isNull toMatch && toMatch.Length > 0 && x.StartsWith(toMatch, String.defaultIComparison)
+    static member startsWith (toMatch:string) (x:string) = not <| isNull x && not <| isNull toMatch && toMatch.Length > 0 && x.StartsWith(toMatch)
     static member isNumeric (x:string) = not <| isNull x && x.Length > 0 && x |> String.forall Char.IsNumber
     static member splitLines(x:string) = x.Split([| "\r\n";"\n"|], StringSplitOptions.None)
     static member before (delimiter:string) s = s |> String.substring2 0 (s.IndexOf delimiter)
@@ -226,14 +228,16 @@ module StringPatterns =
         | "" -> Empty
         | _ when String.IsNullOrWhiteSpace s -> WhiteSpace
         | _ -> ValueString
-    let (|StartsWith|_|) (str:string) arg = if str.StartsWith(arg) then Some() else None
+    let (|StartsWith|_|) (delimiter:string) arg = if arg |> String.startsWith delimiter then Some() else None
     let (|StartsWithI|_|) s1 (toMatch:string) = if not <| isNull toMatch && toMatch.StartsWith(s1, StringComparison.InvariantCultureIgnoreCase) then Some () else None
+    let (|If|_|) f x = if f x then Some x else None
     let (|StringEqualsI|_|) s1 (toMatch:string) = if stringEqualsI toMatch s1 then Some() else None
     let (|InvariantEqualI|_|) (str:string) arg =
        if String.Compare(str, arg, StringComparison.InvariantCultureIgnoreCase) = 0
        then Some() else None
     let (|IsNumeric|_|) (s:string) = if not <| isNull s && s.Length > 0 && s |> String.forall Char.IsNumber then Some() else None
     let (|ContainsI|_|) s1 (toMatch:string) = if toMatch |> containsI s1 then Some () else None
+    let (|Contains|_|) s1 (toMatch:string) = if toMatch |> contains s1 then Some () else None
 
     let (|OrdinalEqualI|_|) (str:string) arg =
        if String.Compare(str, arg, StringComparison.OrdinalIgnoreCase) = 0
