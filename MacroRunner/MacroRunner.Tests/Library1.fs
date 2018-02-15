@@ -39,7 +39,7 @@ module CodeGeneration =
             |> flip (sprintf "%s%s") text
             |> sb.AppendLine
             |> ignore<StringBuilder>
-        DataModelToF.generateINotifyClass("Foo", columns, appendIndented, false)
+        DataModelToF.generateINotifyClass (fun _ -> None) ("Foo", columns, appendIndented)
         let generatedClass = sb |> string
         Debug.WriteLine(sb.ToString())
         Assert.Contains("type FooN", generatedClass)

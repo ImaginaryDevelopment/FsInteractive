@@ -14,7 +14,6 @@ type Path = System.IO.Path
 type IManager = MacroRunner.MultipleOutputHelper.IManager
 
 module DataModelToF =
-    let hoist f x = f x |> ignore; x
 
     open System.Data.SqlClient
     open System.Diagnostics
@@ -183,6 +182,32 @@ module DataModelToF =
                     | Manual x -> x |> List.map (ManualItem)
                     | SqlTableColumnMeta x -> x |> List.map (SqlTableColumnMetaItem)
 
+    let toPurish fMeasure (columns:SqlTableColumnChoice) =
+        //let getMeasureType columnName =
+        //        measures
+        //        |> Seq.tryFind (fun m -> measuresBlacklist |> Seq.contains columnName |> not && containsI m columnName)
+        //        |> Option.getOrDefault null
+        columns.Destructure()
+        |> List.map(fun cd ->
+            let measure :PureMeasure option = fMeasure cd.Name
+            let colName =
+                //let raw = SqlTableColumnChoiceItem.MapSqlType measure useOptions cd
+                cd.NetBaseType
+
+                |> PureColumnTypeName.Create
+                |> function
+                    | Some x -> x
+                    | None -> failwithf "couldn't get column name from %s:%s" cd.Name cd.SqlType
+
+            {   new PureColumnInput<_> with
+                    member __.IsPrimaryKey = cd.IsPrimaryKey
+                    member __.Item = cd
+                    member __.Name = cd.Name
+                    member __.TypeName = colName
+                    member __.AllowsNull = cd.Nullable
+                    member __.MeasureText = measure
+            }
+        )
     let generateColumnSqlComment = // (ci:ColumnInput) =
         function
         | SqlTableColumnMetaItem cd ->
@@ -246,27 +271,11 @@ module DataModelToF =
 
 
 
-    let generateFromStpMethod appendLine useOptions camelType fMeasure (columns: SqlTableColumnChoice)=
+    let generateFromStpMethod appendLine camelType fMeasure (columns: SqlTableColumnChoice) =
+        columns
+        |> toPurish fMeasure
+        |> generateFromStpMethod appendLine camelType fMeasure
 
-        appendLine 0 String.Empty
-
-        appendLine 1 ("let inline toRecordStp (" + camelType + ": ^a) =")
-        appendLine 2 "{"
-
-        columns.Destructure()
-        |> Seq.iter(fun cd ->
-            let pm : PureMeasure option = fMeasure cd.Name
-            let measureType =
-                match pm, cd.Nullable with
-                | Some x, _ when x.Value |> stringEqualsI "string" -> String.Empty
-                | None, _ -> String.Empty
-                | Some pm, true -> sprintf "|> Nullable.map((*) 1<%s>)" pm.Value
-                | Some pm, false -> sprintf " * 1<%s>" pm.Value
-
-            appendLine 3 <| sprintf "%s = (^a: (member %s: _) %s)%s" cd.Name cd.Name camelType measureType
-        )
-
-        appendLine 2 "}"
         ()
 
     let generateCreateSqlInsertTextMethod appendLine typeName schemaName tableName (columns:SqlTableColumnChoice) =
@@ -386,32 +395,6 @@ module DataModelToF =
             if hasIdentity then
                 appendLine 2 <| "|> sprintf \"%s;select SCOPE_IDENTITY()\""
         ()
-    let toPurish fMeasure (columns:SqlTableColumnChoice) =
-        //let getMeasureType columnName =
-        //        measures
-        //        |> Seq.tryFind (fun m -> measuresBlacklist |> Seq.contains columnName |> not && containsI m columnName)
-        //        |> Option.getOrDefault null
-        columns.Destructure()
-        |> List.map(fun cd ->
-            let measure :PureMeasure option = fMeasure cd.Name
-            let colName =
-                //let raw = SqlTableColumnChoiceItem.MapSqlType measure useOptions cd
-                cd.NetBaseType
-
-                |> PureColumnTypeName.Create
-                |> function
-                    | Some x -> x
-                    | None -> failwithf "couldn't get column name from %s:%s" cd.Name cd.SqlType
-
-            {   new PureColumnInput<_> with
-                    member __.IsPrimaryKey = cd.IsPrimaryKey
-                    member __.Item = cd
-                    member __.Name = cd.Name
-                    member __.TypeName = colName
-                    member __.AllowsNull = cd.Nullable
-                    member __.MeasureText = measure
-            }
-        )
 
     /// generate the helper module
     let generateHelperModule fMeasure (typeName:string, columns:SqlTableColumnChoice, schemaName:string, tableName:string, appendLine:int -> string -> unit, useOptions:bool ):unit=
@@ -424,71 +407,10 @@ module DataModelToF =
         let purishColumns = toPurish igh.GetMeasureForColumnName columns
         let fOtherHelpers =
             fun apline -> generateCreateSqlInsertTextMethod apline typeName schemaName tableName columns
-        generateHelperModule igh useOptions [sprintf "let schemaName = \"%s\"" schemaName; sprintf "let tableName = \"%s\"" tableName] (typeName, purishColumns) fOtherHelpers
+        generateHelperModule igh [sprintf "let schemaName = \"%s\"" schemaName; sprintf "let tableName = \"%s\"" tableName] (typeName, purishColumns) fOtherHelpers
 
-    let generateINotifyClass(typeName:string, columns: SqlTableColumnChoice, appendLine:int -> string -> unit, _useOptions:bool ) =
-        let mapFieldNameFromType(columnName:string) =
-            match toCamelCase columnName with
-            | "type" ->  "type'"
-            | camel -> camel
-        appendLine 0 (generateTypeComment columns.Length)
-        appendLine 0 ("type "+ typeName + "N (model:" + typeName + "Record) =")
-        appendLine 0 String.Empty
-        appendLine 1 "let propertyChanged = new Event<_, _>()"
-        appendLine 0 String.Empty
-        let columns = columns.Destructure()
-        appendLine 0 String.Empty
-        for cd in columns do
-            let camel = mapFieldNameFromType(cd.Name)
-            appendLine 1 ("let mutable "+ camel + " = model." + cd.Name)
-
-        appendLine 0 String.Empty
-        let interfaceName = sprintf "I%s" typeName
-
-        appendLine 1 (sprintf "interface %s with" interfaceName)
-        for cd in columns do
-            appendLine 2 (generateColumnSqlComment cd)
-            appendLine 2 ("member x." + cd.Name + " with get () = x." + cd.Name)
-
-        appendLine 1 ("interface I" + typeName + "RW with")
-
-        for cd in columns do
-            appendLine 2 (generateColumnSqlComment cd)
-            if cd.IsComputed then
-                appendLine 2 <| "member x." + cd.Name + " with get () = x." + cd.Name
-            else 
-                appendLine 2 <| "member x." + cd.Name + " with get () = x." + cd.Name + " and set v = x." + cd.Name + " <- v"
-
-        appendLine 0 String.Empty
-        appendLine 1 (sprintf "member x.MakeRecord () = x :> %s |> %sHelpers.toRecord" interfaceName typeName)
-
-        appendLine 0 String.Empty
-
-        appendLine 1 "interface INotifyPropertyChanged with"
-        appendLine 2 "[<CLIEvent>]"
-        appendLine 2 "member __.PropertyChanged = propertyChanged.Publish"
-        appendLine 1 "abstract member RaisePropertyChanged : string -> unit"
-        appendLine 1 "default x.RaisePropertyChanged(propertyName : string) = propertyChanged.Trigger(x, PropertyChangedEventArgs(propertyName))"
-
-        appendLine 0 String.Empty
-        appendLine 1 "abstract member SetAndNotify<'t,'b> : string * 'b * 't Action * 't -> bool"
-        appendLine 1 "default x.SetAndNotify<'t,'b> (propertyName, baseValue:'b, baseSetter: 't Action, value:'t) ="
-        appendLine 2 "if obj.ReferenceEquals(box baseValue,box value) then false"
-        appendLine 2 "else"
-        appendLine 3 "baseSetter.Invoke value"
-        appendLine 3 "x.RaisePropertyChanged(propertyName)"
-        appendLine 3 "true"
-
-        for cd in columns do
-            let camel = mapFieldNameFromType cd.Name
-            appendLine 0 String.Empty
-            appendLine 1 <| "/" + generateColumnSqlComment cd
-            appendLine 1 <| "member x." + cd.Name
-            appendLine 2 <| "with get() = " + camel
-            appendLine 2 "and set v ="
-            //to consider: this might benefit from only setting/raising changed if the value is different
-            appendLine 3 (camel + " <- v")
-            appendLine 3 ("x.RaisePropertyChanged \"" + cd.Name + "\"")
+    let generateINotifyClass fMeasure (typeName:string, columns: SqlTableColumnChoice, appendLine:int -> string -> unit) =
+        generateINotifyClass (fun c -> generateColumnSqlComment c.Item) (fun c -> not c.Item.IsComputed) (typeName, columns |> toPurish fMeasure, appendLine)
 
     type SqlTableMeta = {TI:TableIdentifier; TypeName:string; PrimaryKeys:string Set; Identities: string Set; Columns: SqlTableColumnChoice}
 
@@ -496,7 +418,7 @@ module DataModelToF =
         use cn = new SqlConnection(cgsm.CString)
         cn.Open()
         sprintf "Connected to %s,%s" cn.DataSource cn.Database
-        |> hoist appendLine
+        |> tee appendLine
         |> printfn "%s"
         appendLine String.Empty
         let fGenerated =
@@ -840,7 +762,7 @@ module DataModelToF =
 
                 generateRecord genIgr tn cgsm.Mutable cgsm.UseOptionTypes false purishColumns
                 generateHelperModule getMeasureType (tn, columns, sqlTableMeta.TI.Schema, sqlTableMeta.TI.Name, appendLine', cgsm.UseOptionTypes)
-                generateINotifyClass(tn, columns, appendLine', cgsm.UseOptionTypes)
+                generateINotifyClass getMeasureType (tn, columns, appendLine')
 
                 manager.EndBlock()
             )

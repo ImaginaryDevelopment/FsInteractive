@@ -213,7 +213,7 @@ let generateRecord (igr:IGenerateRecords<_>) typeName mutability useOptions gene
     appendLine 2 "}"
     appendLine 0 String.Empty
 
-let generateFromStpMethod (fMapType: GetBaseTypeTextDelegate<'T>) appendLine useOptions camelType (fMeasure:_ -> PureMeasure option) (columns: PureColumnInput<_> list) =
+let generateFromStpMethod appendLine camelType (fMeasure:_ -> PureMeasure option) (columns: PureColumnInput<_> list) =
 
     appendLine 0 String.Empty
 
@@ -222,7 +222,6 @@ let generateFromStpMethod (fMapType: GetBaseTypeTextDelegate<'T>) appendLine use
     columns
     |> Seq.iter(fun cd ->
         let pm = fMeasure cd.Name
-        let mapped = fMapType useOptions pm cd
         let measureType =
             match pm, cd.AllowsNull with
             | None, _ -> String.Empty
@@ -304,7 +303,7 @@ let generateFromFMethod appendLine (* for things like making the type comment us
     appendLine 1 "let FromF (camelTypeF:Func<string,obj option>) = fromf (Func<_>.invoke1 camelTypeF)"
 
 /// generate the helper module
-let generateHelperModule (x:IGenerateHelper<_>) useOptions rawHelperItems (typeName:string, columns:PureColumnInput<_> list) fOtherHelpers =
+let generateHelperModule (x:IGenerateHelper<_>) rawHelperItems (typeName:string, columns:PureColumnInput<_> list) fOtherHelpers =
     let inline appendLine i = x.AppendLine i
     let moduleName = sprintf "%sHelpers" typeName
     let camelType = toCamelCase typeName
@@ -338,12 +337,75 @@ let generateHelperModule (x:IGenerateHelper<_>) useOptions rawHelperItems (typeN
     // start the fromF series
     appendLine 0 String.Empty
     generateFromFMethod appendLine x.MakeColumnComments columns
-    generateFromStpMethod x.GetBaseType appendLine useOptions camelType x.GetMeasureForColumnName columns
+    generateFromStpMethod appendLine camelType x.GetMeasureForColumnName columns
     // for things like :
     //generateCreateSqlInsertTextMethod appendLine useOptions typeName schemaName tableName fMeasure columns
     fOtherHelpers (fun i -> appendLine (i + 1))
     appendLine 0 String.Empty
 ()
+
+let generateINotifyClass fColumnComment fIsWriteable (typeName:string, columns: PureColumnInput<_> list, appendLine:int -> string -> unit) =
+    let mapFieldNameFromType(columnName:string) =
+        match toCamelCase columnName with
+        | "type" ->  "type'"
+        | camel -> camel
+    appendLine 0 (generateTypeComment columns.Length)
+    appendLine 0 ("type "+ typeName + "N (model:" + typeName + "Record) =")
+    appendLine 0 String.Empty
+    appendLine 1 "let propertyChanged = new Event<_, _>()"
+    appendLine 0 String.Empty
+    appendLine 0 String.Empty
+    for cd in columns do
+        let camel = mapFieldNameFromType(cd.Name)
+        appendLine 1 ("let mutable "+ camel + " = model." + cd.Name)
+
+    appendLine 0 String.Empty
+    let interfaceName = sprintf "I%s" typeName
+
+    appendLine 1 (sprintf "interface %s with" interfaceName)
+    for cd in columns do
+        appendLine 2 (fColumnComment cd)
+        appendLine 2 ("member x." + cd.Name + " with get () = x." + cd.Name)
+
+    appendLine 1 ("interface I" + typeName + "RW with")
+
+    for cd in columns do
+        appendLine 2 (fColumnComment cd)
+        if fIsWriteable cd then
+            appendLine 2 <| "member x." + cd.Name + " with get () = x." + cd.Name + " and set v = x." + cd.Name + " <- v"
+        else 
+            appendLine 2 <| "member x." + cd.Name + " with get () = x." + cd.Name
+
+    appendLine 0 String.Empty
+    appendLine 1 (sprintf "member x.MakeRecord () = x :> %s |> %sHelpers.toRecord" interfaceName typeName)
+
+    appendLine 0 String.Empty
+
+    appendLine 1 "interface INotifyPropertyChanged with"
+    appendLine 2 "[<CLIEvent>]"
+    appendLine 2 "member __.PropertyChanged = propertyChanged.Publish"
+    appendLine 1 "abstract member RaisePropertyChanged : string -> unit"
+    appendLine 1 "default x.RaisePropertyChanged(propertyName : string) = propertyChanged.Trigger(x, PropertyChangedEventArgs(propertyName))"
+
+    appendLine 0 String.Empty
+    appendLine 1 "abstract member SetAndNotify<'t,'b> : string * 'b * 't Action * 't -> bool"
+    appendLine 1 "default x.SetAndNotify<'t,'b> (propertyName, baseValue:'b, baseSetter: 't Action, value:'t) ="
+    appendLine 2 "if obj.ReferenceEquals(box baseValue,box value) then false"
+    appendLine 2 "else"
+    appendLine 3 "baseSetter.Invoke value"
+    appendLine 3 "x.RaisePropertyChanged(propertyName)"
+    appendLine 3 "true"
+
+    for cd in columns do
+        let camel = mapFieldNameFromType cd.Name
+        appendLine 0 String.Empty
+        appendLine 1 <| "/" + fColumnComment cd
+        appendLine 1 <| "member x." + cd.Name
+        appendLine 2 <| "with get() = " + camel
+        appendLine 2 "and set v ="
+        //to consider: this might benefit from only setting/raising changed if the value is different
+        appendLine 3 (camel + " <- v")
+        appendLine 3 ("x.RaisePropertyChanged \"" + cd.Name + "\"")
 
 module TranslateCSharp =
     type PathF = |PathF of string
