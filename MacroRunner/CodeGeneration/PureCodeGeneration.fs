@@ -367,6 +367,53 @@ let generateInterface fColumnComment fMap (typeName:string, fMeasure, columns: P
 
     appendLine 0 String.Empty
 
+let generateClass fColumnComment fIsWriteable (typeName:string, columns: PureColumnInput<_> list, appendLine:int -> string -> unit) =
+    let mapFieldNameFromType(columnName:string) =
+        match toCamelCase columnName with
+        | "type" ->  "type'"
+        | camel -> camel
+    appendLine 0 <| generateTypeComment columns.Length
+    appendLine 0 <| "type "+ typeName + " (model:" + typeName + "Record) ="
+    appendLine 0 String.Empty
+    columns |> Seq.iter(fun cd ->
+        let camel = mapFieldNameFromType(cd.Name)
+        appendLine 1 <| "let mutable "+ camel + " = model." + cd.Name
+    )
+
+    appendLine 0 String.Empty
+
+    columns |> Seq.iter(fun cd ->
+        let camel = mapFieldNameFromType cd.Name
+        appendLine 0 String.Empty
+        appendLine 1 <| "/" + fColumnComment cd
+        appendLine 1 <| "member __." + cd.Name
+        appendLine 2 <| "with get() = " + camel
+        appendLine 2 <| sprintf "and set v = %s <- v" camel
+    )
+
+    appendLine 0 String.Empty
+    let interfaceName = sprintf "I%s" typeName
+
+    appendLine 1 (sprintf "interface %s with" interfaceName)
+    columns |> Seq.iter(fun cd ->
+        appendLine 2 <| fColumnComment cd
+        appendLine 2 <|"member x." + cd.Name + " with get () = x." + cd.Name
+    )
+
+    appendLine 1 ("interface I" + typeName + "RW with")
+
+    columns |> Seq.iter(fun cd ->
+        appendLine 2 (fColumnComment cd)
+        if fIsWriteable cd then
+            appendLine 2 <| "member x." + cd.Name + " with get () = x." + cd.Name + " and set v = x." + cd.Name + " <- v"
+        else 
+            appendLine 2 <| "member x." + cd.Name + " with get () = x." + cd.Name
+    )
+
+    appendLine 0 String.Empty
+    appendLine 1 (sprintf "member x.MakeRecord () = x :> %s |> %sHelpers.toRecord" interfaceName typeName)
+
+
 let generateINotifyClass fColumnComment fIsWriteable (typeName:string, columns: PureColumnInput<_> list, appendLine:int -> string -> unit) =
     let mapFieldNameFromType(columnName:string) =
         match toCamelCase columnName with

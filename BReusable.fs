@@ -227,7 +227,7 @@ module StringPatterns =
         | null -> NullString
         | "" -> Empty
         | _ when String.IsNullOrWhiteSpace s -> WhiteSpace
-        | _ -> ValueString
+        | _ -> ValueString s
     let (|RegexMatch|_|) pattern input =
         let m = System.Text.RegularExpressions.Regex.Match(input,pattern)
         if m.Success then
@@ -266,7 +266,7 @@ module StringPatterns =
     type System.String with
         static member IsValueString =
             function
-            | ValueString -> true
+            | ValueString _ -> true
             | _ -> false
 
 #if LINQPAD

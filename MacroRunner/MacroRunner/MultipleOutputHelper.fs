@@ -253,7 +253,7 @@ module MultipleOutputHelper =
                     let footerText = tryGetByStartEnd footer.Start footer.Length
                     let outputPath =
                         match templateFilePathOpt with
-                        | Some (ValueString as templateFile) -> Path.GetDirectoryName templateFile
+                        | Some (ValueString templateFile) -> Path.GetDirectoryName templateFile
                         | _ -> String.Empty // Path.Combine ignores string.empty, but throws on null
                     log <| sprintf "outputPath is: %s" outputPath
                     files.Reverse()

@@ -142,7 +142,7 @@ let getTableData cn (tableIdentifier:TableIdentifier) =
             | None -> None
             | Some s ->
                 match s with
-                | ValueString as ct -> if ct |> startsWithI "PRIMARY KEY" then Some() else None
+                | ValueString ct -> if ct |> startsWithI "PRIMARY KEY" then Some() else None
                 | _ -> None
     let pks = 
         seq {

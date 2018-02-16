@@ -386,7 +386,7 @@ module DataModelToF =
             fun apline -> generateCreateSqlInsertTextMethod apline typeName schemaName tableName columns
         generateHelperModule igh useOptions [sprintf "let schemaName = \"%s\"" schemaName; sprintf "let tableName = \"%s\"" tableName] (typeName, purishColumns) fOtherHelpers
 
-    let generateINotifyClass fMeasure (typeName:string, columns: SqlTableColumnChoice, appendLine:int -> string -> unit) =
+    let generateINotifyClassSql fMeasure (typeName:string, columns: SqlTableColumnChoice, appendLine:int -> string -> unit) =
         generateINotifyClass (fun c -> generateColumnSqlComment c.Item) (fun c -> not c.Item.IsComputed) (typeName, columns |> toPurish fMeasure, appendLine)
 
     type SqlTableMeta = {TI:TableIdentifier; TypeName:string; PrimaryKeys:string Set; Identities: string Set; Columns: SqlTableColumnChoice}
@@ -552,7 +552,10 @@ module DataModelToF =
     let generate generatorId (fMetaFallbackOpt) (cgsm:CodeGenSettingMap) (manager:MacroRunner.MultipleOutputHelper.IManager, generationEnvironment:StringBuilder, tables:TableIdentifier seq) =
 
         log(sprintf "DataModelToF.generate:cgsm:%A" cgsm)
-        let appendLine text = generationEnvironment.AppendLine(text) |> ignore
+        let appendLine text =
+            match text with 
+            | ValueString text -> generationEnvironment.AppendLine text |> ignore
+            | _ -> generationEnvironment.AppendLine String.Empty |> ignore
         let appendEmpty() = appendLine String.Empty
         let appendLine' indentLevels text =
             let indentation = List.replicate indentLevels "    " (* Enumerable.Repeat("    ",indentLevels) *) |> delimit String.Empty
@@ -741,7 +744,11 @@ module DataModelToF =
 
                 generateRecord genIgr tn cgsm.Mutable cgsm.UseOptionTypes false purishColumns
                 generateHelperModule getMeasureType (tn, columns, sqlTableMeta.TI.Schema, sqlTableMeta.TI.Name, appendLine', cgsm.UseOptionTypes)
-                generateINotifyClass getMeasureType (tn, columns, appendLine')
+                let columns = toPurish genIgr.GetMeasureForColumnName columns
+                generateClass genIgr.MakeColumnComments (fun c -> c.IsWriteable) (tn, columns,appendLine')
+                appendEmpty()
+                //generateINotifyClass getMeasureType (tn, columns, appendLine')
+                generateINotifyClass (fun c -> generateColumnSqlComment c.Item) (fun c -> not c.Item.IsComputed) (tn, columns, appendLine')
 
                 manager.EndBlock()
             )
