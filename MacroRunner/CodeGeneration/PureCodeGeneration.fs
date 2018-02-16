@@ -66,22 +66,23 @@ type PureColumnTypeName private(text) =
         else None
     member __.Value = text
 // this appears to unmap a type
-let getDefaultValue (mappedType:PureColumnTypeName) (measureType:PureMeasure option) =
-    if mappedType.Value |> endsWith "Nullable" then
+let getDefaultValue (measureType:PureMeasure option) fullType =
+    let mappedType = fullType
+    if mappedType |> endsWith "Nullable" then
         "Nullable()"
-    elif mappedType.Value |> endsWith ("option") then
+    elif mappedType |> endsWith ("option") then
         "None"
     else
         let reMappedType,measuredValue =
             match measureType with
-            | None -> mappedType.Value,String.Empty
+            | None -> mappedType,String.Empty
             | Some measureType ->
                 try
-                    match mappedType.Value with
-                    | "string" -> mappedType.Value, String.Empty
+                    match mappedType with
+                    | "string" -> mappedType, String.Empty
                     // isn't this going to fail on non-measure generics?
-                    | Contains "<" -> mappedType.Value |> before "<", sprintf "<%s>"measureType.Value
-                    | _ -> mappedType.Value, sprintf "<%s>" measureType.Value
+                    | Contains "<" -> mappedType |> before "<", sprintf "<%s>"measureType.Value
+                    | _ -> mappedType, sprintf "<%s>" measureType.Value
                 with ex ->
                     ex.Data.Add("mappedType", mappedType)
                     ex.Data.Add("measureType", measureType)
@@ -101,6 +102,7 @@ let getDefaultValue (mappedType:PureColumnTypeName) (measureType:PureMeasure opt
 
 type PureColumnInput<'T> =
     abstract member IsPrimaryKey:bool
+    abstract member IsWriteable:bool
     abstract member Item:'T
     abstract member Name:string
     // result of FBaseType ?
@@ -118,7 +120,7 @@ open PureColumnInput
 type Mutability = | Immutable | CliMutable | Mutable
 
 type UseOptions = bool
-type GetBaseTypeTextDelegate<'T> = UseOptions -> PureMeasure option -> PureColumnInput<'T> -> string
+type GetFullTypeTextDelegate<'T> = UseOptions -> PureColumnInput<'T> -> string
 type MakeColumnCommentsDelegate<'T> = PureColumnInput<'T> -> string
 
 type IGenerateRecords<'T> =
@@ -128,13 +130,14 @@ type IGenerateRecords<'T> =
     //interface IMakeColumnComments
     //abstract member GetColumnTypeText: measure:string -> useOptions:bool -> item:PureColumnInput<'T> -> string
     abstract member GetMeasureForColumnName: columnName:string -> PureMeasure option
-    abstract member GetBaseType: GetBaseTypeTextDelegate<'T>
-    abstract member GetDefaultValueForType: typeString:PureColumnTypeName -> measure:PureMeasure option -> string
+    abstract member GetFullType: GetFullTypeTextDelegate<'T>
+    // should return with nullable and measure when appropriate
+    abstract member GetDefaultValueForType: PureColumnInput<'T> -> string
 let generateTypeComment columnCount = sprintf "/// %i properties" columnCount
 
 type IGenerateHelper<'T> =
     abstract member GetMeasureForColumnName: columnName:string -> PureMeasure option
-    abstract member GetBaseType: GetBaseTypeTextDelegate<'T>
+    abstract member GetFullType: GetFullTypeTextDelegate<'T>
     abstract member AppendLine: indentations:int -> text:string -> unit
     abstract member MakeColumnComments:MakeColumnCommentsDelegate<'T>
 
@@ -176,7 +179,7 @@ let generateRecord (igr:IGenerateRecords<_>) typeName mutability useOptions gene
         appendLine 1 <| (sprintf "/%s" <| igr.MakeColumnComments x)
         let mt = igr.GetMeasureForColumnName x.Name
         let mapped =
-            let base' = igr.GetBaseType useOptions mt x //SqlTableColumnChoiceItem.MapSqlType mt igr.UseOptions x
+            let base' = igr.GetFullType useOptions x //SqlTableColumnChoiceItem.MapSqlType mt igr.UseOptions x
             match mutability with
             | Mutable -> sprintf "mutable %s" base'
             | _ -> base'
@@ -199,10 +202,10 @@ let generateRecord (igr:IGenerateRecords<_>) typeName mutability useOptions gene
 
     columns
     |> Seq.iter(fun cd ->
+        let mapped = igr.GetFullType useOptions cd //SqlTableColumnChoiceItem.MapSqlType measureText igr.UseOptions cd
         let measureText = igr.GetMeasureForColumnName cd.Name
-        let mapped = igr.GetBaseType useOptions measureText cd //SqlTableColumnChoiceItem.MapSqlType measureText igr.UseOptions cd
         try
-            appendLine 2 (cd.Name + " = " + (igr.GetDefaultValueForType cd.TypeName measureText))
+            appendLine 2 (cd.Name + " = " + (igr.GetDefaultValueForType cd))
         with ex ->
             ex.Data.Add("mapped", mapped)
             ex.Data.Add("ColumnName",cd.Name)
@@ -239,7 +242,7 @@ type TypeName = string
 type GetMeasureForColumnNameDelegate = string -> string
 type FOtherHelpersDelegate<'T> = AppendLineDelegate -> UseOptions -> TypeName -> GetMeasureForColumnNameDelegate -> PureColumnInput<'T> list -> unit
 
-let generateFromFMethod appendLine (* for things like making the type comment use the sql, or both net and sql types together *) fColumnComment columns =
+let generateFromFMethod fMapFullType appendLine (* for things like making the type comment use the sql, or both net and sql types together *) fColumnComment columns =
 
     // Convert.ToWhat? what method off the Convert class should we use? What's the overhead for using convert instead of cast? what are the advantages?
 
@@ -292,7 +295,8 @@ let generateFromFMethod appendLine (* for things like making the type comment us
         |> appendLine 3
 
         // generate the 0/None/Nullable() value
-        let dv = getDefaultValue cd.TypeName cd.MeasureText
+        let fullType = fMapFullType cd
+        let dv = getDefaultValue cd.MeasureText fullType
         appendLine 3 (sprintf "|None -> %s" dv)
     )
 
@@ -303,7 +307,7 @@ let generateFromFMethod appendLine (* for things like making the type comment us
     appendLine 1 "let FromF (camelTypeF:Func<string,obj option>) = fromf (Func<_>.invoke1 camelTypeF)"
 
 /// generate the helper module
-let generateHelperModule (x:IGenerateHelper<_>) rawHelperItems (typeName:string, columns:PureColumnInput<_> list) fOtherHelpers =
+let generateHelperModule (x:IGenerateHelper<_>) useOptions rawHelperItems (typeName:string, columns:PureColumnInput<_> list) fOtherHelpers =
     let inline appendLine i = x.AppendLine i
     let moduleName = sprintf "%sHelpers" typeName
     let camelType = toCamelCase typeName
@@ -336,13 +340,32 @@ let generateHelperModule (x:IGenerateHelper<_>) rawHelperItems (typeName:string,
     appendLine 2 "}"
     // start the fromF series
     appendLine 0 String.Empty
-    generateFromFMethod appendLine x.MakeColumnComments columns
+    generateFromFMethod (x.GetFullType useOptions) appendLine x.MakeColumnComments columns
     generateFromStpMethod appendLine camelType x.GetMeasureForColumnName columns
     // for things like :
     //generateCreateSqlInsertTextMethod appendLine useOptions typeName schemaName tableName fMeasure columns
     fOtherHelpers (fun i -> appendLine (i + 1))
     appendLine 0 String.Empty
 ()
+
+type InterfaceGeneratorArgs = { Writeable:bool; UseOptions:bool}
+let generateInterface fColumnComment fMap (typeName:string, fMeasure, columns: PureColumnInput<_> list, appendLine:int -> string -> unit, interfaceGeneratorArgs ) =
+    appendLine 0 <| sprintf "// typeName:%s writeable:%A useOptions:%A" typeName interfaceGeneratorArgs.Writeable interfaceGeneratorArgs.UseOptions
+    appendLine 0 (generateTypeComment columns.Length)
+    appendLine 0 ("type I" + typeName + (if interfaceGeneratorArgs.Writeable  then "RW" else String.Empty) + " =")
+    if interfaceGeneratorArgs.Writeable then
+        appendLine 1 ("inherit I" + typeName)
+
+    columns
+    |> Seq.iter(fun item ->
+        appendLine 1 (item |> fColumnComment |> sprintf "/%s" )
+        let measureText : PureMeasure option = fMeasure item.Name
+        let mapped = fMap measureText interfaceGeneratorArgs.UseOptions item
+
+        appendLine 1 <| sprintf "abstract member %s:%s with get%s" item.Name mapped (if interfaceGeneratorArgs.Writeable && item.IsWriteable then ",set" else String.Empty)
+    )
+
+    appendLine 0 String.Empty
 
 let generateINotifyClass fColumnComment fIsWriteable (typeName:string, columns: PureColumnInput<_> list, appendLine:int -> string -> unit) =
     let mapFieldNameFromType(columnName:string) =
@@ -364,8 +387,8 @@ let generateINotifyClass fColumnComment fIsWriteable (typeName:string, columns: 
 
     appendLine 1 (sprintf "interface %s with" interfaceName)
     for cd in columns do
-        appendLine 2 (fColumnComment cd)
-        appendLine 2 ("member x." + cd.Name + " with get () = x." + cd.Name)
+        appendLine 2 <| fColumnComment cd
+        appendLine 2 <|"member x." + cd.Name + " with get () = x." + cd.Name
 
     appendLine 1 ("interface I" + typeName + "RW with")
 
