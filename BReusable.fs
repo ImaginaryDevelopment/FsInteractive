@@ -235,7 +235,7 @@ module StringPatterns =
         else None
     let (|StartsWith|_|) (delimiter:string) arg = if arg |> String.startsWith delimiter then Some() else None
     let (|StartsWithI|_|) s1 (toMatch:string) = if not <| isNull toMatch && toMatch.StartsWith(s1, StringComparison.InvariantCultureIgnoreCase) then Some () else None
-    let (|If|_|) f x = if f x then Some x else None
+    let (|IsTrue|_|) f x = if f x then Some x else None
     let (|StringEqualsI|_|) s1 (toMatch:string) = if stringEqualsI toMatch s1 then Some() else None
     let (|InvariantEqualI|_|) (str:string) arg =
        if String.Compare(str, arg, StringComparison.InvariantCultureIgnoreCase) = 0
@@ -255,7 +255,7 @@ module StringPatterns =
             | true, v -> Some v
             | _, _ -> None
         | _ -> None
-    let (|Int|_|) (x:obj) =
+    let (|ParseInt|_|) (x:obj) =
         match x with
         | :? string as p ->
             let success,value = System.Int32.TryParse(p)

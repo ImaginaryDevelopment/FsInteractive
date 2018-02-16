@@ -79,8 +79,6 @@ module DataModelToF =
 
         sprintf "%s%s%s" targetType measureType nullability
 
-
-
     // this needs to DIAF -> the generation code should not have direct dependencies on a sql implementation
     type SqlTableColumnChoiceItem =
         |SqlTableColumnMetaItem of ColumnDescription
@@ -186,10 +184,6 @@ module DataModelToF =
                     | SqlTableColumnMeta x -> x |> List.map (SqlTableColumnMetaItem)
 
     let toPurish fMeasure (columns:SqlTableColumnChoice) =
-        //let getMeasureType columnName =
-        //        measures
-        //        |> Seq.tryFind (fun m -> measuresBlacklist |> Seq.contains columnName |> not && containsI m columnName)
-        //        |> Option.getOrDefault null
         columns.Destructure()
         |> List.map(fun cd ->
             let measure :PureMeasure option = fMeasure cd.Name
@@ -252,17 +246,13 @@ module DataModelToF =
             sprintf "// %s (%i) %s%s" typeName length nullability suffix
 
 
-
     let generateInterface (typeName:string, fMeasure, columns: SqlTableColumnChoice, appendLine:int -> string -> unit, interfaceGeneratorArgs ) =
         generateInterface (fun c -> generateColumnSqlComment c.Item) (fun pm useOptions c -> SqlTableColumnChoiceItem.MapSqlType pm useOptions c.Item) (typeName, fMeasure, columns |> toPurish fMeasure, appendLine, interfaceGeneratorArgs)
-
-
 
     let generateFromStpMethod appendLine camelType fMeasure (columns: SqlTableColumnChoice) =
         columns
         |> toPurish fMeasure
         |> generateFromStpMethod appendLine camelType fMeasure
-
         ()
 
     let generateCreateSqlInsertTextMethod appendLine typeName schemaName tableName (columns:SqlTableColumnChoice) =
@@ -370,7 +360,7 @@ module DataModelToF =
 
             columns
             |> Seq.filter (fun c -> not c.IsIdentity && not c.IsComputed)
-            |> Seq.iter(fun cd->
+            |> Seq.iter(fun cd ->
                 let mapped = "\"" + cd.Name + "\", " + mapValue(cd,"r.")
                 appendLine 2 mapped
             )
@@ -420,6 +410,7 @@ module DataModelToF =
             |> Seq.map fGenerated
             |> List.ofSeq
         tableData
+
     type SqlSprocMeta = {
         SpecificCatalog:string
         SpecificSchema:string
