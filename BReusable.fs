@@ -228,6 +228,11 @@ module StringPatterns =
         | "" -> Empty
         | _ when String.IsNullOrWhiteSpace s -> WhiteSpace
         | _ -> ValueString
+    let (|RegexMatch|_|) pattern input =
+        let m = System.Text.RegularExpressions.Regex.Match(input,pattern)
+        if m.Success then
+            Some m
+        else None
     let (|StartsWith|_|) (delimiter:string) arg = if arg |> String.startsWith delimiter then Some() else None
     let (|StartsWithI|_|) s1 (toMatch:string) = if not <| isNull toMatch && toMatch.StartsWith(s1, StringComparison.InvariantCultureIgnoreCase) then Some () else None
     let (|If|_|) f x = if f x then Some x else None

@@ -117,11 +117,6 @@ module FieldConversion =
 module PropConversion =
     open System.Text.RegularExpressions
 
-    let (|RegexMatch|_|) pattern input =
-        let m = Regex.Match(input,pattern)
-        if m.Success then
-            Some m
-        else None
     let toFProp translateOptions target spacing (memberNames:Set<string>) (pib:PropertyInfoB) (getDebugOpt:DebugDelegate) =
         let debugOpt, getDebugOpt = translateOptions.GetNextDebugState getDebugOpt (translateOptions.GetIsDebugPropPred pib.PropertyName)
         match target with
