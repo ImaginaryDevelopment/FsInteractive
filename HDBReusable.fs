@@ -219,10 +219,6 @@ module StringHelpers =
     let startsWith (delimiter:string) (s:string) = s.StartsWith delimiter
     let startsWithI (delimiter:string) (s:string) = s.StartsWith(delimiter,String.defaultIComparison)
     let trim = String.trim
-//    let after (delimiter:string) (x:string) =
-//        match x.IndexOf delimiter with
-//        | i when i < 0 -> failwithf "after called without matching substring in '%s'(%s)" x delimiter
-//        | i -> x.Substring(i + delimiter.Length)
 
     let afterLast delimiter x =
         if x |> String.contains delimiter then failwithf "After last called with no match"
@@ -285,6 +281,7 @@ module StringPatterns =
        if String.Compare(str, arg, StringComparison.InvariantCultureIgnoreCase) = 0
        then Some() else None
     let (|IsNumeric|_|) (s:string) = if not <| isNull s && s.Length > 0 && s |> String.forall Char.IsNumber then Some() else None
+    let (|Contains|_|) s1 (toMatch:string) = if toMatch |> contains s1 then Some () else None
     let (|ContainsI|_|) s1 (toMatch:string) = if toMatch |> containsI s1 then Some () else None
 
     let (|OrdinalEqualI|_|) (str:string) arg =
@@ -1173,8 +1170,21 @@ module Diagnostics =
             f x.Data.Add
         with ex ->
             logObj (Some "error adding exception data") None ex
+    let inline tryDataAdds (x:#exn) items =
+        items
+        |> Seq.iter(fun (k,v) ->
+            try
+                x.Data.Add(k,v)
+            with ex ->
+                logObj (Some "error adding exception data") None ex
+        )
 
-    let logExS topic s ex = logObj topic s ex
+
+    let logExS topic s (ex:#exn) =
+        // don't log an exception multiple times up the stack if we log and rethrow
+        if not <| ex.Data.Contains(box "isLogged") then
+            logObj topic s ex
+            tryDataAdds ex [box "isLogged",box true]
 
     let BeginLogScope scopeName=
         let pid = Process.GetCurrentProcess().Id
@@ -1249,13 +1259,82 @@ module Option = // https://github.com/fsharp/fsharp/blob/master/src/fsharp/FShar
         match x with
         | Some x -> box x
         | None -> null
+    let toUnsafeT<'T> (x : 'T option) : 'T =
+        match x with 
+        | None -> Unchecked.defaultof<_>
+        | Some x -> x
+
     let ofChoice1Of2 = function | Choice1Of2 x -> Some x | _ -> None
     let ofChoice2Of2 = function | Choice2Of2 x -> Some x | _ -> None
 
 
 module Reflection =
+
+    module Unboxing =
+        let rec unwrapTypeString (t:Type) =
+            if t.IsGenericType then 
+               let gtd = t.GetGenericTypeDefinition() 
+               let name = 
+                   match gtd.Name with
+                   | Contains "`" ->  gtd.Name |> before "`"
+                   | Contains "@" -> gtd.Name |> before "@"
+                   | x -> x
+               sprintf "%s<%s>" name (t.GetGenericArguments() |> Seq.map unwrapTypeString |> delimit ",")
+            else
+                t.Name
+
+        type Wrapper =
+            | NullableT
+            | OptionWrap
+            | NoWrapper
+        let getStringMaybe (o:obj) =
+            match o with
+            | :? string as s -> Some s
+            | _ -> None
+
+        // because of the handling of Null/None/Nullable() we can not reliably return type information
+        // 'T or Nullable<'T> match when there is a value
+        // a simple downcast won't unwrap options
+        let getTMaybe (o:obj) : 'T option =
+            match o with
+            | null -> None // null matches:null, Nullable(), and None (even when Nullable<'T> isn't matched again)
+            | :? Option<'T> as value -> value
+            // matches Nullable<'T> and 'T
+            | :? 'T as value -> Some value
+            | _ -> None
+        let (|Maybied|_|) (o:obj) = getTMaybe o
+
+
     open System.Reflection
     open Microsoft.FSharp.Reflection
+    module Union =
+        let getUnionCaseName (x:'T) = // https://stackoverflow.com/questions/1259039/what-is-the-enum-getname-equivalent-for-f-union-member
+            match FSharpValue.GetUnionFields(x, typeof<'T>) with
+            | case,_ -> case.Name
+
+        let getUnionCaseNames<'T> () = FSharpType.GetUnionCases typeof<'T> |> Array.map(fun info -> info.Name)
+        let fromString<'T> (s:string) = // https://stackoverflow.com/questions/21559497/create-discriminated-union-case-from-string
+            FSharpType.GetUnionCases typeof<'T> 
+            |> Array.tryFind (fun c -> c.Name = s)
+            |> Option.map (fun case -> FSharpValue.MakeUnion(case,Array.empty) :?> 'T)
+
+        // focus: make a map from case to caseName, method assumes no attached value so the map works
+        type CaseCache<'T when 'T : equality and 'T : comparison>() =
+            //member private x.ReflectCaseName() = getUnionCaseName x
+            static member UnionCaseNames = getUnionCaseNames<'T>() |> Set.ofArray
+            static member private CaseNameCache =
+                let t = typeof<'T>
+                if not <| FSharpType.IsUnion t then
+                    invalidOp <| sprintf "Type %s is not union" t.Name
+                if FSharpType.GetUnionCases(t,true) |> Seq.exists(fun x -> x.GetFields() |> Array.isEmpty) then
+                    invalidOp <| sprintf "Type %s is has sub-fields" t.Name
+                // we've already asserted lots, if this type is accessed, might as well pre-cache all cases and make it a map?
+                //new System.Collections.Generic.Dictionary<'T,string>()
+                CaseCache<'T>.UnionCaseNames
+                |> Seq.map (fun x -> fromString<'T> x |> Option.get, x)
+                |> Map.ofSeq
+            static member GetCaseName(x:'T) = CaseCache.CaseNameCache.[x]
+
     let rec compareProps goDeep asTypeOpt blacklist nameOpt expected actual =
         let doNotDescendTypes = [typeof<string>; typeof<DateTime>; typeof<Type>;]
         // for types we don't want to take a reference to, but should not be descended
@@ -1303,10 +1382,10 @@ module Reflection =
     /// for when you need to see if something matches and expected Generic Type Definition ( you don't know "'t" but don't care)
     /// Sample (tested good) usage:
     /// match list with
-    /// | TypeDefOf (isType:List<_>) typeArgs -> sprintf "Yay matched1 : %A" typeArgs \r\n
+    /// | TypeDef (isType:List<_>) typeArgs -> sprintf "Yay matched1 : %A" typeArgs \r\n
     /// | _ -> "boo"
     /// Also works for some types:
-    /// | TypeDefOf (null:List<_>) typeArgs -> sprintf "Yay matched: %A" typeArgs
+    /// | TypeDef (isType:List<_>) typeArgs -> sprintf "Yay matched: %A" typeArgs
     let (|TypeDef|_|) (_:'a) (value:obj) =
         let typeDef = typedefof<'a>
         if obj.ReferenceEquals(value, null) then
@@ -1329,6 +1408,13 @@ module Reflection =
         else
             //printfn "did not match %A to %A" typeof<'a> t
             None
+    open Unboxing
+    let (|TypeOrWrapperOf|_|) (_:'a) t =
+        if t = typeof<'a> then Some NoWrapper
+        elif t = typeof<Option<'a>> then Some OptionWrap
+        elif t = typeof<Nullable<'a>> then Some NoWrapper
+        else None
+
 
     // instead of null in TypeOf or TypeDef matches for types that don't allow null
     let isType<'a> = Unchecked.defaultof<'a>

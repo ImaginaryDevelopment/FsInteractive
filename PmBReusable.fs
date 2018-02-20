@@ -916,6 +916,34 @@ type Rail<'tSuccess,'tFailure> =
     |Happy of 'tSuccess
     |Unhappy of 'tFailure
 
+module Choice = // https://github.com/fsprojects/FSharpx.Extras/blob/master/src/FSharpx.Extras/ComputationExpressions/Monad.fs
+    let inline lift x = Choice1Of2 x
+    let inline protect f x =
+        try
+            f x
+            |> Choice1Of2
+        with e -> Choice2Of2 e
+    let inline map f =
+        function
+        | Choice1Of2 x -> f x |> Choice1Of2
+        | Choice2Of2 x -> Choice2Of2 x
+    let inline bind f =
+        function
+        | Choice1Of2 x -> f x
+        | Choice2Of2 x -> Choice2Of2 x
+    let inline mapSnd f =
+        function
+        | Choice1Of2 x -> Choice1Of2 x
+        | Choice2Of2 x -> f x
+    let inline bindIsNullOrWhitespace msg =
+        function
+        | ValueString v -> Choice1Of2 v
+        | _ -> Choice2Of2 msg
+    let inline iter f =
+        function
+        | Choice1Of2 x -> f x
+        | _ -> ()
+
 [<RequireQualifiedAccess>]
 module Railway =
 
@@ -1004,8 +1032,11 @@ module Option = // https://github.com/fsharp/fsharp/blob/master/src/fsharp/FShar
         match x with 
         | None -> Unchecked.defaultof<_>
         | Some x -> x
+    let ofChoice1Of2 = function | Choice1Of2 x -> Some x | _ -> None
+    let ofChoice2Of2 = function | Choice2Of2 x -> Some x | _ -> None
+
 module Diagnostics =
-    let neverThrow f = 
+    let neverThrow f =
         try
             f() |> Some
         with ex ->
@@ -1192,6 +1223,25 @@ module Diagnostics =
 module Reflection =
     open System.Reflection
     open Microsoft.FSharp.Reflection
+    module Unboxing =
+        let getStringMaybe (o:obj) =
+            match o with
+            | :? string as s -> Some s
+            | _ -> None
+        let getIntMaybe (o:obj) =
+            match o with
+                | :? Nullable<int> as value ->
+                    Option.ofNullable value
+                | :? Option<int> as value -> value
+                | :? int as value -> Some value
+                | _ -> None
+        let getBoolMaybe (o:obj) =
+            match o with
+                | :? Nullable<bool> as value ->
+                    Option.ofNullable value
+                | :? Option<bool> as value -> value
+                | :? bool as value -> Some value
+                | _ -> None
     let rec compareProps goDeep asTypeOpt blacklist nameOpt expected actual =
         let doNotDescendTypes = [typeof<string>; typeof<DateTime>; typeof<Type>;]
         // for types we don't want to take a reference to, but should not be descended
