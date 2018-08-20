@@ -1,4 +1,7 @@
 namespace Macros
+#if INTERACTIVE
+#load "BReusable.fs"
+#endif
 open System
 open BReusable
 module ProcessMacros =
@@ -138,6 +141,67 @@ module ProcessMacros =
 
         let r = Async.RunSynchronously (setupRunProc filename args startDir fBothOpt fOutput fError)
         outputs,errors
+    // translation from LinqPad
+    module LP =
+        open System.ComponentModel
+        open System.Text
+
+        let getCmdProcess (cmdText:string) args useCmdExec =
+            let cmdText = cmdText.Trim()
+            let processStartInfo = ProcessStartInfo(RedirectStandardOutput=true, RedirectStandardError=true, RedirectStandardInput=true, UseShellExecute=false, CreateNoWindow=true)
+            if not useCmdExec then
+                processStartInfo.FileName <- cmdText
+                processStartInfo.Arguments <- args
+                if not <| String.IsNullOrEmpty args || (if cmdText.Contains(" ") then false else not <| File.Exists cmdText) then
+                    let strArrays = cmdText.Split(" ".ToCharArray(), 2, StringSplitOptions.RemoveEmptyEntries)
+                    if File.Exists strArrays.[0] then
+                        processStartInfo.FileName <- strArrays.[0]
+                        processStartInfo.Arguments <- strArrays.[1]
+                try
+                    if Path.IsPathRooted processStartInfo.FileName then
+                        let directoryName = Path.GetDirectoryName processStartInfo.FileName
+                        if Directory.Exists directoryName then
+                            processStartInfo.WorkingDirectory <- directoryName
+                with | :? ArgumentException -> ()
+            else
+                processStartInfo.FileName <- "cmd.exe"
+                let str = if cmdText.Contains " " then String.Concat("\"", cmdText, "\"") else cmdText
+                processStartInfo.Arguments <- String.Concat("/c ", str)
+                if not <| String.IsNullOrEmpty args then
+                    processStartInfo.Arguments <- String.Concat(processStartInfo.Arguments, " ", args)
+            Process.Start processStartInfo
+
+        let Cmd commandText args quiet =
+            use cmdProcess =
+                try
+                    getCmdProcess commandText args false
+                with | :? Win32Exception ->
+                    getCmdProcess commandText args true
+            let strs = ResizeArray()
+            try
+                let stringBuilder = new StringBuilder()
+                let appendLine = stringBuilder.AppendLine >> ignore<StringBuilder>
+                cmdProcess.ErrorDataReceived.AddHandler (DataReceivedEventHandler(fun _sender errorArgs -> appendLine errorArgs.Data))
+                cmdProcess.BeginErrorReadLine()
+                let mutable lastLine = String.Empty
+                while not <| isNull lastLine do
+                    lastLine <- cmdProcess.StandardOutput.ReadLine()
+                    match lastLine with
+                    | null -> ()
+                    | txt ->
+                        if not quiet then
+                            printfn "%s" txt
+                        strs.Add txt
+                    ()
+                let exitCode = cmdProcess.ExitCode
+                if exitCode > 0 then
+                    invalidOp (sprintf "exitCode:%i, %s" exitCode (stringBuilder.ToString()))
+            finally
+                // try kill process if still running
+                try
+                    cmdProcess.Kill()
+                with _ -> ()
+            strs.ToArray()
 
 
 module MsBuild =

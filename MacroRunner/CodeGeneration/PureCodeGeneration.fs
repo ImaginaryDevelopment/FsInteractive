@@ -146,7 +146,7 @@ type IGenerateHelper<'T> =
     //abstract member TypeName:string
     //abstract member UseOptions:bool
     //abstract member Mutability:Mutability
-// consider STP instead of interface wrapper
+// consider SRTP instead of interface wrapper
 let generateRecord (igr:IGenerateRecords<_>) typeName mutability useOptions generateValueRecord (columns: PureColumnInput<_> list) =
     let inline appendLine i = igr.AppendLine i
 
@@ -176,7 +176,7 @@ let generateRecord (igr:IGenerateRecords<_>) typeName mutability useOptions gene
 
     columns
     |> Seq.iter (fun x ->
-        appendLine 1 <| (sprintf "/%s" <| igr.MakeColumnComments x)
+        appendLine 2 <| (sprintf "/%s" <| igr.MakeColumnComments x)
         let mt = igr.GetMeasureForColumnName x.Name
         let mapped =
             let base' = igr.GetFullType useOptions x //SqlTableColumnChoiceItem.MapSqlType mt igr.UseOptions x
@@ -184,7 +184,7 @@ let generateRecord (igr:IGenerateRecords<_>) typeName mutability useOptions gene
             | Mutable -> sprintf "mutable %s" base'
             | _ -> base'
 
-        appendLine 1 <| x.Name + ":" + mapped
+        appendLine 2 <| x.Name + ":" + mapped
     )
 
     appendLine 1 "}"
@@ -205,7 +205,7 @@ let generateRecord (igr:IGenerateRecords<_>) typeName mutability useOptions gene
         let mapped = igr.GetFullType useOptions cd //SqlTableColumnChoiceItem.MapSqlType measureText igr.UseOptions cd
         let measureText = igr.GetMeasureForColumnName cd.Name
         try
-            appendLine 2 (cd.Name + " = " + (igr.GetDefaultValueForType cd))
+            appendLine 3 (cd.Name + " = " + (igr.GetDefaultValueForType cd))
         with ex ->
             ex.Data.Add("mapped", mapped)
             ex.Data.Add("ColumnName",cd.Name)
@@ -216,21 +216,28 @@ let generateRecord (igr:IGenerateRecords<_>) typeName mutability useOptions gene
     appendLine 2 "}"
     appendLine 0 String.Empty
 
-let generateFromStpMethod appendLine camelType (fMeasure:_ -> PureMeasure option) (columns: PureColumnInput<_> list) =
+let generateFromSrtpMethod appendLine camelType (fMeasure:_ -> PureMeasure option) (columns: PureColumnInput<_> list) =
 
     appendLine 0 String.Empty
 
-    appendLine 1 ("let inline toRecordStp (" + camelType + ": ^a) =")
+    appendLine 1 ("let inline toRecordSrtp (" + camelType + ": ^a) =")
     appendLine 2 "{"
     columns
     |> Seq.iter(fun cd ->
         let pm = fMeasure cd.Name
         let measureType =
-            match pm, cd.AllowsNull with
-            | None, _ -> String.Empty
-            | Some v, _ when v.Value |> stringEqualsI "string" -> String.Empty
-            | Some v, true -> sprintf "|> Nullable.map((*) 1<%s>)" v.Value
-            | Some v, false -> sprintf " * 1<%s>" v.Value
+            if stringEqualsI cd.TypeName.Value "string" then
+                null
+            else
+                match pm, cd.AllowsNull with
+                | None, _ -> String.Empty
+                | Some v, _ when v.Value |> stringEqualsI "string" -> String.Empty
+                | Some v, true -> 
+                    //appendLine 3 <| sprintf "// %s %s" v.Value camelType
+                    sprintf "|> Nullable.map((*) 1<%s>)" v.Value
+                | Some v, false -> 
+                    //appendLine 3 <| sprintf "// %s %s" v.Value camelType
+                    sprintf " * 1<%s>" v.Value
 
         appendLine 3 <| sprintf "%s = (^a: (member %s: _) %s)%s" cd.Name cd.Name camelType measureType
     )
@@ -257,6 +264,7 @@ let generateFromFMethod fMapFullType appendLine (* for things like making the ty
             |"varchar" -> "ToString"
             |"bool"
             |"bit" -> "ToBoolean"
+            | "byte[]"
             // from BReusable
             |"image" -> "ToBinaryData"
             |"date"
@@ -264,6 +272,7 @@ let generateFromFMethod fMapFullType appendLine (* for things like making the ty
             |"datetime2"
             |"smalldatetime" -> "ToDateTime"
             // from BReusable
+            | "guid"
             |"uniqueidentifier" -> "ToGuid" // invalid
             | StartsWith "int<"
             |"int" -> "ToInt32"
@@ -280,11 +289,12 @@ let generateFromFMethod fMapFullType appendLine (* for things like making the ty
     |> Seq.iter(fun (cd:PureColumnInput<_>) ->
 
         let converted = mapConverter cd.TypeName
-        appendLine 2 <| cd.Name + " ="
-        appendLine 3 <| sprintf "match f \"%s\" with %s" cd.Name (fColumnComment cd)
+        appendLine 3 <| sprintf "// %s -> %s (%A)" cd.TypeName.Value converted (cd.MeasureText |> Option.map (fun mt -> mt.Value))
+        appendLine 3 <| cd.Name + " ="
+        appendLine 4 <| sprintf "match f \"%s\" with %s" cd.Name (fColumnComment cd)
         let measureType =
             cd.MeasureText
-            |> Option.bind (fun mt -> if mt.Value |> stringEqualsI "string" then None else Some mt)
+            |> Option.bind (fun mt -> if cd.TypeName.Value |> stringEqualsI "string" then None else Some mt)
             |> Option.map (fun mt -> sprintf " |> (*) 1<%s>" mt.Value)
             |> Option.getOrDefault String.Empty
 
@@ -292,19 +302,19 @@ let generateFromFMethod fMapFullType appendLine (* for things like making the ty
             sprintf "|Some x -> x |> Convert.%s%s |> Nullable" converted measureType
         else
             sprintf "|Some x -> x |> Convert.%s%s" converted measureType
-        |> appendLine 3
+        |> appendLine 4
 
         // generate the 0/None/Nullable() value
         let fullType = fMapFullType cd
         let dv = getDefaultValue cd.MeasureText fullType
-        appendLine 3 (sprintf "|None -> %s" dv)
+        appendLine 4 (sprintf "|None -> %s" dv)
     )
 
     appendLine 2 "}"
 
     appendLine 0 String.Empty
 
-    appendLine 1 "let FromF (camelTypeF:Func<string,obj option>) = fromf (Func<_>.invoke1 camelTypeF)"
+    appendLine 1 "let FromF (camelTypeF:Func<string,obj option>) = fromf (Func.invoke1 camelTypeF)"
 
 /// generate the helper module
 let generateHelperModule (x:IGenerateHelper<_>) useOptions rawHelperItems (typeName:string, columns:PureColumnInput<_> list) fOtherHelpers =
@@ -326,6 +336,39 @@ let generateHelperModule (x:IGenerateHelper<_>) useOptions rawHelperItems (typeN
         appendLine 2 <| "/" + x.MakeColumnComments c
         appendLine 2 <| sprintf "let %s = \"%s\"" c.Name c.Name
     )
+
+    appendLine 0 String.Empty
+    if useOptions && columns |> Seq.exists(fun c -> c.AllowsNull && c.TypeName.Value |> String.equalsI "string" |> not) then
+        appendLine 2 <| sprintf "let toDict unwrapToUnsafe x = dict ["
+    else appendLine 2 <| sprintf "let toDict x = dict ["
+    columns
+    |> Seq.map(fun c ->
+        // handle options, we don't want them going into the unsafe dict
+        if c.AllowsNull && useOptions then
+                sprintf "%s, box (if unwraptoUnsafe then x.%s |> Option.getOrDefault Unchecked.defaultof<_> else x.%s)" c.Name c.Name c.Name
+        else 
+            sprintf "%s, box x.%s" c.Name c.Name
+    )
+    |> Seq.iter (appendLine 6)
+
+    appendLine 2 "]"
+
+    appendLine 0 String.Empty
+    appendLine 2 <| sprintf "let allProps = Set.ofSeq ["
+    columns
+    |> Seq.map(fun c -> c.Name)
+    |> delimit "; "
+    |> appendLine 6
+    appendLine 2 "]"
+    appendLine 0 String.Empty
+    appendLine 2 <| sprintf "let writableProps ="
+    appendLine 3 <| "Set.ofSeq ["
+    columns
+    |> Seq.filter(fun c -> c.IsWriteable)
+    |> Seq.map(fun c -> c.Name)
+    |> delimit "; "
+    |> appendLine 4
+    appendLine 2 "]"
     appendLine 0 String.Empty
 
     appendLine 1 <| sprintf "let inline toRecord (%s:I%s) =" camelType typeName
@@ -341,7 +384,7 @@ let generateHelperModule (x:IGenerateHelper<_>) useOptions rawHelperItems (typeN
     // start the fromF series
     appendLine 0 String.Empty
     generateFromFMethod (x.GetFullType useOptions) appendLine x.MakeColumnComments columns
-    generateFromStpMethod appendLine camelType x.GetMeasureForColumnName columns
+    generateFromSrtpMethod appendLine camelType x.GetMeasureForColumnName columns
     // for things like :
     //generateCreateSqlInsertTextMethod appendLine useOptions typeName schemaName tableName fMeasure columns
     fOtherHelpers (fun i -> appendLine (i + 1))

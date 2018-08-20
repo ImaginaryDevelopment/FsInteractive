@@ -52,7 +52,7 @@ module DataModelToF =
         TypeGenerationBlacklist: string Set
         Measures: string Set
         ///Needs to include any namespace that defines:
-        /// - Func<_>.invoke1 ( type System.Func<'tResult> with static member invoke1<'t> (x:System.Func<'t,'tResult>) y = x.Invoke y)
+        /// - Func.invoke1 ( module Func = let invoke1 (x:System.Func<_,_>) y = x.Invoke y)
         AdditionalNamespaces: string Set
         GetMeasureNamepace: (string -> string) option
         Pluralize: string -> string
@@ -252,7 +252,7 @@ module DataModelToF =
     let generateFromStpMethod appendLine camelType fMeasure (columns: SqlTableColumnChoice) =
         columns
         |> toPurish fMeasure
-        |> generateFromStpMethod appendLine camelType fMeasure
+        |> generateFromSrtpMethod appendLine camelType fMeasure
         ()
 
     let generateCreateSqlInsertTextMethod appendLine typeName schemaName tableName (columns:SqlTableColumnChoice) =
@@ -483,7 +483,7 @@ module DataModelToF =
             | DbType.Double -> "float"
             | DbType.Int16
             | DbType.Int32 -> "int"
-            | DbType.Int64 -> "long"
+            | DbType.Int64 -> "int64"
 
             | x -> failwithf "unaccounted for type found %A" x
 
