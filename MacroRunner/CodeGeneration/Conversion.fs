@@ -178,7 +178,7 @@ module PropConversion =
                     let full = toFull setter
                     // for case insensitivity on the field name use @"set\s*{\s*this\.SetAndNotify\(\(\)\s*=>\s*this\.(?<name>\w+),\s*ref\s*_(?i)\k<name>,\s*value\);\s*}"
                     match full with
-                    | RegexMatch @"set\s*{\s*this\.SetAndNotify\(\(\)\s*=>\s*this\.(?<name>\w+),\s*ref\s*_\k<name>,\s*value\);\s*}" m ->
+                    | RMatch @"set\s*{\s*this\.SetAndNotify\(\(\)\s*=>\s*this\.(?<name>\w+),\s*ref\s*_\k<name>,\s*value\);\s*}" m ->
                         let fieldName = match pib.FieldName with | Some fn -> fn | _ -> ("_" + m.Groups.[1].Value)
                         let debugPropLines = debugPropLines pib.PropertyName
                         let result =

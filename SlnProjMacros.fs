@@ -41,8 +41,8 @@ module PackageConfigs =
         |> Seq.map (fun (path, x) ->
             x |> Seq.map(fun x ->
                 let text = x |> string
-                let pId = x |> getAttribVal "id" |> Option.getOrDefault String.Empty
-                {Src=path; Name=pId; Version=getAttribVal "version" x |> Option.getOrDefault String.Empty |> PackageRef;Raw=text}
+                let pId = x |> getAttributeVal "id" |> Option.getOrDefault String.Empty
+                {Src=path; Name=pId; Version=getAttributeVal "version" x |> Option.getOrDefault String.Empty |> PackageRef;Raw=text}
             )
         )
         |> Seq.concat
@@ -83,10 +83,10 @@ module AppWebConfigs =
                 try
                     let elements = x.Elements() |> Seq.map string |> List.ofSeq |> Seq.ofList
                     let br =  x |> XElement.GetElements1 "bindingRedirect" |> Seq.single
-                    let nv = br |> getAttribVal "newVersion" |> Option.getOrDefault String.Empty 
-                    let ov = br |> getAttribVal "oldVersion" |> Option.getOrDefault String.Empty 
+                    let nv = br |> getAttributeVal "newVersion" |> Option.getOrDefault String.Empty 
+                    let ov = br |> getAttributeVal "oldVersion" |> Option.getOrDefault String.Empty 
                     let ct = ConfigType.Config(nv,ov)
-                    {   Name= x |> XElement.GetElements1 "assemblyIdentity" |> Seq.single |> getAttribVal "name" |> Option.getOrDefault String.Empty
+                    {   Name= x |> XElement.GetElements1 "assemblyIdentity" |> Seq.single |> getAttributeVal "name" |> Option.getOrDefault String.Empty
                         Version= ct
                         Raw= elements |> delimit "\r\n"
                         Src=path |> after targetFolder |> before ".config" |> trim1 "\\"

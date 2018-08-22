@@ -39,6 +39,7 @@
     <Tailcalls>false</Tailcalls>
     <PlatformTarget>x86</PlatformTarget>
     <Externalconsole>true</Externalconsole>
+    <OtherFlags>--warnon:1182 --warnaserror-:0052,0044,0042</OtherFlags>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|x86' ">
     <DebugSymbols>false</DebugSymbols>
