@@ -106,6 +106,7 @@
     <Compile Include="..\..\winformsmacros.fs">
       <Link>winformsmacros.fs</Link>
     </Compile>
+    <Compile Include="CHelpers.fs" />
     <Compile Include="MultipleOutputHelper.fs" />
     <Compile Include="NuGetAlternative.fs" />
     <Compile Include="Schema.fs" />

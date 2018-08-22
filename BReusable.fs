@@ -331,6 +331,7 @@ module StringPatterns =
     let (|StringEqualsI|_|) d = Option.ofObj >> Option.filter (String.equalsI d) >> Option.map ignore
     let (|InvariantEqualI|_|) d = Option.ofObj >> Option.filter(fun arg -> String.Compare(d, arg, StringComparison.InvariantCultureIgnoreCase) = 0) >> Option.map ignore
     let (|IsNumeric|_|) = Option.ofValueString >> Option.filter (String.forall Char.IsNumber) >> Option.map ignore
+    let (|Contains|_|) d = Option.ofObj >> Option.filter (contains d) >> Option.map ignore
     let (|ContainsI|_|) d = Option.ofObj >> Option.filter (containsI d) >> Option.map ignore
     let (|StringContains|_|) d = Option.ofObj >> Option.filter (contains d) >> Option.map ignore
 
