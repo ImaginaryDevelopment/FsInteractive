@@ -463,9 +463,9 @@ let generateINotifyClass fColumnComment fIsWriteable (typeName:string, columns: 
         | "type" ->  "type'"
         | camel -> camel
     appendLine 0 (generateTypeComment columns.Length)
-    appendLine 0 ("type "+ typeName + "N (model:" + typeName + "Record) =")
+    appendLine 0 ("type "+ typeName + "N (model:" + typeName + "Record, propertyChangedOpt) =")
     appendLine 0 String.Empty
-    appendLine 1 "let propertyChanged = new Event<_, _>()"
+    appendLine 1 "let propertyChanged = match propertyChangedOpt with |Some e -> e | None -> new Event<_, _>()"
     appendLine 0 String.Empty
     appendLine 0 String.Empty
     for cd in columns do

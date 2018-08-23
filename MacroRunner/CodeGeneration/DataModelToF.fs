@@ -310,7 +310,7 @@ module DataModelToF =
                     |> appendLine 1
             )
             let insertMethodName = if hasIdentity then "createInsertReturnIdentity" else "createInsert"
-            appendLine 0 <| sprintf "let %s blacklist (r:I%s) =" insertMethodName typeName
+            appendLine 0 <| sprintf "let %s nolist (r:I%s) =" insertMethodName typeName
             let needsQuoted =
                 function
                 | ManualItem x ->
@@ -366,7 +366,7 @@ module DataModelToF =
             )
 
             appendLine 1 "]"
-            appendLine 1 <| "|> Seq.filter (fun kvp -> blacklist |> Seq.contains (fst kvp) |> not)"
+            appendLine 1 <| "|> Seq.filter (fun kvp -> nolist |> Seq.contains (fst kvp) |> not)"
             appendLine 1 <| sprintf "|> fun pairs -> sprintf \"%s (%%s)\" (String.Join(\",\", pairs |> Seq.map fst )) (String.Join(\",\", pairs |> Seq.map snd))" (insertStart "%s")
             // this should not be happening if there is no identity on the table
             if hasIdentity then
@@ -818,7 +818,7 @@ module SqlProj =
 
     // tables may be just a simple table name (implying schema is dbo) or 'schema.tablename'
     // fLog and fAppend appear to be the same place, in current usage, why were they ever distinct?
-    let getTableInfoFromSqlProj fLog fAppend pathOption sqlProjRootDir tables blacklist generatePartials=
+    let getTableInfoFromSqlProj fLog fAppend pathOption sqlProjRootDir tables nolist generatePartials=
         let sqlProjRootDirOpt = if not <| String.IsNullOrEmpty sqlProjRootDir && Directory.Exists sqlProjRootDir then Some sqlProjRootDir else None
         match Option.isSome sqlProjRootDirOpt, pathOption with
         | false,MustExist -> failwithf "Sql project directory not found at %s" sqlProjRootDir
@@ -860,7 +860,7 @@ module SqlProj =
                     {TableGenerationInput= {Id=tId; GenerateFull = true}; Path = null}
                 )
                 |> List.ofSeq
-            |> Seq.filter (fun t-> blacklist |> Seq.contains t.TableGenerationInput.Id.Name |> not)
+            |> Seq.filter (fun t-> nolist |> Seq.contains t.TableGenerationInput.Id.Name |> not)
             |> Seq.filter (fun t -> generatePartials || t.TableGenerationInput.GenerateFull)
             |> List.ofSeq
         match sqlProjRootDirOpt with
@@ -875,7 +875,7 @@ module SqlProj =
 
         allTables
 
-    let GetTableInfoFromSqlProj (log:Action<_>) (append:Action<_>) pathOption sqlProjRootDir tables blacklist generatePartials = getTableInfoFromSqlProj log.Invoke append.Invoke pathOption sqlProjRootDir tables blacklist generatePartials
+    let GetTableInfoFromSqlProj (log:Action<_>) (append:Action<_>) pathOption sqlProjRootDir tables nolist generatePartials = getTableInfoFromSqlProj log.Invoke append.Invoke pathOption sqlProjRootDir tables nolist generatePartials
 
 // impure! applied code, meant for specific scripts, not api
 module GenerationSample =
