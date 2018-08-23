@@ -17,7 +17,7 @@ module TypeScript =
     // consider adding sproc input/output type interface generation too
     //type Cgsm2 = {
     //    CString:string
-    //    ColumnBlacklist:Map<string, string Set>
+    //    ColumnNolist:Map<string, string Set>
     //}
     //type JsInput = 
     //    | FromTables of TableIdentifier list * connectionString:string

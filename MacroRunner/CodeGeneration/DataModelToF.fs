@@ -31,13 +31,13 @@ module DataModelToF =
     type TableGenerationInput = {Id: TableIdentifier; GenerateFull:bool}
 
     type CodeGenSprocSettingMap = {
-        SprocBlacklist: string Set
-        SprocInputMapBlacklist: string Set
+        SprocNolist: string Set
+        SprocInputMapNolist: string Set
         GenerateSprocInputRecords: bool
     }
     type TypeScriptGenSettingMap = {
         TargetProjectName:string
-        ColumnBlacklist:Map<string, string Set>
+        ColumnNolist:Map<string, string Set>
         TargetFolderOpt: string option
     }
     type CodeGenSettingMap = {
@@ -46,10 +46,10 @@ module DataModelToF =
         TypeScriptGenSettingMap:TypeScriptGenSettingMap option
         CString:string
         UseOptionTypes:bool
-        ColumnBlacklist:Map<string, string Set>
+        ColumnNolist:Map<string, string Set>
         // if we are generating sql tables, these are the tables we generated we don't want types generated for
         // for instance, we don't really need a type to hold a fkey+fkey table like paymentId to ReversalPaymentId
-        TypeGenerationBlacklist: string Set
+        TypeGenerationNolist: string Set
         Measures: string Set
         ///Needs to include any namespace that defines:
         /// - Func.invoke1 ( module Func = let invoke1 (x:System.Func<_,_>) y = x.Invoke y)
@@ -58,7 +58,7 @@ module DataModelToF =
         Pluralize: string -> string
         Singularize: string -> string
 
-        MeasuresBlacklist: string Set
+        MeasuresNolist: string Set
         IncludeNonDboSchemaInNamespace:bool
         // not functional yet, right?
         GenerateValueRecords:bool
@@ -519,8 +519,8 @@ module DataModelToF =
         let sprocs =
             cn |> getSqlSprocs |> Seq.sortBy (fun sp -> sp.SpecificCatalog, sp.SpecificSchema, sp.SpecificName)
             |> Seq.filter(fun sp ->
-                ssm.SprocBlacklist |> Seq.exists (stringEqualsI sp.SpecificName) |> not
-                && ssm.SprocBlacklist |> Seq.exists (stringEqualsI <| sprintf "%s.%s" sp.SpecificSchema sp.SpecificName) |> not)
+                ssm.SprocNolist |> Seq.exists (stringEqualsI sp.SpecificName) |> not
+                && ssm.SprocNolist |> Seq.exists (stringEqualsI <| sprintf "%s.%s" sp.SpecificSchema sp.SpecificName) |> not)
             |> List.ofSeq
 
         printfn "Sprocs! %i" sprocs.Length
@@ -544,7 +544,7 @@ module DataModelToF =
                 schemaSprocs |> Seq.iter(fun sp ->
                     // the next line is at least partially because there is no nameof operator, but also, because even if there were, sprocNames wouldn't be somewhere you could use it
                     appendLine 1 <| sprintf "let %s = \"%s\"" sp.SpecificName sp.SpecificName
-                    if ssm.SprocInputMapBlacklist |> Seq.exists (fun x -> x = sp.SpecificName || x = (sprintf "%s.%s" sp.SpecificSchema sp.SpecificName)) |> not then
+                    if ssm.SprocInputMapNolist |> Seq.exists (fun x -> x = sp.SpecificName || x = (sprintf "%s.%s" sp.SpecificSchema sp.SpecificName)) |> not then
                         mapSprocParams cn appendLine sp
                 )
 
@@ -630,7 +630,7 @@ module DataModelToF =
                     sqlTableMeta.Columns
                     |> function
                         |SqlTableColumnChoice.SqlTableColumnMeta columns ->
-                            let fIncludeColumn (c:ColumnDescription) : bool = isNull (box cgsm.ColumnBlacklist) || cgsm.ColumnBlacklist |> Map.containsKey sqlTableMeta.TI.Name |> not || cgsm.ColumnBlacklist.[sqlTableMeta.TI.Name] |> Seq.contains c.ColumnName |> not
+                            let fIncludeColumn (c:ColumnDescription) : bool = isNull (box cgsm.ColumnNolist) || cgsm.ColumnNolist |> Map.containsKey sqlTableMeta.TI.Name |> not || cgsm.ColumnNolist.[sqlTableMeta.TI.Name] |> Seq.contains c.ColumnName |> not
                             columns
                             |> Seq.filter fIncludeColumn
                             |> Seq.map (fun cd ->
@@ -648,7 +648,7 @@ module DataModelToF =
                             |> SqlTableColumnChoice.SqlTableColumnMeta
                         |SqlTableColumnChoice.Manual columns ->
                             columns
-                            |> Seq.filter(fun c -> isNull (box cgsm.ColumnBlacklist) || cgsm.ColumnBlacklist |> Map.containsKey c.Name |> not)
+                            |> Seq.filter(fun c -> isNull (box cgsm.ColumnNolist) || cgsm.ColumnNolist |> Map.containsKey c.Name |> not)
                             |> List.ofSeq
                             |> SqlTableColumnChoice.Manual
 
@@ -657,7 +657,7 @@ module DataModelToF =
 
                 let getMeasureType columnName =
                         cgsm.Measures
-                        |> Seq.tryFind (fun m -> cgsm.MeasuresBlacklist |> Seq.contains columnName |> not && containsI m columnName)
+                        |> Seq.tryFind (fun m -> cgsm.MeasuresNolist |> Seq.contains columnName |> not && containsI m columnName)
                         |> Option.map (fun m -> PureMeasure.create m |> Option.getOrFailMsg (sprintf "%s is not a valid measure" m))
 
                 let columns =
@@ -765,9 +765,9 @@ module DataModelToF =
 
 //    // purpose: make an alias to the 'generate' method that is more C# friendly
 //    // would having C# to construct the type directly with null values in the delegates, then letting this translate only those be a better option?
-    let Generate fFallback generatorId addlNamespaces mutable' (columnBlacklist:IDictionary<string, string seq>) (manager:MacroRunner.MultipleOutputHelper.IManager, generationEnvironment:StringBuilder, targetProjectName:string, tables, cString:string) useOptions generateValueRecords (measures: string seq) (measureBlacklist: string seq) includeNonDboSchemaInNamespace targetNamespace sprocSettings (pluralizer:Func<_,_>,singularizer:Func<_,_>) (getMeasureNamespace:Func<_,_>) typeGenerationBlacklist =
-        let columnBlacklist =
-            columnBlacklist |> Map.ofDictionary |> Map.toSeq |> Seq.map (fun (k,v) -> KeyValuePair(k, v |> Set.ofSeq))
+    let Generate fFallback generatorId addlNamespaces mutable' (columnNolist:IDictionary<string, string seq>) (manager:MacroRunner.MultipleOutputHelper.IManager, generationEnvironment:StringBuilder, targetProjectName:string, tables, cString:string) useOptions generateValueRecords (measures: string seq) (measureNolist: string seq) includeNonDboSchemaInNamespace targetNamespace sprocSettings (pluralizer:Func<_,_>,singularizer:Func<_,_>) (getMeasureNamespace:Func<_,_>) typeGenerationNolist =
+        let columnNolist =
+            columnNolist |> Map.ofDictionary |> Map.toSeq |> Seq.map (fun (k,v) -> KeyValuePair(k, v |> Set.ofSeq))
             |> Map.ofDictionary
 
         let cgsm = {    TargetProjectName= targetProjectName
@@ -777,15 +777,15 @@ module DataModelToF =
                         TypeScriptGenSettingMap = None
                         CString=cString
                         UseOptionTypes=useOptions
-                        ColumnBlacklist = columnBlacklist
+                        ColumnNolist = columnNolist
                         Measures=measures |> Set.ofSeq
-                        MeasuresBlacklist= measureBlacklist |> Set.ofSeq
+                        MeasuresNolist= measureNolist |> Set.ofSeq
                         IncludeNonDboSchemaInNamespace= includeNonDboSchemaInNamespace
                         GenerateValueRecords=generateValueRecords
                         Mutable=mutable'
                         Pluralize= pluralizer.Invoke
                         Singularize= singularizer.Invoke
-                        TypeGenerationBlacklist = typeGenerationBlacklist |> Set.ofSeq
+                        TypeGenerationNolist = typeGenerationNolist |> Set.ofSeq
                         GetMeasureNamepace= Option.ofObj getMeasureNamespace |> Option.map (fun f -> f.Invoke) }
         generate generatorId
             fFallback
@@ -940,9 +940,9 @@ module GenerationSample =
                 TypeScriptGenSettingMap = None
                 CString=connectionString
                 UseOptionTypes=false
-                ColumnBlacklist = Map.empty
+                ColumnNolist = Map.empty
                 Measures=Set.empty
-                MeasuresBlacklist= Set.empty
+                MeasuresNolist= Set.empty
                 IncludeNonDboSchemaInNamespace= false
                 GenerateValueRecords = false
                 Mutable = Mutability.Immutable
@@ -950,7 +950,7 @@ module GenerationSample =
                 Pluralize = pluralize
                 Singularize = singularize
                 AdditionalNamespaces = Set.empty
-                TypeGenerationBlacklist = Set.empty
+                TypeGenerationNolist = Set.empty
                 SprocSettingMap = None
             }
 

@@ -119,7 +119,7 @@ let generateCode generatorId cgsm manager sb mappedTables =
         |> List.distinctBy(fun x -> x.TI)
     let getGenMapItem x = mappedTables |> List.find(GenMapTableItem.GetTI >> (=) x.TI)
     let mapColumnInput (c:ColumnInput) = PropSource.Custom(c.Name, c.Nullability.IsNullable, c.ColumnType.ToString())
-    let fIncludeColumn tableName columnName : bool = isNull (box cgsm.ColumnBlacklist) || cgsm.ColumnBlacklist |> Map.containsKey tableName |> not || cgsm.ColumnBlacklist.[tableName] |> Seq.contains columnName |> not
+    let fIncludeColumn tableName columnName : bool = isNull (box cgsm.ColumnNolist) || cgsm.ColumnNolist |> Map.containsKey tableName |> not || cgsm.ColumnNolist.[tableName] |> Seq.contains columnName |> not
     cgsm.TypeScriptGenSettingMap
     |> Option.iter(fun tsgsm ->
         match meta with
@@ -214,8 +214,8 @@ let runGeneration generatorId (sb: System.Text.StringBuilder) (dte: IGenWrapper)
         | DataModelOnly ti -> ti
         | Detailed details -> details.Id
         >> (fun x ->
-        not <| cgsm.TypeGenerationBlacklist.Contains x.Name &&
-            not <| cgsm.TypeGenerationBlacklist.Contains (sprintf "%s.%s" x.Schema x.Name)
+        not <| cgsm.TypeGenerationNolist.Contains x.Name &&
+            not <| cgsm.TypeGenerationNolist.Contains (sprintf "%s.%s" x.Schema x.Name)
         )
     )
     |> List.ofSeq
