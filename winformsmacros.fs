@@ -14,11 +14,12 @@ open System
 module WinformsMacros =
 // winformfsmacros.fs
     open System.Windows.Forms
+    [<NoComparison>]
     type ItemSource<'t> =
         | Items of 't seq
         | Obs of 't ObservableCollection
 
-    type private ItemSource = 
+    type private ItemSource =
         |Dummy
         with
             static member internal GetBox<'t> (itemSource:ItemSource<'t>) =
@@ -26,32 +27,32 @@ module WinformsMacros =
                 | Items source -> source |> box
                 | Obs source -> source |> box
 
-    let displayModal itemSource = 
+    let displayModal itemSource =
       use frm = new Form()
       use grd = new DataGridView()
       grd.DataSource <- ItemSource.GetBox itemSource
       grd.Dock <- DockStyle.Fill
       frm.Controls.Add(grd)
       frm.Activate()
-      frm.ShowDialog() 
+      frm.ShowDialog()
 
-    let display itemSource : IDisposable = 
+    let display itemSource : IDisposable =
         let frm = new Form()
         let grd = new DataGridView()
         grd.DataSource <- ItemSource.GetBox itemSource
         grd.Dock <- DockStyle.Fill
         frm.Controls.Add grd
         frm.Activate()
-        frm.Show() 
+        frm.Show()
         {
             new IDisposable with
-                member __.Dispose () = 
+                member __.Dispose () =
                     grd.Dispose()
                     frm.Dispose()
             }
 
 
-module WpfMacros = 
+module WpfMacros =
     open System.Windows
     open System.Windows.Controls
     open System.Windows.Threading
@@ -62,7 +63,7 @@ module WpfMacros =
     open System.Windows.Input
     open BReusable
 
-    let inline addCommand cmd x = 
+    let inline addCommand cmd x =
         (^t:(member set_Command:ICommand -> unit)(x,cmd))
         x
 
@@ -86,7 +87,7 @@ module WpfMacros =
         new(collection : 't seq) as self =
             BindableObservableCollection(items=List<'t>())
             then
-                self.Items |> BReusable.Seq.copyFrom collection 
+                self.Items |> BReusable.Seq.copyFrom collection
 //                let items = self.Items
 //                if not <| isNull collection && not <| isNull items then
 //                    use enumerator = collection.GetEnumerator()
@@ -96,25 +97,25 @@ module WpfMacros =
         member private __.Occ (e:obj) = base.OnCollectionChanged (e :?> NotifyCollectionChangedEventArgs)
         member val Dispatcher = Dispatcher.CurrentDispatcher with get,set
 
-        override x.OnCollectionChanged e = 
+        override x.OnCollectionChanged e =
             printfn "Yay collection changed override"
             x.Dispatcher.Invoke(fun () ->
                 x.Occ e
             )
             printfn "OnCollection changed finished"
 
-    type SuppressibleBindableObservableCollection<'t>(items) = 
+    type SuppressibleBindableObservableCollection<'t>(items) =
         inherit BindableObservableCollection<'t>(items)
 
-        let mutable suppressCc = false 
+        let mutable suppressCc = false
         let mutable changeQueued = false
 
-        new(collection: 't seq) as self = 
-            SuppressibleBindableObservableCollection(items= List<'t>()) 
-            then 
-                self.Items |> BReusable.Seq.copyFrom collection 
+        new(collection: 't seq) as self =
+            SuppressibleBindableObservableCollection(items= List<'t>())
+            then
+                self.Items |> BReusable.Seq.copyFrom collection
 
-        override x.OnCollectionChanged e = 
+        override x.OnCollectionChanged e =
             printfn "inside Suppressible onCollectionChanged"
             if not x.SuppressRaiseCollectionChanged then
 
@@ -129,17 +130,18 @@ module WpfMacros =
                 match v, changeQueued with
                 | true, _ -> suppressCc <- true
                 | false, false -> suppressCc <- false
-                | false, true -> 
+                | false, true ->
                     suppressCc <- false
                     // hopefully reset will cover all the bases
                     x.OnCollectionChanged (NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset))
 
-    type ItemSource<'t> = 
+    [<NoComparison>]
+    type ItemSource<'t> =
         | Obs of BindableObservableCollection<'t>
         | Items of 't seq
 
     // not sure how well this generalizes or if it works outside this one use case
-    let private (|IsUsableAs|_|) (_:'a) (t:Type) = 
+    let private (|IsUsableAs|_|) (_:'a) (t:Type) =
         let t2 = typeof<'a>
         printfn "IsAssignableFrom: Checking %s is assignable from %s" t.Name t2.Name
         if t.IsAssignableFrom(t2) then
@@ -154,23 +156,23 @@ module WpfMacros =
 
 
     // threaded wpf ui - http://reedcopsey.com/2011/11/28/launching-a-wpf-window-in-a-separate-thread-part-1/
-    
+
     // assumes you don't depend on a synchronization context
-    let display fSetWindow itemSource= 
+    let display fSetWindow itemSource=
         let window = Window()
         window.Closed.Add (fun _ -> Dispatcher.CurrentDispatcher.BeginInvokeShutdown DispatcherPriority.Background)
         let sp = StackPanel()
         // simple way to display items based on https://social.msdn.microsoft.com/Forums/vstudio/en-US/3b09b049-9622-4d17-be75-210c99b44dba/simplest-way-to-display-a-list-of-strings-and-floats-listbox-listview-textbox-textblock-so?forum=wpf
         let listDisplayer =
-            let source = 
+            let source =
                 match itemSource with
                 | Items source -> source :> _ seq
-                | Obs source -> 
+                | Obs source ->
                     source.Dispatcher <- Dispatcher.CurrentDispatcher
                     upcast source
-            ItemsControl(ItemsSource= source) 
+            ItemsControl(ItemsSource= source)
         // list display template based on http://stackoverflow.com/a/23080314/57883
-        let makeTextBlockTemplate() = 
+        let makeTextBlockTemplate() =
             let textBlockFactory = new FrameworkElementFactory(typeof<TextBlock>)
             textBlockFactory.SetValue(TextBlock.TextProperty, Binding("."))
             let t = DataTemplate()
@@ -180,16 +182,16 @@ module WpfMacros =
         listDisplayer.ItemTemplate <- makeTextBlockTemplate()
 
         listDisplayer |> sp.Children.Add |> ignore<int>
-        //let btnClear = 
-        let clearCommand = 
+        //let btnClear =
+        let clearCommand =
             // not planning on accounting for the possibility the itemsSource is changed.
             let src = listDisplayer.ItemsSource
             let tSrc = src.GetType()
-            let fClearOpt = 
+            let fClearOpt =
                 match tSrc with
-                | IsUsableAs (Reflection.isType:IList<_>) -> 
+                | IsUsableAs (Reflection.isType:IList<_>) ->
                     let m = tSrc.GetMethod("Clear")
-                    if not <| isNull m then 
+                    if not <| isNull m then
                         Some (fun () -> m.Invoke(src,null) |> ignore<obj>)
                     else
                         printfn "Could not locate clear method on type %s" tSrc.Name
@@ -199,7 +201,7 @@ module WpfMacros =
             let fClear = match fClearOpt with | Some f -> f | None -> fun _ -> ()
             let fCanClear _ = fClearOpt |> Option.isSome
             FunCommand(fClear, fCanClear)
-            
+
         Button(Content="Clear")
         |> addCommand clearCommand
         |> sp.Children.Add |> ignore<int>
@@ -208,10 +210,10 @@ module WpfMacros =
         fSetWindow window
         System.Windows.Threading.Dispatcher.Run()
 
-    let displayAsThread itemSource = 
+    let displayAsThread itemSource =
         let dispatcherSyncContext = new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher)
         let window: Window ref = ref null // f# 4.3 compatability
-        let fOnStart () = 
+        let fOnStart () =
             SynchronizationContext.SetSynchronizationContext(dispatcherSyncContext)
             display (fun w -> window := w) itemSource
 
@@ -224,17 +226,17 @@ module WpfMacros =
         t,window
 
     let testCollection (items:'t seq) = items |> ItemSource.Items |> displayAsThread
-    let testBindable (items:'t seq) : BindableObservableCollection<'t> * _ * _ = 
+    let testBindable (items:'t seq) : BindableObservableCollection<'t> * _ * _ =
         let src = BindableObservableCollection(items)
         let t,w = src |> ItemSource.Obs |> displayAsThread
         src,t,w
 
-    let testSuppressible items = 
+    let testSuppressible items =
         let src = SuppressibleBindableObservableCollection<_>(collection= items)
         let t,w = src :> BindableObservableCollection<_> |> ItemSource.Obs |> displayAsThread
         src,t,w
 
-    let testSuppression() = 
+    let testSuppression() =
         let items = SuppressibleBindableObservableCollection(["Hello World"])
         items.SuppressRaiseCollectionChanged <- true
         let wpfThread,window = items :> BindableObservableCollection<_> |> ItemSource<string>.Obs |> displayAsThread
@@ -244,5 +246,5 @@ module WpfMacros =
     let testDisplayObjects() =
         [ {Name="HelloObjects"; Identifier=0}]
         |> testCollection
-        
+
 

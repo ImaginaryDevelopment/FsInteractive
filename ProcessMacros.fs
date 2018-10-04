@@ -9,6 +9,7 @@ module ProcessMacros =
     open System.IO
     open System.Diagnostics
 
+    [<NoComparison>]
     type RunProcResult = {Outputs:string ObservableCollection; Errors: string ObservableCollection; }
 
     let displayText lines titling =

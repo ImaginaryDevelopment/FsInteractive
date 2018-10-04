@@ -6,11 +6,13 @@
       <Language Condition="$(MSbuildProjectName.EndsWith('.csproj'))">C#</Language>
       <!-- no idea how this path was derived, but it seems to find a file -->
       <ExpectedFSharpTargetsPath>$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\FSharp\Microsoft.FSharp.Targets</ExpectedFSharpTargetsPath>
+      <OtherFlags Condition="'$(OtherFlags)' == ''" >--warnon:1182 --warnaserror-:0052</OtherFlags>
+      <WarningLevel>5</WarningLevel>
     </PropertyGroup>
     <!-- more on the %24 or %22 escape : https://docs.microsoft.com/en-us/visualstudio/msbuild/how-to-escape-special-characters-in-msbuild?view=vs-2017 -->
     <!-- this targets file seems to only run with msbuild command line, not seeing it in VS builds -->
     <!-- <Target Name="FDiagnosticsAfter" BeforeTargets="Build" AfterTargets="FDiagnostics"> -->
-    <Target Name="FDiagnosticsAfter" BeforeTargets="Build">
+    <Target Name="FDiagnosticsBefore" BeforeTargets="Build">
         <Message Importance="high" Text="%24(MSBuildExtensionsPath32):$(MSBuildExtensionsPath32)" />
         <Message Importance="high" Text="%24(MSBuildProjectDirectory):$(MSBuildProjectDirectory)" />
         <Message Importance="high" Text="%24(MSBuildThisFileDirectory):$(MSBuildThisFileDirectory)" />

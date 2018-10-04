@@ -11,7 +11,7 @@ open BReusable.StringHelpers
 
 module WmiMacros =
 
-    
+
     type Win32_Process = {
         Caption:string
         CommandLine:string
@@ -58,11 +58,12 @@ module WmiMacros =
         WorkingSetSize:UInt64
         WriteOperationCount:UInt64
         WriteTransferCount:UInt64
-    }  
-    type ScopeItem = 
+    }
+    [<NoComparison>]
+    type ScopeItem =
         | Scope of ManagementScope
         | Creation of string*bool*bool
-    type ProcessDisplay = { 
+    type ProcessDisplay = {
                         ProcessId: UInt32
                         ThreadCount: UInt32
                         AppPool:string
@@ -76,21 +77,21 @@ module WmiMacros =
                         PeakWorkingSetSize:string
                         PrivatePageCount:string
                         InstallDate:string
-                        } 
-        with static member FromWin32Process (p:Win32_Process) = 
+                        }
+        with static member FromWin32Process (p:Win32_Process) =
                 // "C:\Windows\SysWOW64\inetsrv\w3wp.exe -ap "MarketOnce.WebApi" -v "v4.0" -l "webengine4.dll" -a \\.\pipe\iisipm31653017-1eb6-4324-8724-afdc023ff248 -h "C:\inetpub\temp\apppools\MarketOnce.WebApi\MarketOnce.WebApi.config" -w "" -m 0";
                 printfn "cmd: %s" p.CommandLine
                 let appPool = if p.CommandLine.Contains("-ap ") then p.CommandLine |> after "-ap \"" |> before "\"" else String.Empty
                 let cleanCommandLine i = i |> after "-h" |> after "\"" |> before "\""
-                let memoryToUi32 (n:UInt32) = 
+                let memoryToUi32 (n:UInt32) =
                     if n> 2048u then n.ToString("n0")
-                    else (n / 1024u).ToString() + "Kb"
-                let memoryToUi64 (n:UInt64) = 
+                    else string (n / 1024u) + "Kb"
+                let memoryToUi64 (n:UInt64) =
                     let kb = n / 1024UL
                     if kb<2000UL then kb.ToString("n0") + "Kb"
-                    else (kb/1024UL).ToString("n0") + "Mb"
+                    else kb/1024UL |> toFormatString "n0"|>fun x -> x + "Mb"
                 let cleaned = cleanCommandLine p.CommandLine
-                { 
+                {
                     AppPool = appPool
                     ProcessDisplay.ProcessId = p.ProcessId
                     ThreadCount = p.ThreadCount
@@ -103,15 +104,15 @@ module WmiMacros =
                     PeakVirtualSize = memoryToUi64 p.PeakVirtualSize
                     PeakWorkingSetSize = memoryToUi32 p.PeakWorkingSetSize
                     PrivatePageCount = memoryToUi64 p.PrivatePageCount
-                    InstallDate = if p.InstallDate < DateTime.Now.AddYears(-50) then String.Empty else p.InstallDate.ToString()
+                    InstallDate = if p.InstallDate < DateTime.Now.AddYears -50 then String.Empty else p.InstallDate.ToString()
                 }
 
-    let private createAdvancedScope (path:string) requiresDomainSecurity requiresPacketSecurity = 
-        let scope = 
-            if requiresDomainSecurity then  
+    let private createAdvancedScope (path:string) requiresDomainSecurity requiresPacketSecurity =
+        let scope =
+            if requiresDomainSecurity then
                 let conn = ConnectionOptions(Authority=sprintf "ntlmdomain:%s" Environment.UserDomainName)
                 ManagementScope(path, conn)
-            else 
+            else
             ManagementScope(path, null)
         if requiresPacketSecurity then scope.Options.Authentication <- AuthenticationLevel.PacketPrivacy
         scope.Connect()
@@ -124,33 +125,33 @@ module WmiMacros =
         // scope.Options.EnablePrivileges <- true
         // scope.Options.Impersonation <- ImpersonationLevel.Impersonate
 
-    let private createScope machineName = 
+    let private createScope machineName =
         createNamedScope "root\\CIMV2" machineName false
 
-    let private GetPropertyNames (pds:PropertyData seq) = 
-        pds                
-        |> Seq.map( fun pd -> pd.Name) 
+    let private GetPropertyNames (pds:PropertyData seq) =
+        pds
+        |> Seq.map( fun pd -> pd.Name)
         |> Array.ofSeq
 
-    let private GetPropertyCollectionNames (mo:PropertyDataCollection) = 
+    let private GetPropertyCollectionNames (mo:PropertyDataCollection) =
         mo
-        |> Seq.cast<PropertyData> 
+        |> Seq.cast<PropertyData>
         |> GetPropertyNames
 
-    let private MapManagementProperty name (t:Type) (value:obj) :obj = 
+    let private MapManagementProperty name (t:Type) (value:obj) :obj =
         try
-            if value = null then null else 
-                match name with 
+            if value = null then null else
+                match name with
                 | "CreationDate" | "InstallDate" ->
                     // printfn "doing %s of type %A with inputType %A" name t (value.GetType())
                     upcast ManagementDateTimeConverter.ToDateTime(value :?> String)
                 | _ -> value
-        with ex -> 
+        with ex ->
             printfn "fail: %s of type %A" name t
             printfn "%A" ex
             null
 
-    let private mapWin32Process (managementObjects:ManagementObjectCollection) = 
+    let private mapWin32Process (managementObjects:ManagementObjectCollection) =
         let fields = typeof<Win32_Process>.GetProperties() |> Seq.map (fun p -> p.Name,p.PropertyType)
         managementObjects
         |> Seq.cast<ManagementObject>
@@ -164,13 +165,13 @@ module WmiMacros =
         let drive = "c:"
         let query = new ObjectQuery(sprintf "SELECT * FROM CIM_DataFile Where Drive='%s' and Path='%s'" drive "\\\\")
         use searcher = new ManagementObjectSearcher(scope, query)
-        for wmiObj in searcher.Get() do 
+        for wmiObj in searcher.Get() do
             printfn "%A" wmiObj.["FileName"]
 
-    /// Sample Usage: Macros.WmiMacros.QueryWmiAdvanced  (Macros.WmiMacros.ScopeItem.Creation("\\\\servername\\root\\MicrosoftIISv2", true,true)) "SELECT Name,ServerComment FROM IIsWebServerSetting" 
+    /// Sample Usage: Macros.WmiMacros.QueryWmiAdvanced  (Macros.WmiMacros.ScopeItem.Creation("\\\\servername\\root\\MicrosoftIISv2", true,true)) "SELECT Name,ServerComment FROM IIsWebServerSetting"
     /// |> Seq.map (fun e -> e.Properties.["Name"].Value,e.Properties.["ServerComment"].Value)
-    let QueryWmiAdvanced (scopeInput: ScopeItem) query = 
-        let scope = 
+    let QueryWmiAdvanced (scopeInput: ScopeItem) query =
+        let scope =
             match scopeInput with
             | Scope s -> s
             | Creation (path, requiresDomainSecurity, requiresPacketSecurity) -> createAdvancedScope path requiresDomainSecurity requiresPacketSecurity
@@ -180,14 +181,14 @@ module WmiMacros =
         use results = searcher.Get()
         results |> Seq.cast<ManagementObject>  |> Array.ofSeq
 
-    let QueryWmi machineName ``namespace`` query requireSecurity = 
+    let QueryWmi machineName ``namespace`` query requireSecurity =
         let scope = createNamedScope ``namespace`` machineName requireSecurity // requiresSecurity
         let query = new ObjectQuery(query)
         use searcher = new ManagementObjectSearcher(scope, query)
         use results = searcher.Get()
         results |> Seq.cast<ManagementObject>  |> Array.ofSeq
 
-    let QueryIis machineName = 
+    let QueryIis machineName =
         let scope = createScope machineName
         let query = new SelectQuery( sprintf "select * FROM Win32_Process WHERE name='w3wp.exe'")
         use searcher = new ManagementObjectSearcher(scope, query)
@@ -198,39 +199,38 @@ module WmiMacros =
         |> Seq.map ProcessDisplay.FromWin32Process
         |> Array.ofSeq
 
-    let QueryIisV2 machineName = 
+    let QueryIisV2 machineName =
         let scope = createNamedScope "root\\MicrosoftIISv2" machineName true // requiresSecurity
         let queryText = sprintf "SELECT * FROM IIsWebVirtualDir"
         printfn "Query = %s" queryText
         let query = new SelectQuery(queryText)
         use searcher = new ManagementObjectSearcher(scope,query)
         use results = searcher.Get()
-        let allResults = 
-            results 
-            |> Seq.cast<ManagementObject> 
+        let allResults =
+            results
+            |> Seq.cast<ManagementObject>
             //|> Seq.map(fun mo -> mo.Properties)
             |> Array.ofSeq
         printfn "length: %i" allResults.Length
         allResults
 
-    let QueryIisV2Virtuals machineName = 
+    let QueryIisV2Virtuals machineName =
         let scope = createNamedScope "root\\MicrosoftIISv2" machineName true // requiresSecurity
         let query = new SelectQuery (sprintf "SELECT * FROM IIsWebVirtualDir_IIsWebVirtualDir")
         use searcher = new ManagementObjectSearcher(scope,query)
         use results = searcher.Get()
-        let allResults = 
-            results 
-            |> Seq.cast<ManagementObject> 
+        let allResults =
+            results
+            |> Seq.cast<ManagementObject>
             //|> Seq.map(fun mo -> mo.Properties)
             |> Array.ofSeq
         printfn "length: %i" allResults.Length
         allResults
 
-    let QueryProcesses machineName = 
+    let QueryProcesses machineName =
         let scope = createScope machineName
         // let query = new ObjectQuery(sprintf "SELECT CommandLine FROM Win32_Process WHERE Name LIKE '%s%%'" "explorer") //" AND Name LIKE '%%%s'"
         let query = new ObjectQuery(sprintf "SELECT * FROM Win32_Process") //" AND Name LIKE '%%%s'"
-        let fields = typeof<Win32_Process>.GetProperties() |> Seq.map (fun p -> p.Name,p.PropertyType)
         use searcher = new ManagementObjectSearcher(scope, query)
         let values =
             searcher.Get()
@@ -240,7 +240,7 @@ module WmiMacros =
         procs
 
     // maybe try http://www.nullskull.com/faq/283/c-net-get-the-logged-on-user-on-windows-7-using-wmi-query.aspx ?
-    let QueryUsers machineName = 
+    let QueryUsers machineName =
         let scope = createScope machineName
         let query = new ObjectQuery("SELECT username FROM Win32_ComputerSystem")
         use searcher = new ManagementObjectSearcher(scope, query)
@@ -249,4 +249,3 @@ module WmiMacros =
         |> Seq.map (fun mo -> mo.["username"])
         |> Array.ofSeq
 
-    

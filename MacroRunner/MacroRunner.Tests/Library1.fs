@@ -1,48 +1,58 @@
 ﻿namespace MacroRunner.Tests
 open System
 open System.Text
-open global.Xunit
-open global.Xunit.Abstractions
+open global.Expecto
 open Macros.SqlMacros
 open CodeGeneration
 open BReusable
 open BReusable.StringHelpers
 
-
-type MyFirstTests() =
-    [<Fact>] // fact methods are not allowed to have parameters
-    member __.MyFirstFact () = Assert.True(1 = 1)
-    [<Theory>]// theory methods are required to have input attributes
-    [<InlineData(3)>]
-    [<InlineData(5)>]
-    member __.MyFirstTheory v = Assert.True(v % 2 = 1)
+module HelloWorldTests =
+    [<Tests>]
+    let myFirstTests =
+        testList "myFirstTests" [
+            testCase "MyFirstTest" <|
+                fun () -> Expect.isTrue(1 = 1) "1 doesn't equal 1?"
+        //[<Theory>]// theory methods are required to have input attributes
+        //[<InlineData(3)>]
+        //[<InlineData(5)>]
+            testList "inlineData conversion" <|
+                List.ofSeq (testParam [3;5] [
+                        "inlineData",
+                            fun (value:int list) () ->
+                                Expect.all value (fun v -> v % 2 = 1) "odd wasn't odd"
+                    ])
+        ]
 
 module CodeGeneration =
     open DataModelToF
     open System.Diagnostics
 
-    [<Fact>]
-    let ``generateINotifyClass Foo generates a FooN type``() =
-        let columns =
-            SqlTableColumnChoice.SqlTableColumnMeta [
-                {ColumnDescription.ColumnName="Bar";
-                 Type = "string"
-                 Length = 1
-                 Nullable = false
-                 IsPrimaryKey = false
-                 IsComputed = false
-                 IsIdentity = false}
-            ]
-        let sb = StringBuilder()
-        let appendIndented indentLevel text =
-            List.replicate (4*indentLevel) " " |> delimit String.Empty
-            |> flip (sprintf "%s%s") text
-            |> sb.AppendLine
-            |> ignore<StringBuilder>
-        DataModelToF.generateINotifyClassSql (fun _ -> None) ("Foo", columns, appendIndented)
-        let generatedClass = sb |> string
-        Debug.WriteLine(sb.ToString())
-        Assert.Contains("type FooN", generatedClass)
+    [<Tests>]
+    let ``generateINotifyClass Foo generates a FooN type``=
+        testCase "generateINotifyClass Foo generates a FooN type" <|
+            fun () ->
+                let columns =
+                    SqlTableColumnChoice.SqlTableColumnMeta [
+                        {ColumnDescription.ColumnName="Bar";
+                         Type = "string"
+                         Length = 1
+                         Nullable = false
+                         IsPrimaryKey = false
+                         IsComputed = false
+                         IsIdentity = false}
+                    ]
+                let sb = StringBuilder()
+                let appendIndented indentLevel text =
+                    List.replicate (4*indentLevel) " " |> delimit String.Empty
+                    |> flip (sprintf "%s%s") text
+                    |> sb.AppendLine
+                    |> ignore<StringBuilder>
+
+                DataModelToF.generateINotifyClassSql (fun _ -> None) ({SettersCheckInequality=false;AllowPropertyChangeOverride=false},"Foo", columns, appendIndented)
+                let generatedClass = sb |> string
+                Debug.WriteLine(sb.ToString())
+                Expect.stringContains generatedClass "type FooN" "Didn't find expected INotify class name"
 
 //
 ///// 1 properties

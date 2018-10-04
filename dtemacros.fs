@@ -149,6 +149,7 @@ module VsMacros =
       let sol = dte.Solution
       let proj = getSolutionProjects sol
       (sol,proj)
+  [<NoComparison>]
   type ProjReference = {Name:string;R:VSLangProj.Reference;Project:EnvDTE.Project option} with 
     member this.IsResolved = String.IsNullOrEmpty this.R.Path = false
     member this.IsGac = this.IsResolved && this.R.Path.ContainsI "gac"
@@ -156,6 +157,7 @@ module VsMacros =
         let proj = match this.Project with | Some p -> sprintf """;Proj="%s""" p.Name + "\"" |None -> String.Empty
         sprintf """{Name="%s";IsResolved=%A;IsGac=%A;Path="%s"%s}""" this.Name this.IsResolved this.IsGac this.R.Path proj
 
+  [<NoComparison>]
   type ReferencesByProj = { ProjectName:string; Refs:ProjReference seq; VsProj:VSLangProj.VSProject; EnvProj:EnvDTE.Project; } with
     override this.ToString() = sprintf """{ProjectName="%s";Refs=%A} """ this.ProjectName (this.Refs |> Seq.map  string)
 
@@ -255,9 +257,12 @@ module ProjFiles =
     let getNonTestProjFiles projs = Seq.map getProjFile projs |> Seq.filter( fun fp -> fp.Name.ContainsI("test") = false)
 
     let getDoc (pfi:ProjFileItem) = System.Xml.Linq.XDocument.Load(pfi.FullPath)
+    [<NoComparison>]
     type ItemGroupItem = {Condition:string option; Include:string option; Raw: XElement}
+    [<NoComparison>]
     type ItemGroup = {Condition:string option;Items: ItemGroupItem seq}
-    type Projfile = {Doc:XDocument;ItemGroups: ItemGroup seq}
+    [<NoComparison>]
+    type ProjFile = {Doc:XDocument;ItemGroups: ItemGroup seq}
     let private getAttribValueOrNone  name (x:XElement) = 
             let xa= x.Attribute(XNamespace.None + name)
             if xa=null then None
@@ -274,7 +279,9 @@ module ProjFiles =
             |> Seq.map (fun igElement -> {Condition =getAttribValueOrNone "Condition" igElement;Items=Seq.map igiFromXE <| igElement.Elements() })
         itemGroups
     
+    [<NoComparison>]
     type ProjFileDteCollection = {MatchedRefs: VsMacros.ProjReference*XElement seq; ProjRefs: VsMacros.ProjReference seq; Refs: ItemGroup seq  }
+    [<NoComparison>]
     type ProjFilesMated = {ProjectName:string;ProjFileDteItems:ProjFileDteCollection}
 //    let joinRefsToProject (proj:EnvDTE.Project) =
 //        let projRefs = VsMacros.getReferences proj

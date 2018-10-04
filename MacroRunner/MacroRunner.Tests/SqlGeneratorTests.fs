@@ -1,7 +1,6 @@
 ﻿module SqlGeneratorTests
 open System
-open global.Xunit
-open global.Xunit.Abstractions
+open global.Expecto
 open Microsoft.VisualStudio.TextTemplating
 open System.Text
 open Macros.SqlMacros
@@ -27,7 +26,7 @@ let projects = [
 module SqlGeneratorReferenceData =
     open CodeGeneration.SqlMeta.ColumnTyping
 
-    let refData= [
+    let refData = [
             {ReferenceData.FKeyId = {Table={Schema="dbo";Name="GuarantorTypes"};Column="GuarantorTypeId"}; GenerateReferenceTable = false; ValuesWithComment =
                 dict [
                 "SELF",null
@@ -45,7 +44,7 @@ module SqlGeneratorReferenceData =
         let fkey = FKey.FKeyIdentifier {Table={Schema="dbo";Name="Patients"; };Column="PatientID"}
         {makeIntFkey (prefix+"PatientID") fkey with Nullability = nullability; Comments=vOrnonValueStringToList comment}
 
-    let toGen = 
+    let toGen =
         let makeNonFKeyColumn name columnType nullability = 
             {Name=name; ColumnType = columnType; IsUnique = NotUnique; Nullability = nullability; FKey = None; Comments = List.Empty; DefaultValue = null}
         [
@@ -96,7 +95,7 @@ module SqlGeneratorReferenceData =
     ]
 
 
-[<Fact>]
+[<Tests>]
 let testSqlGenerator () =
 
     // translate SqlGenerator.tt to call into SqlMeta
@@ -111,9 +110,5 @@ let testSqlGenerator () =
     Trace.WriteLine output
     Debug.WriteLine output
     Debugger.Log(0,"1", output)
-    output.Length > 0
-    |> Assert.True
-//    output
-//    |> (=) (System.IO.File.ReadAllText(@"Payment.table.sql"))
-//    |> Assert.True
+    Expect.isTrue (output.Length > 0) "no text generated"
 

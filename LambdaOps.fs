@@ -1,4 +1,4 @@
-namespace LambdaOps 
+namespace LambdaOps
 open System
 
 // replacement for the verbose c# in my extensions file
