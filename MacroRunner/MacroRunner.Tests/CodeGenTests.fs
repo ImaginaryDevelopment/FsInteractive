@@ -28,17 +28,22 @@ module PureCodeGeneration =
     [<Tests>]
     let cg = testList "PureCodeGeneration" [
             testList "Declaration" [
-                testCase "pcg" <|
-                    fun () ->
-                        let x = {zero() with Name="MyProperty"}
-                        let actual = x.GetAttributeText()
-                        Expect.equal actual "" "Should be empty"
-                testCase "idk" <|
+                //testCase "pcg" <|
+                //    fun () ->
+                //        let x = {zero() with Name="MyProperty"}
+                //        let actual = x.GetAttributeText()
+                //        Expect.equal actual "" "Should be empty"
+                testCase "AttributeText gen" <|
                     fun () ->
                         let x ={zero() with Name="MyProperty"; Attributes=["MyProperty2"]}
                         let actual = x.GetAttributeText()
-                        Expect.all x.Attributes (fun v -> actual.Contains v && (actual.Contains <| sprintf "[<%s>]" v))
-                        ()
+                        Expect.all x.Attributes (fun v -> actual.Contains v && (actual.Contains <| sprintf "[<%s>]" v)) "bad attribute gen"
+                testCase "FieldText gen" <|
+                    fun () ->
+                        let x ={zero() with Fields=["Toy";"Boy"]}
+                        let actual = x.FieldText " "
+                        Expect.all x.Fields (fun v -> actual.Contains v) "bad field gen"
+
             ]
         ]
 module CodeGeneration =
