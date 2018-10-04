@@ -386,8 +386,8 @@ module DataModelToF =
             fun apline -> generateCreateSqlInsertTextMethod apline typeName schemaName tableName columns
         generateHelperModule igh useOptions [sprintf "let schemaName = \"%s\"" schemaName; sprintf "let tableName = \"%s\"" tableName] (typeName, purishColumns) fOtherHelpers
 
-    let generateINotifyClassSql fMeasure (typeName:string, columns: SqlTableColumnChoice, appendLine:int -> string -> unit) =
-        generateINotifyClass (fun c -> generateColumnSqlComment c.Item) (fun c -> not c.Item.IsComputed) (typeName, columns |> toPurish fMeasure, appendLine)
+    let generateINotifyClassSql fMeasure (notifyOptions,typeName:string, columns: SqlTableColumnChoice, appendLine:int -> string -> unit) =
+        generateINotifyClass (fun c -> generateColumnSqlComment c.Item) (fun c -> not c.Item.IsComputed) (notifyOptions, typeName, columns |> toPurish fMeasure, appendLine)
 
     type SqlTableMeta = {TI:TableIdentifier; TypeName:string; PrimaryKeys:string Set; Identities: string Set; Columns: SqlTableColumnChoice}
 
@@ -549,7 +549,7 @@ module DataModelToF =
                 )
 
             )
-    let generate generatorId (fMetaFallbackOpt) (cgsm:CodeGenSettingMap) (manager:MacroRunner.MultipleOutputHelper.IManager, generationEnvironment:StringBuilder, tables:TableIdentifier seq) =
+    let generate generatorId (fMetaFallbackOpt) (cgsm:CodeGenSettingMap) (manager:MacroRunner.MultipleOutputHelper.IManager, generationEnvironment:StringBuilder, tables:TableIdentifier seq) fSettersCheckInequality =
 
         log(sprintf "DataModelToF.generate:cgsm:%A" cgsm)
         let appendLine text =
@@ -748,7 +748,7 @@ module DataModelToF =
                 generateClass genIgr.MakeColumnComments (fun c -> c.IsWriteable) (tn, columns,appendLine')
                 appendEmpty()
                 //generateINotifyClass getMeasureType (tn, columns, appendLine')
-                generateINotifyClass (fun c -> generateColumnSqlComment c.Item) (fun c -> not c.Item.IsComputed) (tn, columns, appendLine')
+                generateINotifyClass (fun c -> generateColumnSqlComment c.Item) (fun c -> not c.Item.IsComputed) (fSettersCheckInequality sqlTableMeta.TI,tn, columns, appendLine')
 
                 manager.EndBlock()
             )

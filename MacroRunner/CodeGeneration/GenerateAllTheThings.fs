@@ -94,7 +94,7 @@ type DteGenWrapper(dte:EnvDTE.DTE) =
         member x.GetProjects() = upcast x.GetProjects()
         member x.GetTargetSqlProjectFolder targetSqlProjectName = x.GetTargetSqlProjectFolder targetSqlProjectName
 
-let generateCode generatorId cgsm manager sb mappedTables =
+let generateCode generatorId cgsm manager sb mappedTables fSettersCheckInequality =
     let meta =
         DataModelToF.generate generatorId
             (Some (fun ti (_exn:exn) ->
@@ -115,6 +115,7 @@ let generateCode generatorId cgsm manager sb mappedTables =
             ))
             cgsm
             (manager, sb, mappedTables |> List.map GenMapTableItem.GetTI)
+            fSettersCheckInequality 
         // why do we need this, it shouldn't happen I'd think?
         |> List.distinctBy(fun x -> x.TI)
     let getGenMapItem x = mappedTables |> List.find(GenMapTableItem.GetTI >> (=) x.TI)

@@ -1,8 +1,8 @@
 ﻿module CodeGeneration.PureCodeGeneration
 open System
 open System.IO
-open BReusable
-open BReusable.StringHelpers
+open global.BReusable
+open global.BReusable.StringHelpers
 
 type PropertyOptions =
     | NoNotify
@@ -456,16 +456,32 @@ let generateClass fColumnComment fIsWriteable (typeName:string, columns: PureCol
     appendLine 0 String.Empty
     appendLine 1 (sprintf "member x.MakeRecord () = x :> %s |> %sHelpers.toRecord" interfaceName typeName)
 
+let generateClassIRW typeName (columns:PureColumnInput<_> list) appendLine fIsWriteable fColumnComment =
+    appendLine 1 <| "interface I" + typeName + "RW with"
 
-let generateINotifyClass fColumnComment fIsWriteable (typeName:string, columns: PureColumnInput<_> list, appendLine:int -> string -> unit) =
+    for cd in columns do
+        appendLine 2 (fColumnComment cd)
+        if fIsWriteable cd then
+            appendLine 2 <| "member x." + cd.Name + " with get () = x." + cd.Name + " and set v = x." + cd.Name + " <- v"
+        else 
+            appendLine 2 <| "member x." + cd.Name + " with get () = x." + cd.Name
+
+type NotifyClassOptions = {SettersCheckInequality:bool;AllowPropertyChangeOverride:bool}
+let generateINotifyClass fColumnComment fIsWriteable (notifyClassOptions:NotifyClassOptions, typeName:string, columns: PureColumnInput<_> list, appendLine:int -> string -> unit) =
     let mapFieldNameFromType(columnName:string) =
         match toCamelCase columnName with
         | "type" ->  "type'"
         | camel -> camel
     appendLine 0 (generateTypeComment columns.Length)
-    appendLine 0 ("type "+ typeName + "N (model:" + typeName + "Record, propertyChangedOpt) =")
-    appendLine 0 String.Empty
-    appendLine 1 "let propertyChanged = match propertyChangedOpt with |Some e -> e | None -> new Event<_, _>()"
+    if notifyClassOptions.AllowPropertyChangeOverride then
+        appendLine 0 ("type "+ typeName + "N (model:" + typeName + "Record, propertyChangedOpt) =")
+        appendLine 0 String.Empty
+        appendLine 1 "let propertyChanged = match propertyChangedOpt with |Some e -> e | None -> new Event<_, _>()"
+    else
+        appendLine 0 ("type "+ typeName + "N (model:" + typeName + "Record) =")
+        appendLine 0 String.Empty
+        appendLine 1 "let propertyChanged = new Event<_, _>()"
+
     appendLine 0 String.Empty
     appendLine 0 String.Empty
     for cd in columns do
@@ -480,14 +496,7 @@ let generateINotifyClass fColumnComment fIsWriteable (typeName:string, columns: 
         appendLine 2 <| fColumnComment cd
         appendLine 2 <|"member x." + cd.Name + " with get () = x." + cd.Name
 
-    appendLine 1 ("interface I" + typeName + "RW with")
-
-    for cd in columns do
-        appendLine 2 (fColumnComment cd)
-        if fIsWriteable cd then
-            appendLine 2 <| "member x." + cd.Name + " with get () = x." + cd.Name + " and set v = x." + cd.Name + " <- v"
-        else 
-            appendLine 2 <| "member x." + cd.Name + " with get () = x." + cd.Name
+    generateClassIRW typeName columns appendLine fIsWriteable fColumnComment
 
     appendLine 0 String.Empty
     appendLine 1 (sprintf "member x.MakeRecord () = x :> %s |> %sHelpers.toRecord" interfaceName typeName)
@@ -516,9 +525,14 @@ let generateINotifyClass fColumnComment fIsWriteable (typeName:string, columns: 
         appendLine 1 <| "member x." + cd.Name
         appendLine 2 <| "with get() = " + camel
         appendLine 2 "and set v ="
-        //to consider: this might benefit from only setting/raising changed if the value is different
-        appendLine 3 (camel + " <- v")
-        appendLine 3 ("x.RaisePropertyChanged \"" + cd.Name + "\"")
+        let inline generateSet i =
+            appendLine i (camel + " <- v")
+            appendLine i ("x.RaisePropertyChanged \"" + cd.Name + "\"")
+        if notifyClassOptions.SettersCheckInequality then
+            appendLine 3 <| sprintf "if v <> %s then" camel
+            generateSet 4
+        else
+            generateSet 3
 
 module TranslateCSharp =
     type PathF = |PathF of string
