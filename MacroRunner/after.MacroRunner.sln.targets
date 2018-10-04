@@ -1,0 +1,32 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<!-- about the after sln targets file:  http://sedodream.com/2010/10/22/msbuildextendingthesolutionbuild.aspx -->
+    <PropertyGroup>
+      <!-- the commented out version below was tested to work -->
+      <!-- <Language Condition="$(MSbuildProjectName.EndsWith('.sln'))">C#</Language> -->
+      <Language Condition="$(MSbuildProjectName.EndsWith('.csproj'))">C#</Language>
+      <!-- no idea how this path was derived, but it seems to find a file -->
+      <ExpectedFSharpTargetsPath>$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\FSharp\Microsoft.FSharp.Targets</ExpectedFSharpTargetsPath>
+    </PropertyGroup>
+    <!-- more on the %24 or %22 escape : https://docs.microsoft.com/en-us/visualstudio/msbuild/how-to-escape-special-characters-in-msbuild?view=vs-2017 -->
+    <!-- this targets file seems to only run with msbuild command line, not seeing it in VS builds -->
+    <!-- <Target Name="FDiagnosticsAfter" BeforeTargets="Build" AfterTargets="FDiagnostics"> -->
+    <Target Name="FDiagnosticsAfter" BeforeTargets="Build">
+        <Message Importance="high" Text="%24(MSBuildExtensionsPath32):$(MSBuildExtensionsPath32)" />
+        <Message Importance="high" Text="%24(MSBuildProjectDirectory):$(MSBuildProjectDirectory)" />
+        <Message Importance="high" Text="%24(MSBuildThisFileDirectory):$(MSBuildThisFileDirectory)" />
+        <Message Importance="high" Text="%24(MSBuildProjectName):$(MSBuildProjectName)" />
+        <Message Importance="high" Text="%24(FSharpTargetsPath):$(FSharpTargetsPath)" />
+        <Message Importance="high" Condition="Exists('$(ExpectedFSharpTargetsPath)')" Text="ExpectedFSharpTargetsPath:Exists,$(ExpectedFSharpTargetsPath)" />
+        <Message Importance="high" Text="%24(TargetFSharpCoreVersion):$(TargetFSharpCoreVersion)" />
+        <Message Importance="high" Text="%24(AutoGenerateBindingRedirects):$(AutoGenerateBindingRedirects)" />
+        <!--<Message Importance="high" Text="Language:$(Language)" />-->
+        <Message Importance="high" Text="%24(MSBuildAllProjects): $(MSBuildAllProjects.trim().trim(%22;%ss))" />
+        <Message Importance="high" Text="%24(Language):$(Language)"/>
+    </Target>
+    <!--<Target Name="FDiagnostics2" BeforeTargets="GetReferenceAssemblyPaths;Build" AfterTargets="FDiagnostics">-->
+    <Target Name="CodeBuild" BeforeTargets="Build">
+        <Message Importance="high" Text="%24(FSharpTargetsPath):$(FSharpTargetsPath)" />
+        <Message Importance="high" Text="%24(TargetFSharpCoreVersion):$(TargetFSharpCoreVersion)" />
+    </Target>
+
+</Project>
