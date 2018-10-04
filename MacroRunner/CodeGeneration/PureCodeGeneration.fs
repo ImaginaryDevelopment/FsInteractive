@@ -23,11 +23,8 @@ type ClassMember =
 //    |RecordBasedClass of PropertyOptions * PromoteUnitializedStructsToNullables
 
 type Declaration = { Attributes: string list; Name:string; BaseClass :string option; Fields: string list; Members: ClassMember list} with
-    member x.AttributeText() = x.Attributes |> Seq.map (fun ta -> sprintf "[<%s>]" ta) |> delimit "\r\n"
+    member x.GetAttributeText() = x.Attributes |> Seq.map (fun ta -> sprintf "[<%s>]" ta) |> delimit "\r\n"
     member x.FieldText spacing = x.Fields |> Seq.map (fun f -> spacing + f) |> delimit "\r\n"
-
-module Array =
-    let skip v = Seq.skip(v) >> Array.ofSeq
 
 type PureMeasure private (text) =
     static member IsValidMeasureOpt (x:string) =
@@ -65,6 +62,7 @@ type PureColumnTypeName private(text) =
             Some <| PureColumnTypeName(typeText)
         else None
     member __.Value = text
+
 // this appears to unmap a type
 let getDefaultValue (measureType:PureMeasure option) fullType =
     let mappedType = fullType

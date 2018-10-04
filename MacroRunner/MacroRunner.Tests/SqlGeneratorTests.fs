@@ -115,6 +115,7 @@ let testSqlGenerator =
             let expectations =
                 [   "[Payment]"
                     "[Accounts].[PaymentType]"
+                    "-- Generated file, DO NOT edit directly"
                 ]
             Expect.isTrue (output.Length > 0) "no text generated"
             Expect.all expectations (fun e -> output.Contains(e) = true) "Missing something in sql gen"

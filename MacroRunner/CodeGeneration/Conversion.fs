@@ -264,7 +264,7 @@ module FileConversion =
             let filename = match cls.File with
                             |Code (Some path,_) -> match path with |PathF p -> p
                             | _ -> "unknown"
-            let text = sprintf "%s\r\ntype %s() = // translated from %s\r\n%s\r\n\r\n" (classD.AttributeText()) cls.ClassName filename (translateOptions.Spacing + String.optionToStringOrEmpty classD.BaseClass)
+            let text = sprintf "%s\r\ntype %s() = // translated from %s\r\n%s\r\n\r\n" (classD.GetAttributeText()) cls.ClassName filename (translateOptions.Spacing + String.optionToStringOrEmpty classD.BaseClass)
             let text = new System.Text.StringBuilder(text)
             text
                 .AppendLine(classD.FieldText spacing)

@@ -13,9 +13,6 @@ module HelloWorldTests =
         testList "myFirstTests" [
             testCase "MyFirstTest" <|
                 fun () -> Expect.isTrue(1 = 1) "1 doesn't equal 1?"
-        //[<Theory>]// theory methods are required to have input attributes
-        //[<InlineData(3)>]
-        //[<InlineData(5)>]
             testList "inlineData conversion" <|
                 List.ofSeq (testParam [3;5] [
                         "inlineData",
@@ -24,6 +21,26 @@ module HelloWorldTests =
                     ])
         ]
 
+module PureCodeGeneration =
+    open CodeGeneration.PureCodeGeneration
+    let zero() = {Declaration.Attributes=List.empty;Name=null;BaseClass=None;Fields=List.empty;Members=List.empty}
+
+    [<Tests>]
+    let cg = testList "PureCodeGeneration" [
+            testList "Declaration" [
+                testCase "pcg" <|
+                    fun () ->
+                        let x = {zero() with Name="MyProperty"}
+                        let actual = x.GetAttributeText()
+                        Expect.equal actual "" "Should be empty"
+                testCase "idk" <|
+                    fun () ->
+                        let x ={zero() with Name="MyProperty"; Attributes=["MyProperty2"]}
+                        let actual = x.GetAttributeText()
+                        Expect.all x.Attributes (fun v -> actual.Contains v && (actual.Contains <| sprintf "[<%s>]" v))
+                        ()
+            ]
+        ]
 module CodeGeneration =
     open DataModelToF
     open System.Diagnostics
