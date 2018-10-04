@@ -9,6 +9,7 @@ module DteWrap =
     type Dte = EnvDTE.DTE
     type Project = EnvDTE.Project
     type ProjectItem = EnvDTE.ProjectItem
+    [<NoComparison;NoEquality>]
     type SourceControlWrapper = {
         GetIsItemUnderSC: string -> bool
         GetIsItemCheckedOut: string -> bool
@@ -16,6 +17,7 @@ module DteWrap =
     }
 
     // leaking: GetProjectItems
+    [<NoComparison;NoEquality>]
     type ProjectWrapper = {
         GetProjectItems: unit -> EnvDTE.ProjectItems
         GetFullName: unit -> string
@@ -31,6 +33,7 @@ module DteWrap =
 
     // abstract away any specific needs the manager has to interact with DTE
     // leaking: GetProjects method
+    [<NoComparison;NoEquality>]
     type DteWrapper = {
         FindProjectItemPropertyValue: string -> string -> string
         GetSourceControl: unit -> SourceControlWrapper option
@@ -151,6 +154,7 @@ module MultipleOutputHelper =
         open Microsoft.VisualStudio.TextTemplating
         open EnvDTE80
         // of the interface features we are only using the TemplateFile property, and casting it to IServiceProvider
+        [<NoComparison>]
         type TemplatingEngineHost =
             | ServiceProvider of IServiceProvider * templateFileOpt:string option
             | DteDirect of Dte * templateFileOpt: string option

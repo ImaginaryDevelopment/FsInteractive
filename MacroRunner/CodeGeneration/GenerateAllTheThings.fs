@@ -44,8 +44,10 @@ type TableInput() =
      member val Schema:string = Unchecked.defaultof<_> with get,set
      member val Columns:ColumnInput seq = Unchecked.defaultof<_> with get,set
 
+[<NoComparison>]
 type SqlGenerationConfig = { TargetSqlProjectName: string; SqlItems: TableInput list; InsertionConfig: InsertsGenerationConfig option}
 
+[<NoComparison>]
 type GenMapTableItem =
     | DataModelOnly of TableIdentifier
     | Detailed of TableGenerationInfo
@@ -115,7 +117,7 @@ let generateCode generatorId cgsm manager sb mappedTables fSettersCheckInequalit
             ))
             cgsm
             (manager, sb, mappedTables |> List.map GenMapTableItem.GetTI)
-            fSettersCheckInequality 
+            fSettersCheckInequality
         // why do we need this, it shouldn't happen I'd think?
         |> List.distinctBy(fun x -> x.TI)
     let getGenMapItem x = mappedTables |> List.find(GenMapTableItem.GetTI >> (=) x.TI)
@@ -125,7 +127,7 @@ let generateCode generatorId cgsm manager sb mappedTables fSettersCheckInequalit
     |> Option.iter(fun tsgsm ->
         match meta with
         | [] -> ()
-        | tableMeta ->
+        | meta ->
             let targetProjectFolder =
                 manager.DteWrapperOpt |> Option.map (fun dte -> dte.GetProjects())
                 |> Option.map (Seq.find (fun p -> p.GetName() = tsgsm.TargetProjectName))

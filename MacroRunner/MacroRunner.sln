@@ -1,4 +1,4 @@
-
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
 VisualStudioVersion = 15.0.28010.2036
@@ -13,6 +13,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 	ProjectSection(SolutionItems) = preProject
 		after.MacroRunner.sln.targets = after.MacroRunner.sln.targets
 		appveyor.yml = appveyor.yml
+		paket.dependencies = paket.dependencies
 	EndProjectSection
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "BMeffers", "BMeffers\BMeffers.fsproj", "{D71D00E0-447E-4C74-8163-E9BB309657EB}"
@@ -60,6 +61,9 @@ Global
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {1DF80FFD-164D-4534-9DE4-D989A2B6F32C}
 	EndGlobalSection
 	GlobalSection(MonoDevelopProperties) = preSolution
 		StartupItem = MacroRunner\MacroRunner.fsproj

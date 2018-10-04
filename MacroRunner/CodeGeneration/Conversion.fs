@@ -200,6 +200,7 @@ module PropConversion =
             | Some getter, None ->
                 fDec (mapGetter getter) None "using existing getter"
             | _ -> sprintf "  // could not generate property for %A\r\n" pib.PropertyName
+        | _ -> NotSupportedException(sprintf "target:%A" target) |> raise
 
     let convertProperties (fIsDebugCode) translateOptions target spacing (fileInfoB:FileInfoB) =
         let _debugOpt,getDebugOpt = translateOptions.GetStartDebugState None (fIsDebugCode fileInfoB.File)
@@ -214,6 +215,7 @@ module PropConversion =
             let _toFType = toFType promoteUninitializedStructsToNullable
             let f (prop:PropertyInfoB) = toFProp translateOptions target spacing memberNames prop getDebugOpt
             props promoteUninitializedStructsToNullable |> Seq.map f
+        | _ -> NotSupportedException(sprintf "target:%A" target) |> raise
 
 
 

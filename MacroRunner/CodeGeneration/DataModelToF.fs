@@ -40,6 +40,7 @@ module DataModelToF =
         ColumnNolist:Map<string, string Set>
         TargetFolderOpt: string option
     }
+    [<NoComparison;NoEquality>]
     type CodeGenSettingMap = {
         TargetProjectName:string
         TargetNamespace: string
@@ -80,6 +81,7 @@ module DataModelToF =
         sprintf "%s%s%s" targetType measureType nullability
 
     // this needs to DIAF -> the generation code should not have direct dependencies on a sql implementation
+    [<NoComparison>]
     type SqlTableColumnChoiceItem =
         |SqlTableColumnMetaItem of ColumnDescription
         |ManualItem of ColumnInput
@@ -169,6 +171,7 @@ module DataModelToF =
                 result
 
 
+    [<NoComparison>]
     type SqlTableColumnChoice =
         | SqlTableColumnMeta of ColumnDescription list
         | Manual of ColumnInput list
@@ -302,7 +305,7 @@ module DataModelToF =
                 |> List.ofSeq
                 |> fun s -> s |> Seq.map fst, s |> Seq.map snd
                 |> fun (names,values) ->
-                    insertStart (names |> delimit ",") 
+                    insertStart (names |> delimit ",")
                     |> sprintf "// %s"
                     |> appendLine 1
                     (values |> delimit ",")
@@ -389,6 +392,7 @@ module DataModelToF =
     let generateINotifyClassSql fMeasure (notifyOptions,typeName:string, columns: SqlTableColumnChoice, appendLine:int -> string -> unit) =
         generateINotifyClass (fun c -> generateColumnSqlComment c.Item) (fun c -> not c.Item.IsComputed) (notifyOptions, typeName, columns |> toPurish fMeasure, appendLine)
 
+    [<NoComparison>]
     type SqlTableMeta = {TI:TableIdentifier; TypeName:string; PrimaryKeys:string Set; Identities: string Set; Columns: SqlTableColumnChoice}
 
     let getSqlMeta appendLine cgsm tables =
@@ -553,7 +557,7 @@ module DataModelToF =
 
         log(sprintf "DataModelToF.generate:cgsm:%A" cgsm)
         let appendLine text =
-            match text with 
+            match text with
             | ValueString text -> generationEnvironment.AppendLine text |> ignore
             | _ -> generationEnvironment.AppendLine String.Empty |> ignore
         let appendEmpty() = appendLine String.Empty
@@ -756,7 +760,7 @@ module DataModelToF =
             |> List.choose(
                 function
                 |Happy x -> Some x
-                |Unhappy (ti,ex) -> 
+                |Unhappy (ti,ex) ->
                     printfn "Bad time generating %s.%s exception: %A" ti.Schema ti.Name ex
                     None
             )

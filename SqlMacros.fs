@@ -11,6 +11,7 @@ type FKeyIdentifier = {Table: TableIdentifier; Column:string}
 type ColumnLength = |Max | Length of int
 type DecimalInfo = {Precision:int; Scale:int}
 
+[<NoComparison>]
 type SqlColumnType =
     |Decimal of DecimalInfo option
     |VarChar of ColumnLength
@@ -29,6 +30,7 @@ type Uniqueness =
     | Unique
     | NotUnique
 
+[<NoComparison>]
 type ColumnInfo =
     { 
         Name:string
@@ -41,6 +43,7 @@ type ColumnInfo =
     with
         static member Zero ct =
             {Name=null; SqlType = ct; AllowNull = NotNull;IsUnique=Uniqueness.NotUnique; Attributes = List.empty; FKeyOpt = None}
+[<NoComparison>]
 type TableInfo = { Id:TableIdentifier; Columns: ColumnInfo list}
 // ColumnInfo looks superior to this, but perhaps this shape is needed somewhere specific
 type ColumnDescription = {ColumnName:string; Type:string; Length:int; Nullable:bool; IsPrimaryKey:bool; IsIdentity:bool; IsComputed:bool}

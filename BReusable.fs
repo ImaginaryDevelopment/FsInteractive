@@ -1012,6 +1012,7 @@ type System.Enum with // I think enum<int> is the only allowed enum-ish constrai
 
 
 type System.DateTime with
+    static member addYears y (dt:DateTime) = dt.AddYears y
     static member addDays dy (dt:DateTime) = dt.AddDays dy
     static member addHours h (dt:DateTime) = dt.AddHours h
     static member setTime (timePart:DateTime) (datePart:DateTime) =

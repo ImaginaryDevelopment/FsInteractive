@@ -18,6 +18,7 @@ module TypeMapper =
 module StringAssembler = //Abstract Data Type
     open System.Text
 
+    [<NoComparison>]
     type Sb =
         private
             { SB:StringBuilder}
@@ -39,10 +40,13 @@ module SimplifiedInput =
         | String of StringLength
         | Money of NumberDetails
 
+    [<NoComparison>]
     type ColumnInfo = {Name:string; Type:Type; Length: int option; Precision: int option; Scale: int option; UseMax:bool}
+    [<NoComparison>]
     type TableInfo = {Name:string; Schema: string; Columns: ColumnInfo seq}
 
 module Reflect=
+    [<NoComparison>]
     type ContextTableInfo = {PropertyName:string;TypeName:string; Fields:(string*Type) seq; Properties:(string*Type) seq}
     let getFields (t:Type) = t.GetFields() |> Seq.map(fun f -> f.Name, f.FieldType)
     // group by or split on container prop vs. not
@@ -140,7 +144,7 @@ module ModelGenerator =
         let types =
             getTypeToGen()
             |> Reflect.extractContainerTypeInfo
-            |> Seq.take 5
+            |> Seq.take limit
             |> Array.ofSeq
 
     #if LINQPAD
