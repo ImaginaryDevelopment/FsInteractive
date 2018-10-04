@@ -96,19 +96,26 @@ module SqlGeneratorReferenceData =
 
 
 [<Tests>]
-let testSqlGenerator () =
-
-    // translate SqlGenerator.tt to call into SqlMeta
-    let sb = StringBuilder()
-//    let manager = MacroRunner.MultipleOutputHelper.Managers.Manager.Create(tHost, sb)
-    let manager = MacroRunner.MultipleOutputHelper.Managers.Manager(Some "HelloTesting.fake.tt",sb)
-//    let targetProjectName = "ApplicationDatabase"
-//    let targetInsertRelativePath = @"Scripts\Post-Deployment\TableInserts\Accounting1.5\AccountingInserts.sql"
-    generateTablesAndReferenceTables(manager,sb, None, SqlGeneratorReferenceData.toGen |> Seq.take 1)
-    let output = sb |> string
-    Console.WriteLine "Hello world"
-    Trace.WriteLine output
-    Debug.WriteLine output
-    Debugger.Log(0,"1", output)
-    Expect.isTrue (output.Length > 0) "no text generated"
+let testSqlGenerator =
+    testCase "testSqlGenerator" <|
+        fun () ->
+            // translate SqlGenerator.tt to call into SqlMeta
+            let sb = StringBuilder()
+            //    let manager = MacroRunner.MultipleOutputHelper.Managers.Manager.Create(tHost, sb)
+            let manager = MacroRunner.MultipleOutputHelper.Managers.Manager(Some "HelloTesting.fake.tt",sb)
+            //    let targetProjectName = "ApplicationDatabase"
+            //    let targetInsertRelativePath = @"Scripts\Post-Deployment\TableInserts\Accounting1.5\AccountingInserts.sql"
+            generateTablesAndReferenceTables(manager,sb, None, SqlGeneratorReferenceData.toGen |> Seq.take 1)
+            let output = sb |> string
+            Console.WriteLine "Hello world"
+            Trace.WriteLine <| sprintf "Tracing output:%s" output
+            Debug.WriteLine <| sprintf "Debug output:%s" output
+            printfn "Console output:%s" output
+            Debugger.Log(0,"1", output)
+            let expectations =
+                [   "[Payment]"
+                    "[Accounts].[PaymentType]"
+                ]
+            Expect.isTrue (output.Length > 0) "no text generated"
+            Expect.all expectations (fun e -> output.Contains(e) = true) "Missing something in sql gen"
 

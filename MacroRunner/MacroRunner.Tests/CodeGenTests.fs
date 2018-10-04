@@ -19,8 +19,8 @@ module HelloWorldTests =
             testList "inlineData conversion" <|
                 List.ofSeq (testParam [3;5] [
                         "inlineData",
-                            fun (value:int list) () ->
-                                Expect.all value (fun v -> v % 2 = 1) "odd wasn't odd"
+                            fun (values:int list) () ->
+                                Expect.all values (fun v -> v % 2 = 1) "odd wasn't odd"
                     ])
         ]
 
