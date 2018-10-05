@@ -6,53 +6,16 @@ open BReusable
 open BReusable.StringHelpers
 
 module DteWrap =
+    open Core.CodeGeneration.DteWrapCore
+    open Core.CodeGeneration.SqlWrapCore
+    open CodeGeneration.VS.DteWrap
+
     type Dte = EnvDTE.DTE
     type Project = EnvDTE.Project
     type ProjectItem = EnvDTE.ProjectItem
-    [<NoComparison;NoEquality>]
-    type SourceControlWrapper = {
-        GetIsItemUnderSC: string -> bool
-        GetIsItemCheckedOut: string -> bool
-        CheckOutItem:string -> bool
-    }
 
-    // leaking: GetProjectItems
-    [<NoComparison;NoEquality>]
-    type ProjectWrapper = {
-        GetProjectItems: unit -> EnvDTE.ProjectItems
-        GetFullName: unit -> string
-        GetName: unit -> string
-        GetKind: unit -> string
-    } with
-        static member FromProject (p:Project) =
-            {   GetProjectItems= fun () -> p.ProjectItems
-                GetFullName= fun () -> p.FullName
-                GetName= fun () -> p.Name
-                GetKind= fun () -> p.Kind
-            }
-
-    // abstract away any specific needs the manager has to interact with DTE
-    // leaking: GetProjects method
-    [<NoComparison;NoEquality>]
-    type DteWrapper = {
-        FindProjectItemPropertyValue: string -> string -> string
-        GetSourceControl: unit -> SourceControlWrapper option
-        GetProjects: unit -> ProjectWrapper list
-        Log: string -> unit
-        }
     let unloadedProject = "{67294A52-A4F0-11D2-AA88-00C04F688DDE}"
 
-    let tryGetKind logOpt (p:ProjectWrapper) =
-        try
-            p.GetKind() |> Some
-        with _ ->
-            let nameOpt =
-                try
-                    p.GetName() |> Some
-                with _ -> None
-            logOpt
-            |> Option.iter (fun f ->f <| sprintf "Failed to read project Kind:%A" nameOpt)
-            None
     let writeLnToOutputPane(dte:Dte) (s:string) =
         try
             let window = dte.Windows.Item(EnvDTE.Constants.vsWindowKindOutput).Object :?> EnvDTE.OutputWindow
@@ -97,7 +60,7 @@ module DteWrap =
         |> Seq.iter (fun td ->
             let childProjectItemOpt =
                 !projectItems
-                |> Seq.cast<ProjectItem>
+                |> Seq.cast<IProjectItem>
                 |> Seq.tryFind (fun pi ->
                     let isMatch = Path.GetFileName(pi.get_FileNames 0s) = td
                     isMatch
@@ -107,7 +70,7 @@ module DteWrap =
             | None ->
                 logger <| "Failed to find \"" + td + "\""
                 !projectItems
-                |> Seq.cast<ProjectItem>
+                |> Seq.cast<IProjectItem>
                 |> Seq.map (fun pi -> pi.get_FileNames 0s)
                 |> Seq.iter(fun pi ->
                     logger <| "\tWe did however find \"" + pi + "\""
@@ -135,24 +98,14 @@ module MultipleOutputHelper =
             member val Start = 0 with get,set
             member val Length = 0 with get,set
 
-    type CreateProcessResult =
-        |Unchanged
-        |Changed
-    type IManager =
-        abstract member StartNewFile : Filename:string -> unit
-        abstract member TemplateFile: string with get
-        abstract member DteWrapperOpt : DteWrapper option with get
-        abstract member EndBlock: unit -> unit
-        // return the input (startNewFile or null for main file) mapped to the full file path created
-        abstract member Process: doMultiFile:bool -> IDictionary<string,CreateProcessResult*string>
-        abstract member DefaultProjectNamespace: string with get
-        abstract member GeneratedFileNames : string seq with get
-        abstract member GetTextSize: unit -> int
 
     module Managers =
         open System.Text
         open Microsoft.VisualStudio.TextTemplating
         open EnvDTE80
+        open Core.CodeGeneration.DteWrapCore
+        open CodeGeneration.VS
+
         // of the interface features we are only using the TemplateFile property, and casting it to IServiceProvider
         [<NoComparison>]
         type TemplatingEngineHost =

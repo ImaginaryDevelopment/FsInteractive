@@ -3,19 +3,20 @@
 open System
 open System.Collections.Generic
 open System.Diagnostics
-open Microsoft.VisualStudio.TextTemplating
+//open Microsoft.VisualStudio.TextTemplating
 
-open MacroRunner
-open MacroRunner.DteWrap
-open MacroRunner.MultipleOutputHelper.Managers
-open Macros.SqlMacros
+//open MacroRunner
+//open MacroRunner.DteWrap
+//open MacroRunner.MultipleOutputHelper.Managers
+//open Macros.SqlMacros
 open CodeGeneration
-open CodeGeneration.SqlMeta
-open CodeGeneration.SqlMeta.ColumnTyping
+open BCore.CodeGeneration.SqlWrapCore.ColumnTyping
 
 open CodeGeneration.DataModelToF
 open BReusable.StringHelpers
 open CodeGeneration.GenerateJS.TypeScript
+open BCore.CodeGeneration.SqlWrapCore
+open BCore.CodeGeneration.DteWrapCore
 
 
 let failing s=
@@ -61,45 +62,16 @@ type GenMapTableItem =
 //type SqlGenerationism =
 //    | Focused of InsertsGenerationConfig * (GenerationTarget list)
 //    | Multiple of (InsertsGenerationConfig * GenerationTarget list) list
-type IProject =
-        abstract member Name:string option
-        abstract member FullName:string option
-type ProjectWrapper internal (p:EnvDTE.Project) =
-    // swallowing? =(
-    let tryGet f =
-        try
-            f p |> Some
-        with ex ->
-            System.Diagnostics.Debug.WriteLine(sprintf "%A" ex)
-            None
-    member __.Name = tryGet (fun p -> p.Name)
-    member __.FullName = tryGet (fun p -> p.FullName)
-    interface IProject with
-        member x.Name = x.Name
-        member x.FullName = x.FullName
 
 type IGenWrapper =
     abstract member GetProjects: unit -> IProject seq
     abstract member GetTargetSqlProjectFolder: string -> IProject
 
-type DteGenWrapper(dte:EnvDTE.DTE) =
-    let projects = Macros.VsMacros.getSP dte |> snd |> Seq.map ProjectWrapper |> Seq.cast<IProject> |> List.ofSeq
-    member __.GetProjectNames() = projects |> Seq.map (fun proj -> proj.Name)
-    member __.GetProjects() = projects
-    member __.GetTargetSqlProjectFolder targetSqlProjectName =
-        projects
-        |> Seq.tryFind(fun p -> p.Name.Value = targetSqlProjectName)
-        |> function
-            | Some p -> p
-            | None -> failwithf "did not find project %s, names were %A" targetSqlProjectName (projects |> Seq.map (fun p -> p.Name) |> List.ofSeq)
-    interface IGenWrapper with
-        member x.GetProjects() = upcast x.GetProjects()
-        member x.GetTargetSqlProjectFolder targetSqlProjectName = x.GetTargetSqlProjectFolder targetSqlProjectName
 
-let generateCode generatorId cgsm manager sb mappedTables fSettersCheckInequality =
+let generateCode generatorId cgsm manager (fGetSqlMeta,fGetSqlSprocs,fMapSprocParams) sb mappedTables fSettersCheckInequality =
     let meta =
         DataModelToF.generate generatorId
-            (Some (fun ti (_exn:exn) ->
+            (Some (fun (ti:TableIdentifier) (_exn:exn) ->
                 mappedTables
                 |> Seq.find(function | Detailed details -> details.Id = ti | DataModelOnly dmTI -> dmTI = ti)
                 |> function
@@ -115,6 +87,7 @@ let generateCode generatorId cgsm manager sb mappedTables fSettersCheckInequalit
                     | DataModelOnly _dmInput ->
                         None
             ))
+            (fGetSqlMeta,fGetSqlSprocs,fMapSprocParams)
             cgsm
             (manager, sb, mappedTables |> List.map GenMapTableItem.GetTI)
             fSettersCheckInequality
@@ -154,8 +127,45 @@ let generateCode generatorId cgsm manager sb mappedTables fSettersCheckInequalit
             manager.EndBlock()
             ()
     )
+
+    //feature desired: auto-name primary keys
+    // adjustment desired: put all reference values comment (when on the reference table, above the column instead of beside it
+let generateTablesAndReferenceTables(manager:IManager, generationEnvironment:System.Text.StringBuilder, targeting, toGen: TableGenerationInfo seq,debug) =
+    toGen
+    |> Seq.iter(fun ti ->
+        SqlScriptGeneration.generateTable debug manager generationEnvironment targeting ti
+        ti.Columns
+        |> Seq.choose(fun ci->
+            match ci.FKey with
+            | Some (FKeyWithReference rd) when rd.GenerateReferenceTable ->
+                Some (rd, {ci with FKey = None})
+            | _ -> None
+        )
+        // iterate reference table columns
+        |> Seq.iter(fun (fKey,childCi) ->
+            try
+                let refPKComment =
+                    if childCi.Comments.Length > 0 then
+                        childCi.Comments
+                    elif fKey.ValuesWithComment |> isNull |> not && fKey.ValuesWithComment.Count > 0 then [fKey.ValuesWithComment.Keys |> delimit"," ]
+                    else []
+                let pkeyColumn = {childCi with Nullability = PrimaryKey; FKey=None; Comments= refPKComment}
+                let tId = fKey.FKeyId.Table
+                let table = {TableGenerationInfo.Id={Schema = tId.Schema; Name=tId.Name}; Columns = [pkeyColumn]}
+                if debug then
+                    printfn "Generating ReferenceTable from %A" table
+                SqlScriptGeneration.generateTable true manager generationEnvironment targeting table
+            with _ ->
+                if debug then
+                    printfn "Failing:"
+                try printfn " fKey: %A" fKey with _ -> ()
+                try printfn " childCi: %A" childCi with _ -> ()
+                reraise()
+        )
+    )
+
 /// generatorId something to identify the generator with, in the .tt days it was the DefaultProjectNamespace the .tt was running from.
-let runGeneration generatorId debug (sb: System.Text.StringBuilder) (dte: IGenWrapper) manager (cgsm: CodeGeneration.DataModelToF.CodeGenSettingMap) toGen (dataModelOnlyItems: TableIdentifier list) =
+let runGeneration generatorId debug (sb: System.Text.StringBuilder) (dte: IGenWrapper) manager (cgsm: CodeGeneration.DataModelToF.CodeGenSettingMap) toGen (dataModelOnlyItems: TableIdentifier list) (fGetSqlMeta,fGetSqlSprocs,fMapSprocParams) =
 
     let projects = dte.GetProjects()
     let appendLine text (sb:System.Text.StringBuilder) =
@@ -199,10 +209,10 @@ let runGeneration generatorId debug (sb: System.Text.StringBuilder) (dte: IGenWr
     let detailed =
         genMapped
         |> Seq.collect (fun (targetSqlProjectFolder,sgi,items) ->
-            SqlMeta.generateTablesAndReferenceTables(manager, sb, Some targetSqlProjectFolder, items,debug)
+            generateTablesAndReferenceTables(manager, sb, Some targetSqlProjectFolder, items,debug)
             match sgi.InsertionConfig with
             | Some ic ->
-                SqlMeta.generateInserts
+                SqlScriptGeneration.generateInserts
                     (fun s -> appendLine s sb |> ignore)
                     manager
                     targetSqlProjectFolder
@@ -222,7 +232,7 @@ let runGeneration generatorId debug (sb: System.Text.StringBuilder) (dte: IGenWr
         )
     )
     |> List.ofSeq
-    |> generateCode generatorId cgsm manager sb
+    |> generateCode generatorId cgsm manager (fGetSqlMeta,fGetSqlSprocs,fMapSprocParams) sb
 
 let sb = System.Text.StringBuilder()
 let appendLine text (sb:System.Text.StringBuilder) =
@@ -232,15 +242,3 @@ sb
 |> appendLine "Main File Output"
 |> appendLine (sprintf "Started at %O" DateTime.Now)
 |> ignore
-
-let makeManager (dte:EnvDTE.DTE,debug) =
-    // if this script is in the solution it is modifying, we need the EnvDTE.ProjectItem representing it, otherwise where does the main (non sub-file) output go?
-    let scriptFullPath = Path.Combine(__SOURCE_DIRECTORY__,__SOURCE_FILE__)
-    let templateProjectItem:EnvDTE.ProjectItem option = dte.Solution.FindProjectItem scriptFullPath |> Option.ofObj
-    printfn "Script is at %s" scriptFullPath
-    templateProjectItem
-    |> Option.iter(fun templateProjectItem ->
-        printfn "ProjectItem= %A" (templateProjectItem.FileNames 0s)
-    )
-    let dteWrapper = wrapDte dte
-    MultipleOutputHelper.Managers.VsManager(Some "HelloTesting.fake.tt", dteWrapper, sb, templateProjectItem,debug)

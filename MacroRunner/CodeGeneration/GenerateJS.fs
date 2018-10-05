@@ -1,7 +1,6 @@
 ﻿module CodeGeneration.GenerateJS
 
 open BReusable.Reflection
-open Macros.SqlMacros
 module TypeScript =
     open System
     open BReusable.StringHelpers

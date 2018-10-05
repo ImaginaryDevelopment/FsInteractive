@@ -4,10 +4,8 @@ open System.Data
 open BReusable
 open BReusable.StringHelpers
 open System.Diagnostics
+open Core.CodeGeneration.SqlWrapCore
 
-type TableIdentifier = {Schema:string; Name:string;}
-//type FKeyInfo = {Schema:string; Table:string; Column:string}
-type FKeyIdentifier = {Table: TableIdentifier; Column:string}
 type ColumnLength = |Max | Length of int
 type DecimalInfo = {Precision:int; Scale:int}
 
@@ -20,15 +18,6 @@ type SqlColumnType =
     |NChar of ColumnLength
     |Other of Type
 
-type Nullability =
-    | AllowNull
-    | NotNull
-    | Computed of isNullable:bool
-    | PrimaryKey
-    with member x.IsNullable = match x with |AllowNull -> true |Computed a -> a | _ -> false
-type Uniqueness =
-    | Unique
-    | NotUnique
 
 [<NoComparison>]
 type ColumnInfo =
@@ -45,8 +34,6 @@ type ColumnInfo =
             {Name=null; SqlType = ct; AllowNull = NotNull;IsUnique=Uniqueness.NotUnique; Attributes = List.empty; FKeyOpt = None}
 [<NoComparison>]
 type TableInfo = { Id:TableIdentifier; Columns: ColumnInfo list}
-// ColumnInfo looks superior to this, but perhaps this shape is needed somewhere specific
-type ColumnDescription = {ColumnName:string; Type:string; Length:int; Nullable:bool; IsPrimaryKey:bool; IsIdentity:bool; IsComputed:bool}
 
 module Strict = 
     open BReusable.StringHelpers

@@ -54,7 +54,6 @@
   <ItemGroup>
     <Compile Include="AssemblyInfo.fs" />
     <Compile Include="PureCodeGeneration.fs" />
-    <Compile Include="SqlMeta.fs" />
     <Compile Include="SqlScriptGeneration.fs" />
     <Compile Include="GenerateJS.fs" />
     <Compile Include="Conversion.fs" />
@@ -68,12 +67,6 @@
     <None Include="FParsecTry2.fsx" />
   </ItemGroup>
   <ItemGroup>
-    <Reference Include="EnvDTE, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a">
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="EnvDTE80, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a">
-      <Private>False</Private>
-    </Reference>
     <Reference Include="FSharp.Core">
       <HintPath>..\packages\FSharp.Core.4.5.2\lib\net45\FSharp.Core.dll</HintPath>
     </Reference>
@@ -83,7 +76,6 @@
     <Reference Include="Microsoft.CodeAnalysis.CSharp">
       <HintPath>..\..\..\..\Program Files (x86)\Microsoft Visual Studio\2017\Enterprise\MSBuild\15.0\Bin\Roslyn\Microsoft.CodeAnalysis.CSharp.dll</HintPath>
     </Reference>
-    <Reference Include="Microsoft.VisualStudio.TextTemplating.Interfaces.10.0, Version=10.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a" />
     <Reference Include="mscorlib" />
     <Reference Include="System" />
     <Reference Include="System.Collections.Immutable">
@@ -91,17 +83,15 @@
       <Private>True</Private>
     </Reference>
     <Reference Include="System.Core" />
-    <Reference Include="System.Data" />
-    <Reference Include="System.Data.Entity.Design" />
     <Reference Include="System.Numerics" />
     <Reference Include="System.Reflection.Metadata">
       <HintPath>..\..\..\..\Program Files (x86)\Microsoft Visual Studio\2017\Enterprise\MSBuild\15.0\Bin\Roslyn\System.Reflection.Metadata.dll</HintPath>
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\MacroRunner\MacroRunner.fsproj">
-      <Name>MacroRunner</Name>
-      <Project>{d48445bd-142f-49ab-a6ce-a6305bf6a27b}</Project>
+    <ProjectReference Include="..\Core\BCore.fsproj">
+      <Name>BCore</Name>
+      <Project>{cec0f091-83a5-4a9c-953a-d615607be7bb}</Project>
       <Private>True</Private>
     </ProjectReference>
   </ItemGroup>

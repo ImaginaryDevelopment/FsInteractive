@@ -1,4 +1,4 @@
-﻿namespace Core.CodeGeneration
+﻿namespace BCore.CodeGeneration
 // types should only go here that multiple libraries and the public interface is concerned with
 open System.Collections.Generic
 open System.Text
@@ -8,16 +8,17 @@ module DteWrapCore =
     type IProject =
             abstract member Name:string option
             abstract member FullName:string option
-    type IProjectItem =
-        abstract member Name:string with get
-        // indexer property, don't think F# supports the direct syntax
-        abstract member get_FileNames:int16 -> string
-
     // interface for EnvDte.ProjectItems
     [<AllowNullLiteral>]
     type IProjectItemsCollection =
-        inherit IEnumerable<IProjectItem>
-        abstract member AddFromFile:string -> IProjectItem option
+            inherit IEnumerable<IProjectItem>
+            abstract member AddFromFile:string -> IProjectItem
+    and [<AllowNullLiteral>] IProjectItem =
+        abstract member Name:string with get
+        // indexer property, don't think F# supports the direct syntax
+        abstract member get_FileNames:int16 -> string
+        abstract member ProjectItems:IProjectItemsCollection with get
+
     // leaking: GetProjectItems
     [<NoComparison;NoEquality>]
     type ProjectWrapper = {
@@ -65,6 +66,14 @@ module SqlWrapCore =
     type TableIdentifier = {Schema:string; Name:string;}
     type FKeyIdentifier = {Table: TableIdentifier; Column:string}
     type ReferenceData = {FKeyId:FKeyIdentifier; GenerateReferenceTable:bool; ValuesWithComment: IDictionary<string,string>}
+    type InsertsGenerationConfig =
+        {
+            InsertTitling: string
+            // @"Scripts\Post-Deployment\TableInserts\Accounting1.5\AccountingInserts.sql";
+            // or @"Scripts\Post-Deployment\TableInserts\Accounting1.5\AccountingGeneratorInserts.sql";
+            TargetInsertRelativePath: string
+            AdditionalReferenceData: ReferenceData seq
+        }
     type FKey =
         |FKeyIdentifier of FKeyIdentifier
         |FKeyWithReference of ReferenceData

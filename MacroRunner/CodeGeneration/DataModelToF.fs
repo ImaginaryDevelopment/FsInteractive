@@ -5,22 +5,20 @@ open System.Collections.Generic
 open System.Globalization
 open System.Text
 
-open BReusable
-open BReusable.StringHelpers
-open MacroRunner.AdoHelper
-open CodeGeneration.SqlMeta.ColumnTyping
+open global.BReusable
+open global.BReusable.StringHelpers
+
 
 type Path = System.IO.Path
-type IManager = MacroRunner.MultipleOutputHelper.IManager
 
 module DataModelToF =
 
-    open System.Data.SqlClient
     open System.Diagnostics
-    open System.Data
-    open Macros.SqlMacros
-    open SqlMeta
     open PureCodeGeneration
+    open BCore.CodeGeneration.SqlWrapCore
+    open SqlScriptGeneration
+    open ColumnTyping
+    open BCore.CodeGeneration.DteWrapCore
 
     let private log (s:string) =
         let text = if s.EndsWith "\r\n" then s else sprintf "%s\r\n" s
@@ -28,7 +26,7 @@ module DataModelToF =
         if System.Diagnostics.Debugger.IsAttached then
             System.Diagnostics.Debugger.Log(0, "Logger", text)
 
-    type TableGenerationInput = {Id: TableIdentifier; GenerateFull:bool}
+    type TableGenerationInput = {Id: global.BCore.CodeGeneration.SqlWrapCore.TableIdentifier; GenerateFull:bool}
 
     type CodeGenSprocSettingMap = {
         SprocNolist: string Set
@@ -395,26 +393,6 @@ module DataModelToF =
     [<NoComparison>]
     type SqlTableMeta = {TI:TableIdentifier; TypeName:string; PrimaryKeys:string Set; Identities: string Set; Columns: SqlTableColumnChoice}
 
-    let getSqlMeta appendLine cgsm tables =
-        use cn = new SqlConnection(cgsm.CString)
-        cn.Open()
-        sprintf "Connected to %s,%s" cn.DataSource cn.Database
-        |> tee appendLine
-        |> printfn "%s"
-        appendLine String.Empty
-        let fGenerated =
-            function
-            |Unhappy(ti,ex) -> Unhappy(ti,ex)
-            |Happy (ti, typeName, pks,columns,identities) ->
-                let result = Happy {TI=ti; TypeName= typeName; PrimaryKeys=pks; Identities=identities; Columns=SqlTableColumnChoice.SqlTableColumnMeta columns}
-                result
-        let tableData =
-            tables
-            |> Seq.map (getTableGenerationData appendLine cgsm.Singularize cn)
-            |> Seq.map fGenerated
-            |> List.ofSeq
-        tableData
-
     type SqlSprocMeta = {
         SpecificCatalog:string
         SpecificSchema:string
@@ -426,102 +404,10 @@ module DataModelToF =
         SchemaLevelRoutine:bool option
     }
 
-    let getSqlSprocs cn =
-        let sprocData =
-            getReaderArray cn {CommandText= "select * from information_schema.routines where routine_type = 'PROCEDURE'"; OptCommandType = Some CommandType.Text; OptParameters= None}
-                (fun r ->
-                    {   SpecificCatalog= getRecordOptT r "specific_catalog" |> Option.getOrDefault null
-                        SpecificSchema= getRecordOptT r "specific_schema" |> Option.getOrDefault null
-                        SpecificName= getRecordT r "specific_name"
-                        Created= getRecordT r "created"
-                        LastAltered= getRecordT r "last_altered"
-                        IsDeterministic= getRecordOptT r "is_deterministic" |> Option.getOrDefault null
-                        SqlDataAccess= getRecordOptT r "sql_data_access" |> Option.getOrDefault null
-                        SchemaLevelRoutine= getRecordOptT r "sql_data_access" |> function | Some(StringEqualsI "yes") -> Some true | Some (StringEqualsI "no") -> Some false | _ -> None
-                    }
-                )
-        sprocData
-    type SqlParameterCollection with
-        member x.ToSeq() = seq { for p in x -> p }
-        static member ToSeq (x: SqlParameterCollection) = x.ToSeq()
-    let getSqlSprocMeta cn sprocName =
-        Connections.runWithConnection cn (fun cn ->
-                SqlMeta.getParms (cn :?> SqlConnection) sprocName
-            )
 
-    let mapSprocParams cn (appendLine:int -> string -> unit) sp =
-        let ps =
-            cn
-            |> getSqlSprocMeta
-            <| sprintf "%s.%s.%s" sp.SpecificCatalog sp.SpecificSchema sp.SpecificName
-            |> SqlParameterCollection.ToSeq
-            |> List.ofSeq
-        let mapParamName (s: string) =
-            // get rid of @ sign
-            match s.[1..] with
-            // get rid of keywords
-            | "end" -> "``end``"
-            | x -> x
-
-        // would be nice if we mapped measures into this
-        let mapParam =
-            // name, if the type is inherently nullable
-            function
-            | DbType.AnsiString
-            | DbType.AnsiStringFixedLength
-            | DbType.String
-            | DbType.StringFixedLength
-            | DbType.Xml
-                -> "string"
-            | DbType.Binary -> "byte[]"
-            | DbType.Boolean -> "bool"
-            | DbType.Byte -> "byte"
-            | DbType.Decimal
-            | DbType.Currency -> "decimal"
-            | DbType.Date
-            | DbType.DateTime
-            | DbType.DateTime2
-                // this one might need to be TimeSpan
-            | DbType.DateTimeOffset
-                -> "DateTime"
-            | DbType.Double -> "float"
-            | DbType.Int16
-            | DbType.Int32 -> "int"
-            | DbType.Int64 -> "int64"
-
-            | x -> failwithf "unaccounted for type found %A" x
-
-        match ps with
-        | [] -> ()
-        | ps ->
-            let filtered =
-                ps
-                |> Seq.filter(fun p ->
-                    p.Direction <> ParameterDirection.Output &&
-                    p.Direction <> ParameterDirection.ReturnValue &&
-                    p.ParameterName |> String.equalsI "@RETURN_VALUE" |> not)
-                |> List.ofSeq
-            let memberList =
-                filtered
-                |> Seq.map (fun p ->
-                    let typeWording = (p.DbType |> mapParam) + if p.IsNullable then " option" else String.Empty
-                    sprintf "%s: %s" (p.ParameterName |> mapParamName) typeWording)
-                |> List.ofSeq
-            match memberList with
-            | [] -> ()
-            | x ->
-                filtered
-                |> List.map (fun p -> p.ParameterName, p.Direction)
-                |> printfn "member list for %s has %i params after filter, which are %A" sp.SpecificName filtered.Length
-                x
-                |> delimit ";"
-                |> sprintf "type %sInput = {%s}" (toPascalCase sp.SpecificName)
-                |> appendLine 1
-            ()
-
-    let generateSprocComponent cn targetNamespace appendLine (ssm:CodeGenSprocSettingMap) (startSprocFile:unit -> IDisposable) =
+    let generateSprocComponent fGetSqlSprocs fMapSprocParams targetNamespace appendLine (ssm:CodeGenSprocSettingMap) (startSprocFile:unit -> IDisposable) =
         let sprocs =
-            cn |> getSqlSprocs |> Seq.sortBy (fun sp -> sp.SpecificCatalog, sp.SpecificSchema, sp.SpecificName)
+            fGetSqlSprocs()  |> Seq.sortBy (fun sp -> sp.SpecificCatalog, sp.SpecificSchema, sp.SpecificName)
             |> Seq.filter(fun sp ->
                 ssm.SprocNolist |> Seq.exists (stringEqualsI sp.SpecificName) |> not
                 && ssm.SprocNolist |> Seq.exists (stringEqualsI <| sprintf "%s.%s" sp.SpecificSchema sp.SpecificName) |> not)
@@ -549,11 +435,11 @@ module DataModelToF =
                     // the next line is at least partially because there is no nameof operator, but also, because even if there were, sprocNames wouldn't be somewhere you could use it
                     appendLine 1 <| sprintf "let %s = \"%s\"" sp.SpecificName sp.SpecificName
                     if ssm.SprocInputMapNolist |> Seq.exists (fun x -> x = sp.SpecificName || x = (sprintf "%s.%s" sp.SpecificSchema sp.SpecificName)) |> not then
-                        mapSprocParams cn appendLine sp
+                        fMapSprocParams appendLine sp
                 )
 
             )
-    let generate generatorId (fMetaFallbackOpt) (cgsm:CodeGenSettingMap) (manager:MacroRunner.MultipleOutputHelper.IManager, generationEnvironment:StringBuilder, tables:TableIdentifier seq) fSettersCheckInequality =
+    let generate generatorId (fMetaFallbackOpt) (fGetSqlMeta,fGetSqlSprocs, fMapSprocParams) (cgsm:CodeGenSettingMap) (manager:IManager, generationEnvironment:StringBuilder, tables:TableIdentifier seq) fSettersCheckInequality =
 
         log(sprintf "DataModelToF.generate:cgsm:%A" cgsm)
         let appendLine text =
@@ -609,18 +495,18 @@ module DataModelToF =
                         member __.Dispose() = manager.EndBlock()
                 }
 
-            generateSprocComponent (Connector.CreateCString cgsm.CString) cgsm.TargetNamespace appendLine' ssm fStartSprocFile
+            generateSprocComponent fGetSqlSprocs fMapSprocParams cgsm.TargetNamespace appendLine' ssm fStartSprocFile
 
         )
 
         appendEmpty()
-        let meta = getSqlMeta appendLine cgsm tables
+        let meta = fGetSqlMeta appendLine cgsm tables
         meta
         |> List.collect( fun result ->
             match result, fMetaFallbackOpt with
             | Happy (sqlTableMeta), _ ->
                 sqlTableMeta
-            | Unhappy (ti,exn), Some f ->
+            | Unhappy (ti:TableIdentifier,exn), Some f ->
                 f ti exn
                 |> function
                     | None -> raise <| InvalidOperationException("Failed to get sql data",exn)
@@ -769,7 +655,7 @@ module DataModelToF =
 
 //    // purpose: make an alias to the 'generate' method that is more C# friendly
 //    // would having C# to construct the type directly with null values in the delegates, then letting this translate only those be a better option?
-    let Generate fFallback generatorId addlNamespaces mutable' (columnNolist:IDictionary<string, string seq>) (manager:MacroRunner.MultipleOutputHelper.IManager, generationEnvironment:StringBuilder, targetProjectName:string, tables, cString:string) useOptions generateValueRecords (measures: string seq) (measureNolist: string seq) includeNonDboSchemaInNamespace targetNamespace sprocSettings (pluralizer:Func<_,_>,singularizer:Func<_,_>) (getMeasureNamespace:Func<_,_>) typeGenerationNolist =
+    let Generate fFallback (fGetSqlMeta,fGetSqlSprocs,fMapSprocParams) generatorId addlNamespaces mutable' (columnNolist:IDictionary<string, string seq>) (manager:IManager, generationEnvironment:StringBuilder, targetProjectName:string, tables, cString:string) useOptions generateValueRecords (measures: string seq) (measureNolist: string seq) includeNonDboSchemaInNamespace targetNamespace sprocSettings (pluralizer:Func<_,_>,singularizer:Func<_,_>) (getMeasureNamespace:Func<_,_>) typeGenerationNolist =
         let columnNolist =
             columnNolist |> Map.ofDictionary |> Map.toSeq |> Seq.map (fun (k,v) -> KeyValuePair(k, v |> Set.ofSeq))
             |> Map.ofDictionary
@@ -791,16 +677,21 @@ module DataModelToF =
                         Singularize= singularizer.Invoke
                         TypeGenerationNolist = typeGenerationNolist |> Set.ofSeq
                         GetMeasureNamepace= Option.ofObj getMeasureNamespace |> Option.map (fun f -> f.Invoke) }
+        let fGetSqlMeta = Func.invoke2 fGetSqlMeta
+        let fGetSqlSprocs = Func.invoke fGetSqlSprocs
+        let fMapSprocParams = Action.invoke2 fMapSprocParams
         generate generatorId
             fFallback
+            (fGetSqlMeta,fGetSqlSprocs, fMapSprocParams)
             cgsm
             (manager, generationEnvironment, tables)
 
     // dbPath was Path.GetFullPath(Path.Combine(currentDir, "..", "..","PracticeManagement","Db"));
 module SqlProj =
     open System.IO
-    open Macros.SqlMacros
     open DataModelToF
+    open BCore.CodeGeneration.SqlWrapCore
+
     type TableSpecifier = {Path:string; TableGenerationInput: TableGenerationInput}
 
     type DbPathOption =
@@ -883,24 +774,26 @@ module SqlProj =
 
 // impure! applied code, meant for specific scripts, not api
 module GenerationSample =
-    open Macros.SqlMacros
-    open SqlMeta
     open DataModelToF
-    open SqlMeta.ColumnTyping
+    open BCore.CodeGeneration.SqlWrapCore.ColumnTyping
     open PureCodeGeneration
+    open BCore.CodeGeneration.DteWrapCore
+    open CodeGeneration
+    open BCore.CodeGeneration.SqlWrapCore
 
     type GenerationStrategy =
-        | UseMultipleOutputHelperCode
+        // work around for figuring out where  MacroRunner.MultipleOutputHelper.Managers.Manager(Some "DataModels.tt",sb,debug) would go
+        | UseMultipleOutputHelperCode of IManager
         | UseCustomManager
-    let _generate generatorId pluralize singularize connectionString =
+    let _generate generatorId strat pluralize singularize (fGetSqlMeta,fGetSqlSprocs,fMapSprocParams) connectionString =
         let sb = StringBuilder()
         let mutable currentFile:string = null
         //let pluralizer = Macros.VsMacros.createPluralizer()
 
-        let getManager debug strat : IManager =
+        let getManager strat : IManager =
             match strat with
-            |UseMultipleOutputHelperCode -> // WIP - generates a file, just to the wrong dir
-                upcast MacroRunner.MultipleOutputHelper.Managers.Manager(Some "DataModels.tt",sb,debug)
+            //upcast MacroRunner.MultipleOutputHelper.Managers.Manager(Some "DataModels.tt",sb,debug)
+            |UseMultipleOutputHelperCode m -> m
             | UseCustomManager ->
                 let generatedFileNames = List<string>()
                 { new IManager
@@ -915,9 +808,9 @@ module GenerationSample =
                         override __.GetTextSize() = sb.Length
                 }
 
-        let manager = getManager true UseMultipleOutputHelperCode
+        let manager = getManager strat
 
-        generateTable false manager sb None
+        CodeGeneration.SqlScriptGeneration.generateTable false manager sb None
             {
             Id= {TableIdentifier.Name="Users"; Schema="dbo"}
             Columns=
@@ -958,7 +851,7 @@ module GenerationSample =
                 SprocSettingMap = None
             }
 
-            DataModelToF.generate generatorId None cgsm (manager, sb, tablesToGen)
+            DataModelToF.generate generatorId None (fGetSqlMeta,fGetSqlSprocs,fMapSprocParams) cgsm (manager, sb, tablesToGen)
 
 
         manager.GeneratedFileNames

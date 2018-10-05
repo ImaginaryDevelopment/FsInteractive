@@ -1,0 +1,3 @@
+﻿melting and stewing pot. Where all the other stuff can be tied together and used, even if used poorly/unpolished
+compositions of other libs in solution.
+eventually the launchable to activate or command line activate other functionality in this solution
