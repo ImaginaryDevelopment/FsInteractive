@@ -1,0 +1,2 @@
+﻿hold all code, that is as reference-free as can be tolerated, in a central cross-cutting helper lib
+Heart of this lib- BReusable
