@@ -15,3 +15,5 @@ MacroRunner/BMeffers/bin/
 MacroRunner/BMeffers/obj/
 MacroRunner/.vs
 /MacroRunner/.paket
+/**/obj/
+/**/Debug/
