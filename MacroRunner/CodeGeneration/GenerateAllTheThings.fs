@@ -155,7 +155,7 @@ let generateCode generatorId cgsm manager sb mappedTables fSettersCheckInequalit
             ()
     )
 /// generatorId something to identify the generator with, in the .tt days it was the DefaultProjectNamespace the .tt was running from.
-let runGeneration generatorId (sb: System.Text.StringBuilder) (dte: IGenWrapper) manager (cgsm: CodeGeneration.DataModelToF.CodeGenSettingMap) toGen (dataModelOnlyItems: TableIdentifier list) =
+let runGeneration generatorId debug (sb: System.Text.StringBuilder) (dte: IGenWrapper) manager (cgsm: CodeGeneration.DataModelToF.CodeGenSettingMap) toGen (dataModelOnlyItems: TableIdentifier list) =
 
     let projects = dte.GetProjects()
     let appendLine text (sb:System.Text.StringBuilder) =
@@ -199,7 +199,7 @@ let runGeneration generatorId (sb: System.Text.StringBuilder) (dte: IGenWrapper)
     let detailed =
         genMapped
         |> Seq.collect (fun (targetSqlProjectFolder,sgi,items) ->
-            SqlMeta.generateTablesAndReferenceTables(manager, sb, Some targetSqlProjectFolder, items)
+            SqlMeta.generateTablesAndReferenceTables(manager, sb, Some targetSqlProjectFolder, items,debug)
             match sgi.InsertionConfig with
             | Some ic ->
                 SqlMeta.generateInserts
@@ -233,7 +233,7 @@ sb
 |> appendLine (sprintf "Started at %O" DateTime.Now)
 |> ignore
 
-let makeManager (dte:EnvDTE.DTE) =
+let makeManager (dte:EnvDTE.DTE,debug) =
     // if this script is in the solution it is modifying, we need the EnvDTE.ProjectItem representing it, otherwise where does the main (non sub-file) output go?
     let scriptFullPath = Path.Combine(__SOURCE_DIRECTORY__,__SOURCE_FILE__)
     let templateProjectItem:EnvDTE.ProjectItem option = dte.Solution.FindProjectItem scriptFullPath |> Option.ofObj
@@ -243,4 +243,4 @@ let makeManager (dte:EnvDTE.DTE) =
         printfn "ProjectItem= %A" (templateProjectItem.FileNames 0s)
     )
     let dteWrapper = wrapDte dte
-    MultipleOutputHelper.Managers.VsManager(Some "HelloTesting.fake.tt", dteWrapper, sb, templateProjectItem)
+    MultipleOutputHelper.Managers.VsManager(Some "HelloTesting.fake.tt", dteWrapper, sb, templateProjectItem,debug)

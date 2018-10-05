@@ -897,10 +897,10 @@ module GenerationSample =
         let mutable currentFile:string = null
         //let pluralizer = Macros.VsMacros.createPluralizer()
 
-        let getManager strat : IManager =
+        let getManager debug strat : IManager =
             match strat with
             |UseMultipleOutputHelperCode -> // WIP - generates a file, just to the wrong dir
-                upcast MacroRunner.MultipleOutputHelper.Managers.Manager(Some "DataModels.tt",sb)
+                upcast MacroRunner.MultipleOutputHelper.Managers.Manager(Some "DataModels.tt",sb,debug)
             | UseCustomManager ->
                 let generatedFileNames = List<string>()
                 { new IManager
@@ -915,7 +915,7 @@ module GenerationSample =
                         override __.GetTextSize() = sb.Length
                 }
 
-        let manager = getManager UseMultipleOutputHelperCode
+        let manager = getManager true UseMultipleOutputHelperCode
 
         generateTable false manager sb None
             {

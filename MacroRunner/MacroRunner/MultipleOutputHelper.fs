@@ -188,7 +188,9 @@ module MultipleOutputHelper =
                     reraise()
             startsWith projectDir
 
-        type Manager (templateFilePathOpt,sb) =
+        type Manager (templateFilePathOpt,sb,debug) =
+            let printfn f = Printf.kprintf( fun s -> if debug then printfn "%s" s) f
+
 
             let mutable currentBlock:Block = null
             let files = List<Block>()
@@ -312,10 +314,10 @@ module MultipleOutputHelper =
                         v.Start <- sb.Length
                     currentBlock <- v
 
-            static member Create(host:TemplatingEngineHost,sb:StringBuilder) =
+            static member Create(host:TemplatingEngineHost,sb:StringBuilder,debug) =
                 let beforeConLength = sb.Length
                 let manager =
-                    VsManager(host,sb)
+                    VsManager(host,sb,debug)
                 if beforeConLength > sb.Length then failwithf "Someone touched me!"
                 manager
 
@@ -329,13 +331,14 @@ module MultipleOutputHelper =
                 override __.GeneratedFileNames = upcast generatedFileNames
                 override __.GetTextSize() = sb.Length
 
-        and VsManager (templateFilePathOpt,dteWrapper:DteWrapper,sb,templateProjectItem:ProjectItem option) =
-                inherit Manager(templateFilePathOpt |> Option.bind Option.ofObj,sb)
+        and VsManager (templateFilePathOpt,dteWrapper:DteWrapper,sb,templateProjectItem:ProjectItem option,debug) =
+                inherit Manager(templateFilePathOpt |> Option.bind Option.ofObj,sb,debug)
                 let templateProjectItem = templateProjectItem |> Option.bind Option.ofObj
                 let dteWrapper =
                     {dteWrapper with Log =
                                         fun s ->
-                                            printfn "%s" s
+                                            if debug then
+                                                printfn "%s" s
                                             if System.Diagnostics.Debugger.IsAttached then
                                                 System.Diagnostics.Debugger.Log(0, "Logger", s)
                                             try
@@ -379,7 +382,7 @@ module MultipleOutputHelper =
 
                 //static member private x.CreateVsManager(
                 // this makes the necessary calls to get a Dte for you, as such, it should probably not exist here, rather be a code sample of a way to call this class
-                internal new(host:TemplatingEngineHost, sb:StringBuilder) =
+                internal new(host:TemplatingEngineHost, sb:StringBuilder,debug) =
                     printfn "internal new VsManager current use case does actuall use it?"
                     let templateFileOpt,dte =
                         let getSpFromIsp (isp:IServiceProvider) =
@@ -406,7 +409,7 @@ module MultipleOutputHelper =
                     //if isNull templateProjectItem then failwithf "VsManager.new: templateProjectItem is null"
                     let wrapper = wrapDte dte
 
-                    VsManager(templateFileOpt,wrapper,sb,templateProjectItem)
+                    VsManager(templateFileOpt,wrapper,sb,templateProjectItem,debug)
 
                 static member FindParentProject logger (readableProjects:(string*ProjectWrapper) seq) childFileName =
                     readableProjects

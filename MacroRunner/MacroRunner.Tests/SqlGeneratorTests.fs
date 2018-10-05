@@ -6,6 +6,7 @@ open System.Text
 open Macros.SqlMacros
 open CodeGeneration.SqlMeta
 open System.Diagnostics
+open System.IO
 
 let projects = [
         "PracticeManagement.Foundation"
@@ -97,26 +98,44 @@ module SqlGeneratorReferenceData =
 
 [<Tests>]
 let testSqlGenerator =
-    testCase "testSqlGenerator" <|
-        fun () ->
+    let inline generate allowDebugOutput =
             // translate SqlGenerator.tt to call into SqlMeta
             let sb = StringBuilder()
             //    let manager = MacroRunner.MultipleOutputHelper.Managers.Manager.Create(tHost, sb)
-            let manager = MacroRunner.MultipleOutputHelper.Managers.Manager(Some "HelloTesting.fake.tt",sb)
+            let manager = MacroRunner.MultipleOutputHelper.Managers.Manager(Some "HelloTesting.fake.tt",sb,allowDebugOutput)
             //    let targetProjectName = "ApplicationDatabase"
             //    let targetInsertRelativePath = @"Scripts\Post-Deployment\TableInserts\Accounting1.5\AccountingInserts.sql"
-            generateTablesAndReferenceTables(manager,sb, None, SqlGeneratorReferenceData.toGen |> Seq.take 1)
+            generateTablesAndReferenceTables(manager,sb, None, SqlGeneratorReferenceData.toGen |> Seq.take 1, allowDebugOutput)
             let output = sb |> string
-            Console.WriteLine "Hello world"
-            Trace.WriteLine <| sprintf "Tracing output:%s" output
-            Debug.WriteLine <| sprintf "Debug output:%s" output
-            printfn "Console output:%s" output
-            Debugger.Log(0,"1", output)
-            let expectations =
-                [   "[Payment]"
-                    "[Accounts].[PaymentType]"
-                    "-- Generated file, DO NOT edit directly"
-                ]
-            Expect.isTrue (output.Length > 0) "no text generated"
-            Expect.all expectations (fun e -> output.Contains(e) = true) "Missing something in sql gen"
+            output
+
+    testSequenced <| testList "generateTablesAndRefrenceTables" [
+        testCase "testSqlGenerator" <|
+            fun () ->
+                let output = generate true
+                Console.WriteLine "Hello world"
+                Trace.WriteLine <| sprintf "Tracing output:%s" output
+                Debug.WriteLine <| sprintf "Debug output:%s" output
+                printfn "Console output:%s" output
+                Debugger.Log(0,"1", output)
+                let expectations =
+                    [   "[Payment]"
+                        "[Accounts].[PaymentType]"
+                        "-- Generated file, DO NOT edit directly"
+                    ]
+                Expect.isTrue (output.Length > 0) "no text generated"
+                Expect.all expectations (fun e -> output.Contains(e) = true) "Missing something in sql gen"
+         // we want to provide an option for console output from the generator is silent, write a test that fails when it writes to output, then add the feature
+        testCase "no console out" <|
+            fun () ->
+                let oldOut = Console.Out
+                use fakeConsole = new ConsoleWrapper(oldOut,fun () -> invalidOp "it is writing!")
+                Console.SetOut fakeConsole
+                try
+                    generate false |> ignore
+                finally
+                    Console.SetOut oldOut
+
+
+    ]
 

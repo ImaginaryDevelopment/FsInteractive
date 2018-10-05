@@ -23,11 +23,11 @@ module HelloWorldTests =
 
 module PureCodeGeneration =
     open CodeGeneration.PureCodeGeneration
-    let zero() = {Declaration.Attributes=List.empty;Name=null;BaseClass=None;Fields=List.empty;Members=List.empty}
+    let zero() = {ClassDeclaration.Attributes=List.empty;Name=null;BaseClass=None;Fields=List.empty;Members=List.empty}
 
     [<Tests>]
     let cg = testList "PureCodeGeneration" [
-            testList "Declaration" [
+            testList "ClassDeclaration" [
                 //testCase "pcg" <|
                 //    fun () ->
                 //        let x = {zero() with Name="MyProperty"}
@@ -43,7 +43,32 @@ module PureCodeGeneration =
                         let x ={zero() with Fields=["Toy";"Boy"]}
                         let actual = x.FieldText " "
                         Expect.all x.Fields (fun v -> actual.Contains v) "bad field gen"
-
+            ]
+            testList "PureMeasure" [
+                testCase "IsInValidMeasure" <|
+                    fun () ->
+                        let actual = PureMeasure.IsValidMeasureOpt ""
+                        Expect.isFalse actual "an empty string is not a measure"
+            ]
+            testList "getDefaultValue" [
+                testCase "Option is None" <|
+                    fun () ->
+                        let expected = "None"
+                        let actual = getDefaultValue None "System.String option"
+                        Expect.equal actual expected "Any option should return None"
+                testCase "measures are included" <|
+                    fun () ->
+                        let m = PureMeasure.create "Gold"
+                        let expected = "0<Gold>"
+                        let actual = getDefaultValue m "int"
+                        Expect.equal actual expected "bad default with measure"
+                testCase "Primitives" <|
+                    fun () ->
+                        let items =
+                            [   "int","0"
+                                "int64", "0L"
+                            ]
+                        Expect.all items (fun (t,expected) -> getDefaultValue None t = expected) "Primitive fail"
             ]
         ]
 module CodeGeneration =

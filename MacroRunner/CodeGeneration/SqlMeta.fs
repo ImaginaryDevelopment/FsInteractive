@@ -376,10 +376,10 @@ let generateInserts appendLine (manager:IManager) targetProjectFolder (tables:#s
 
     //feature desired: auto-name primary keys
     // adjustment desired: put all reference values comment (when on the reference table, above the column instead of beside it
-let generateTablesAndReferenceTables(manager:IManager, generationEnvironment:StringBuilder, targeting, toGen: TableGenerationInfo seq ) =
+let generateTablesAndReferenceTables(manager:IManager, generationEnvironment:StringBuilder, targeting, toGen: TableGenerationInfo seq,debug) =
     toGen
     |> Seq.iter(fun ti ->
-        generateTable false manager generationEnvironment targeting ti
+        generateTable debug manager generationEnvironment targeting ti
         ti.Columns
         |> Seq.choose(fun ci->
             match ci.FKey with
@@ -398,10 +398,12 @@ let generateTablesAndReferenceTables(manager:IManager, generationEnvironment:Str
                 let pkeyColumn = {childCi with Nullability = PrimaryKey; FKey=None; Comments= refPKComment}
                 let tId = fKey.FKeyId.Table
                 let table = {TableGenerationInfo.Id={Schema = tId.Schema; Name=tId.Name}; Columns = [pkeyColumn]}
-                printfn "Generating ReferenceTable from %A" table
+                if debug then
+                    printfn "Generating ReferenceTable from %A" table
                 generateTable true manager generationEnvironment targeting table
             with _ ->
-                printfn "Failing:"
+                if debug then
+                    printfn "Failing:"
                 try printfn " fKey: %A" fKey with _ -> ()
                 try printfn " childCi: %A" childCi with _ -> ()
                 reraise()

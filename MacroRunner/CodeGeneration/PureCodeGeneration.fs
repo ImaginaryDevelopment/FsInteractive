@@ -22,7 +22,8 @@ type ClassMember =
 //    |InterfaceBasedRecord
 //    |RecordBasedClass of PropertyOptions * PromoteUnitializedStructsToNullables
 
-type Declaration = { Attributes: string list; Name:string; BaseClass :string option; Fields: string list; Members: ClassMember list} with
+// currently used only in conversion
+type ClassDeclaration = { Attributes: string list; Name:string; BaseClass :string option; Fields: string list; Members: ClassMember list} with
     member x.GetAttributeText() = x.Attributes |> Seq.map (fun ta -> sprintf "[<%s>]" ta) |> delimit "\r\n"
     member x.FieldText spacing = x.Fields |> Seq.map (fun f -> spacing + f) |> delimit "\r\n"
 
@@ -59,7 +60,7 @@ type PureColumnTypeName private(text) =
 
     static member Create(typeText) =
         if PureColumnTypeName.IsValidTypeName typeText then
-            Some <| PureColumnTypeName(typeText)
+            Some <| PureColumnTypeName typeText
         else None
     member __.Value = text
 

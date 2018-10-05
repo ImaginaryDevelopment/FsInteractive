@@ -55,6 +55,7 @@
   <Import Project="$(FSharpTargetsPath)" />
   <ItemGroup>
     <Compile Include="AssemblyInfo.fs" />
+    <Compile Include="Helpers.fs" />
     <Compile Include="SqlGeneratorTests.fs" />
     <Compile Include="CodeGenTests.fs" />
     <Compile Include="Program.fs" />
