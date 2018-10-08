@@ -68,26 +68,25 @@ type IGenWrapper =
     abstract member GetTargetSqlProjectFolder: string -> IProject
 
 
-let generateCode generatorId cgsm manager (fGetSqlMeta,fGetSqlSprocs,fMapSprocParams) sb mappedTables fSettersCheckInequality =
+let generateCode generatorId cgsm manager (fGetSqlMeta,sqlSprocs,fMapSprocParams) sb mappedTables fSettersCheckInequality =
+    let metaFallback (ti:TableIdentifier) (_exn:exn) =
+        mappedTables
+        |> Seq.find(function | Detailed details -> details.Id = ti | DataModelOnly dmTI -> dmTI = ti)
+        |> function
+            |Detailed details ->
+                // this is what should be happening on the main path too
+                {   SqlTableMeta.TI = details.Id
+                    TypeName=cgsm.Singularize details.Id.Name
+                    PrimaryKeys=details.Columns |> Seq.choose (fun c -> if c.IsPrimaryKey then Some c.Name else None) |> Set.ofSeq
+                    Identities= details.Columns |> Seq.choose (fun c -> if c.IsIdentity then Some c.Name else None) |> Set.ofSeq
+                    Columns= SqlTableColumnChoice.Manual details.Columns
+                }
+            | DataModelOnly _dmInput ->
+                invalidOp "Could not get sql meta"
+    let ga = {MetaFallback = Some metaFallback;GetSqlMeta=fGetSqlMeta; SqlSprocs=sqlSprocs;MapSqlSprocParams=fMapSprocParams;  }
     let meta =
         DataModelToF.generate generatorId
-            (Some (fun (ti:TableIdentifier) (_exn:exn) ->
-                mappedTables
-                |> Seq.find(function | Detailed details -> details.Id = ti | DataModelOnly dmTI -> dmTI = ti)
-                |> function
-                    |Detailed details ->
-                        // this is what should be happening on the main path too
-                        {   SqlTableMeta.TI = details.Id
-                            TypeName=cgsm.Singularize details.Id.Name
-                            PrimaryKeys=details.Columns |> Seq.choose (fun c -> if c.IsPrimaryKey then Some c.Name else None) |> Set.ofSeq
-                            Identities= details.Columns |> Seq.choose (fun c -> if c.IsIdentity then Some c.Name else None) |> Set.ofSeq
-                            Columns= SqlTableColumnChoice.Manual details.Columns
-                        }
-                        |> Some
-                    | DataModelOnly _dmInput ->
-                        None
-            ))
-            (fGetSqlMeta,fGetSqlSprocs,fMapSprocParams)
+            ga
             cgsm
             (manager, sb, mappedTables |> List.map GenMapTableItem.GetTI)
             fSettersCheckInequality

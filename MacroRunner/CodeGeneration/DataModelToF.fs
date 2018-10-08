@@ -50,6 +50,7 @@ module DataModelToF =
         // for instance, we don't really need a type to hold a fkey+fkey table like paymentId to ReversalPaymentId
         TypeGenerationNolist: string Set
         Measures: string Set
+        MeasuresNolist: string Set
         ///Needs to include any namespace that defines:
         /// - Func.invoke1 ( module Func = let invoke1 (x:System.Func<_,_>) y = x.Invoke y)
         AdditionalNamespaces: string Set
@@ -57,7 +58,6 @@ module DataModelToF =
         Pluralize: string -> string
         Singularize: string -> string
 
-        MeasuresNolist: string Set
         IncludeNonDboSchemaInNamespace:bool
         // not functional yet, right?
         GenerateValueRecords:bool
@@ -405,9 +405,10 @@ module DataModelToF =
     }
 
 
-    let generateSprocComponent fGetSqlSprocs fMapSprocParams targetNamespace appendLine (ssm:CodeGenSprocSettingMap) (startSprocFile:unit -> IDisposable) =
+    let generateSprocComponent sqlSprocs fMapSprocParams targetNamespace appendLine (ssm:CodeGenSprocSettingMap) (startSprocFile:unit -> IDisposable) =
         let sprocs =
-            fGetSqlSprocs()  |> Seq.sortBy (fun sp -> sp.SpecificCatalog, sp.SpecificSchema, sp.SpecificName)
+            sqlSprocs
+            |> Seq.sortBy (fun sp -> sp.SpecificCatalog, sp.SpecificSchema, sp.SpecificName)
             |> Seq.filter(fun sp ->
                 ssm.SprocNolist |> Seq.exists (stringEqualsI sp.SpecificName) |> not
                 && ssm.SprocNolist |> Seq.exists (stringEqualsI <| sprintf "%s.%s" sp.SpecificSchema sp.SpecificName) |> not)
@@ -439,7 +440,27 @@ module DataModelToF =
                 )
 
             )
-    let generate generatorId (fMetaFallbackOpt) (fGetSqlMeta,fGetSqlSprocs, fMapSprocParams) (cgsm:CodeGenSettingMap) (manager:IManager, generationEnvironment:StringBuilder, tables:TableIdentifier seq) fSettersCheckInequality =
+    type GenerationArguments<'exn when 'exn :> exn> =
+        {
+            MetaFallback:(TableIdentifier-> 'exn->SqlTableMeta) option
+            // this takes an appendline with indentation level already closed over
+            GetSqlMeta:(string->unit) -> CodeGenSettingMap -> TableIdentifier seq -> Rail<SqlTableMeta,TableIdentifier * 'exn> list
+            SqlSprocs: SqlSprocMeta seq
+            MapSqlSprocParams: (int -> string -> unit) -> SqlSprocMeta -> unit
+        }
+        with
+            // CSharp creation syntax
+            static member Create (metaFallbackOpt, getSqlMeta, sqlSprocs, mapSqlSprocParams) =
+                let metaFallbackOpt = if isNull metaFallbackOpt then None else Some <| Func.invoke2 metaFallbackOpt
+                let guardArg name x = if x |> isNull then invalidArg name "must not be null"
+                guardArg "getSqlMeta" getSqlMeta
+                guardArg "mapSqlSprocParams" mapSqlSprocParams
+                let inline getSqlMeta appendLine cgsm tis =
+                    Func.invoke3 getSqlMeta (Action<_> appendLine) cgsm tis
+                let inline mapSqlSprocParams appendLine meta =
+                    Action.invoke2 mapSqlSprocParams (Action<_,_> appendLine) meta
+                {MetaFallback=metaFallbackOpt;SqlSprocs=sqlSprocs;GetSqlMeta=getSqlMeta; MapSqlSprocParams=mapSqlSprocParams}
+    let generate generatorId (ga:GenerationArguments<_>) (cgsm:CodeGenSettingMap) (manager:IManager, generationEnvironment:StringBuilder, tables:TableIdentifier seq) fSettersCheckInequality =
 
         log(sprintf "DataModelToF.generate:cgsm:%A" cgsm)
         let appendLine text =
@@ -495,22 +516,19 @@ module DataModelToF =
                         member __.Dispose() = manager.EndBlock()
                 }
 
-            generateSprocComponent fGetSqlSprocs fMapSprocParams cgsm.TargetNamespace appendLine' ssm fStartSprocFile
+            generateSprocComponent ga.SqlSprocs ga.MapSqlSprocParams cgsm.TargetNamespace appendLine' ssm fStartSprocFile
 
         )
 
         appendEmpty()
-        let meta = fGetSqlMeta appendLine cgsm tables
+        let meta = ga.GetSqlMeta appendLine cgsm tables
         meta
         |> List.collect( fun result ->
-            match result, fMetaFallbackOpt with
+            match result, ga.MetaFallback with
             | Happy (sqlTableMeta), _ ->
                 sqlTableMeta
             | Unhappy (ti:TableIdentifier,exn), Some f ->
                 f ti exn
-                |> function
-                    | None -> raise <| InvalidOperationException("Failed to get sql data",exn)
-                    | Some x -> x
             | Unhappy(_,exn), None ->
                 raise <| InvalidOperationException("Failed to get sql data",exn)
             |> (fun sqlTableMeta ->
@@ -655,7 +673,7 @@ module DataModelToF =
 
 //    // purpose: make an alias to the 'generate' method that is more C# friendly
 //    // would having C# to construct the type directly with null values in the delegates, then letting this translate only those be a better option?
-    let Generate fFallback (fGetSqlMeta,fGetSqlSprocs,fMapSprocParams) generatorId addlNamespaces mutable' (columnNolist:IDictionary<string, string seq>) (manager:IManager, generationEnvironment:StringBuilder, targetProjectName:string, tables, cString:string) useOptions generateValueRecords (measures: string seq) (measureNolist: string seq) includeNonDboSchemaInNamespace targetNamespace sprocSettings (pluralizer:Func<_,_>,singularizer:Func<_,_>) (getMeasureNamespace:Func<_,_>) typeGenerationNolist =
+    let Generate fFallback (fGetSqlMeta,sqlSprocs,fMapSprocParams) generatorId addlNamespaces mutable' (columnNolist:IDictionary<string, string seq>) (manager:IManager, generationEnvironment:StringBuilder, targetProjectName:string, tables, cString:string) useOptions generateValueRecords (measures: string seq) (measureNolist: string seq) includeNonDboSchemaInNamespace targetNamespace sprocSettings (pluralizer:Func<_,_>,singularizer:Func<_,_>) (getMeasureNamespace:Func<_,_>) typeGenerationNolist =
         let columnNolist =
             columnNolist |> Map.ofDictionary |> Map.toSeq |> Seq.map (fun (k,v) -> KeyValuePair(k, v |> Set.ofSeq))
             |> Map.ofDictionary
@@ -677,12 +695,9 @@ module DataModelToF =
                         Singularize= singularizer.Invoke
                         TypeGenerationNolist = typeGenerationNolist |> Set.ofSeq
                         GetMeasureNamepace= Option.ofObj getMeasureNamespace |> Option.map (fun f -> f.Invoke) }
-        let fGetSqlMeta = Func.invoke2 fGetSqlMeta
-        let fGetSqlSprocs = Func.invoke fGetSqlSprocs
-        let fMapSprocParams = Action.invoke2 fMapSprocParams
+        let ga = GenerationArguments<_>.Create(metaFallbackOpt=fFallback,getSqlMeta=fGetSqlMeta, sqlSprocs= sqlSprocs,mapSqlSprocParams=fMapSprocParams)
         generate generatorId
-            fFallback
-            (fGetSqlMeta,fGetSqlSprocs, fMapSprocParams)
+            ga
             cgsm
             (manager, generationEnvironment, tables)
 
@@ -785,7 +800,7 @@ module GenerationSample =
         // work around for figuring out where  MacroRunner.MultipleOutputHelper.Managers.Manager(Some "DataModels.tt",sb,debug) would go
         | UseMultipleOutputHelperCode of IManager
         | UseCustomManager
-    let _generate generatorId strat pluralize singularize (fGetSqlMeta,fGetSqlSprocs,fMapSprocParams) connectionString =
+    let _generate generatorId strat pluralize singularize ga connectionString =
         let sb = StringBuilder()
         let mutable currentFile:string = null
         //let pluralizer = Macros.VsMacros.createPluralizer()
@@ -850,8 +865,12 @@ module GenerationSample =
                 TypeGenerationNolist = Set.empty
                 SprocSettingMap = None
             }
-
-            DataModelToF.generate generatorId None (fGetSqlMeta,fGetSqlSprocs,fMapSprocParams) cgsm (manager, sb, tablesToGen)
+            let fGetNotifyOptions (ti:TableIdentifier) : NotifyClassOptions =
+                if ti.Name="PatientInfo" then
+                    {SettersCheckInequality = true; AllowPropertyChangeOverride = false}
+                else
+                    {SettersCheckInequality = false; AllowPropertyChangeOverride = false}
+            DataModelToF.generate generatorId ga cgsm (manager, sb, tablesToGen) fGetNotifyOptions
 
 
         manager.GeneratedFileNames

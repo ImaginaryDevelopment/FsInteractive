@@ -162,3 +162,8 @@ module SqlWrapCore =
                 | Computed a -> a
                 | _ -> false
     type TableGenerationInfo = {Id:TableIdentifier; Columns: ColumnInput list}
+
+ 
+    //type SqlGenerationArguments = 
+// should hold options for all generation combination possibilities
+//type GenerationArgument
