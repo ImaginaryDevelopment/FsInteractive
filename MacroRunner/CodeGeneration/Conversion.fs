@@ -1,5 +1,6 @@
 ﻿namespace CodeGeneration
 open System
+#if CodeAnalysis
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CSharp
 open Microsoft.CodeAnalysis.CSharp.Syntax
@@ -270,3 +271,5 @@ module FileConversion =
                 .AppendLine(classD.FieldText spacing)
                 .AppendLine(String.Empty)
                 .AppendLine(delimit "\r\n" props).ToString()
+
+#endif

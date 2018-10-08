@@ -554,14 +554,8 @@ module TranslateCSharp =
     type DebugDelegate = DebugDelegate of (DebugVote -> (DebugOpt*DebugDelegate))
 
 
-        //| Promote -> let newState = DebugOpt.Yes, getDebugOpt
-
-    open Microsoft.CodeAnalysis
-    open Microsoft.CodeAnalysis.CSharp
-    open Microsoft.CodeAnalysis.CSharp.Syntax
     open System.Collections.Generic
 
-    type TypeSpecification = | Type of Type | Kind of SyntaxKind
 
     module Seq =
         #if F43
@@ -623,7 +617,8 @@ module TranslateCSharp =
             | Yes -> Seq.iterDump lines
             | Indent spc -> Seq.iterDumpInd spc lines
             | No -> ()
-
+#if CodeAnalysis
+    type TypeSpecification = | Type of Type | Kind of SyntaxKind
     module FileWalker =
 
         type ModelCollector() =
@@ -1080,3 +1075,5 @@ module TranslateCSharp =
                 |> dumpt "memberNames"
                 |> ignore
             mapResult
+
+#endif
