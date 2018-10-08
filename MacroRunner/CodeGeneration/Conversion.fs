@@ -84,7 +84,7 @@ module FieldConversion =
             |> Seq.sortBy (fun f-> f.Name)
             |> Array.ofSeq
 
-        let toFField (memberNames:Set<string>) (getDebugOpt:DebugDelegate) (fieldInfoB:FieldInfoB) =
+        let toFField (getDebugOpt:DebugDelegate) (fieldInfoB:FieldInfoB) =
             let name,type',initial,vDeclaration = mapName fieldInfoB.Name, fieldInfoB.Type, fieldInfoB.Initial, fieldInfoB.Declaration
             //printfn "starting field %s" name
             let debugLines expr lines:unit =
@@ -111,7 +111,7 @@ module FieldConversion =
                     ]
                 let result= fDec ("= null") "default init"
                 result
-        let fields = fields |> Seq.map (toFField fieldNames getDebugOpt) |> List.ofSeq
+        let fields = fields |> Seq.map (toFField getDebugOpt) |> List.ofSeq
         fields
 
 module PropConversion =

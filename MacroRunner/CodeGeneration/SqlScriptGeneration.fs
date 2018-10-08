@@ -380,7 +380,7 @@ let generateInserts appendLine (manager:IManager) targetProjectFolder (tables:#s
                 let refData =
                     tbl.Columns
                     |> Seq.choose(fun c -> match c.FKey with | Some(FKeyWithReference rd) -> Some(c.Name, rd) | _ -> None)
-                    |> Seq.filter (fun (cName,rd) -> rd.ValuesWithComment |> isNull |> not && rd.ValuesWithComment |> Seq.any )
+                    |> Seq.filter (fun (_cName,rd) -> rd.ValuesWithComment |> isNull |> not && rd.ValuesWithComment |> Seq.any )
                     |> Seq.map (fun (cName,rd) ->
                         if rd.FKeyId.Column |> isNull then
                             {rd with FKeyId = {rd.FKeyId with Column = cName}}

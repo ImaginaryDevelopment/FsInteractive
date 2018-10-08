@@ -176,7 +176,7 @@ let generateRecord (igr:IGenerateRecords<_>) typeName mutability useOptions gene
     columns
     |> Seq.iter (fun x ->
         appendLine 2 <| (sprintf "/%s" <| igr.MakeColumnComments x)
-        let mt = igr.GetMeasureForColumnName x.Name
+        //let mt = igr.GetMeasureForColumnName x.Name
         let mapped =
             let base' = igr.GetFullType useOptions x //SqlTableColumnChoiceItem.MapSqlType mt igr.UseOptions x
             match mutability with
@@ -805,9 +805,9 @@ module TranslateCSharp =
             files' |> Seq.length |> printfn "Checking %i files"
             files'
         query{
-            for (file,root,clsToBases) in filesToClassesToBases do
-            for cls in clsToBases.Keys do
-            let bases = clsToBases.[cls]
+            for (file,root,_clsToBases) in filesToClassesToBases do
+            for cls in _clsToBases.Keys do
+            let bases = _clsToBases.[cls]
 
             // (* already done on line 54 *)
             // where(Seq.contains "DataModelBase" bases)

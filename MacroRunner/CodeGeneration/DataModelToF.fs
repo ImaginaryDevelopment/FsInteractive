@@ -678,7 +678,7 @@ module DataModelToF =
 
 //    // purpose: make an alias to the 'generate' method that is more C# friendly
 //    // would having C# to construct the type directly with null values in the delegates, then letting this translate only those be a better option?
-    let Generate fFallback (fGetSqlMeta,sqlSprocs,fMapSprocParams) generatorId addlNamespaces mutable' (columnNolist:IDictionary<string, string seq>) (manager:IManager, generationEnvironment:StringBuilder, targetProjectName:string, tables, cString:string) useOptions generateValueRecords (measures: string seq) (measureNolist: string seq) includeNonDboSchemaInNamespace targetNamespace sprocSettings (pluralizer:Func<_,_>,singularizer:Func<_,_>) (getMeasureNamespace:Func<_,_>) typeGenerationNolist =
+    let Generate (fGetSqlMeta,sqlSprocs,fMapSprocParams) generatorId addlNamespaces mutable' (columnNolist:IDictionary<string, string seq>) (manager:IManager, generationEnvironment:StringBuilder, targetProjectName:string, tables, cString:string) useOptions generateValueRecords (measures: string seq) (measureNolist: string seq) includeNonDboSchemaInNamespace targetNamespace sprocSettings (pluralizer:Func<_,_>,singularizer:Func<_,_>) (getMeasureNamespace:Func<_,_>) typeGenerationNolist =
         let columnNolist =
             columnNolist |> Map.ofDictionary |> Map.toSeq |> Seq.map (fun (k,v) -> KeyValuePair(k, v |> Set.ofSeq))
             |> Map.ofDictionary

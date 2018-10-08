@@ -65,7 +65,7 @@ module Com =
                                 try 
 
                                     // obtain the ITypeInfo interface from the object 
-                                    let success = dispatch.GetTypeInfo(0, 0, typeInfoRef)
+                                    let _success = dispatch.GetTypeInfo(0, 0, typeInfoRef)
                                     Some !typeInfoRef
                                 with |ex -> (* ex.Dump(); *) 
                                 //Cannot get the ITypeInfo interface for the specified COM object 
@@ -78,7 +78,7 @@ module Com =
                                     let helpContext = ref 0
                                     let helpFile = ref null
                                     //retrieves the documentation string for the specified type description 
-                                    let returnVal = typeInfo.Value.GetDocumentation(-1,typeName,documentation,helpContext,helpFile)
+                                    let _returnVal = typeInfo.Value.GetDocumentation(-1,typeName,documentation,helpContext,helpFile)
                                     !typeName
                                 with |ex -> String.Empty // Cannot extract ITypeInfo information 
                         with | ex -> String.Empty // Unexpected error 
