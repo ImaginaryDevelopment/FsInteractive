@@ -74,6 +74,16 @@
     <Reference Include="System.Numerics" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\CodeGeneration\CodeGeneration.fsproj">
+      <Name>CodeGeneration</Name>
+      <Project>{f9a8079c-5ea0-41ce-bdcc-234189e657c0}</Project>
+      <Private>True</Private>
+    </ProjectReference>
+    <ProjectReference Include="..\..\Core\BCore.fsproj">
+      <Name>BCore</Name>
+      <Project>{cec0f091-83a5-4a9c-953a-d615607be7bb}</Project>
+      <Private>True</Private>
+    </ProjectReference>
     <ProjectReference Include="..\BCore.ADO\BCore.ADO.fsproj">
       <Name>BCore.ADO</Name>
       <Project>{dadfe3c4-47d2-4db3-ac7d-0e848631e9cc}</Project>
@@ -87,16 +97,6 @@
     <ProjectReference Include="..\CodeGeneration.VS\CodeGeneration.VS.fsproj">
       <Name>CodeGeneration.VS</Name>
       <Project>{6c2ddc6a-67fb-40e4-9daf-bf079b989171}</Project>
-      <Private>True</Private>
-    </ProjectReference>
-    <ProjectReference Include="..\CodeGeneration\CodeGeneration.fsproj">
-      <Name>CodeGeneration</Name>
-      <Project>{f9a8079c-5ea0-41ce-bdcc-234189e657c0}</Project>
-      <Private>True</Private>
-    </ProjectReference>
-    <ProjectReference Include="..\Core\BCore.fsproj">
-      <Name>BCore</Name>
-      <Project>{cec0f091-83a5-4a9c-953a-d615607be7bb}</Project>
       <Private>True</Private>
     </ProjectReference>
     <ProjectReference Include="..\MacroRunner\MacroRunner.fsproj">

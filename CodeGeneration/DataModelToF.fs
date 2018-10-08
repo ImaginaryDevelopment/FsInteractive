@@ -462,13 +462,15 @@ module DataModelToF =
                     // the next line is at least partially because there is no nameof operator, but also, because even if there were, sprocNames wouldn't be somewhere you could use it
                     appendLine 1 <| sprintf "let %s = \"%s\"" sp.SpecificName sp.SpecificName
                     if ssm.SprocInputMapNolist |> Seq.exists (fun x -> x = sp.SpecificName || x = (sprintf "%s.%s" sp.SpecificSchema sp.SpecificName)) |> not then
-                        fMapSprocParams appendLine sp
+                        fMapSprocParams sp
+                        |> Option.iter (appendLine 1)
                 )
 
             )
     let getMeasureType measures measuresNoList columnName =
             measures
             |> Seq.tryFind (fun m -> measuresNoList |> Seq.contains columnName |> not && containsI m columnName)
+            // fail if there is a measure, but it is invalid
             |> Option.map (fun m -> PureMeasure.create m |> Option.getOrFailMsg (sprintf "%s is not a valid measure" m))
 
     let generateFFile (appendLine',appendLine,appendEmpty) generatorId cgsm sqlTableMeta ncOpts =
@@ -545,7 +547,8 @@ module DataModelToF =
             // this takes an appendline with indentation level already closed over
             GetSqlMeta:(string->unit) -> CodeGenSettingMap -> TableIdentifier seq -> Rail<SqlTableMeta,TableIdentifier * 'exn> list
             SqlSprocs: SqlSprocMeta seq
-            MapSqlSprocParams: (int -> string -> unit) -> SqlSprocMeta -> unit
+            // Default if the CodeGeneration.Sql project is referenced is mapSprocParams
+            MapSqlSprocParams: SqlSprocMeta -> string option
         }
         with
             // CSharp creation syntax
@@ -555,11 +558,14 @@ module DataModelToF =
                 guardArg "mapSqlSprocParams" mapSqlSprocParams
                 let inline getSqlMeta appendLine cgsm tis =
                     Func.invoke3 getSqlMeta (Action<_> appendLine) cgsm tis
-                let inline mapSqlSprocParams appendLine meta =
-                    Action.invoke2 mapSqlSprocParams (Action<_,_> appendLine) meta
+                let inline mapSqlSprocParams meta =
+                    let result = Func.invoke1 mapSqlSprocParams meta
+                    match result with
+                    | ValueString x -> Some x
+                    | _ -> None
                 {SqlSprocs=sqlSprocs;GetSqlMeta=getSqlMeta; MapSqlSprocParams=mapSqlSprocParams}
 
-    let writeColumnInfoToMetaFile cgsm appendLine' sqlTableMeta =
+    let writeColumnInfoMeta cgsm appendLine' sqlTableMeta =
         let columns =
             sqlTableMeta.Columns
             |> function
@@ -611,26 +617,12 @@ module DataModelToF =
             |> Seq.iter (appendLine' 1)
 
 
-    let generate generatorId (ga:GenerationArguments<_>) (cgsm:CodeGenSettingMap) (manager:IManager, generationEnvironment:StringBuilder, tables:TableIdentifier seq) fSettersCheckInequality =
-
-        log(sprintf "DataModelToF.generate:cgsm:%A" cgsm)
-        let appendLine text =
-            match text with
-            | ValueString text -> generationEnvironment.AppendLine text |> ignore
-            | _ -> generationEnvironment.AppendLine String.Empty |> ignore
-        let appendEmpty() = appendLine String.Empty
-        let appendLine' indentLevels text =
-            let indentation = String.replicate indentLevels "    "
-            generationEnvironment.AppendLine(indentation + text) |> ignore
+    let writeGenerationMeta (appendLine',appendLine,appendEmpty) templateFile projects (tables:TableIdentifier seq) =
         appendEmpty()
-        appendLine <| sprintf "TemplateFile: %s" manager.TemplateFile
+        appendLine <| sprintf "TemplateFile: %s" templateFile
         appendEmpty()
 
         //let sol,projects = Macros.VsMacros.getSP dte //EnvDteHelper.recurseSolutionProjects dte
-        let projects = manager.DteWrapperOpt |> Option.map (fun dte -> dte.GetProjects()) //(Macros.VsMacros.getSP>>snd) // was dte
-        let targetProjectFolder =
-            projects |> Option.map (Seq.find (fun p -> p.GetName() = cgsm.TargetProjectName))
-            |> Option.map (fun tp -> tp.GetFullName() |> Path.GetDirectoryName)
 
         appendLine "Projects"
 
@@ -652,6 +644,9 @@ module DataModelToF =
         tables |> Seq.iter (fun t ->
             appendLine' 1 <| sprintf "%s.%s" t.Schema t.Name
         )
+
+    // generate a file that has fields with the names of all sprocs found in the db, and an input type fitting their shape
+    let generateSprocMetaFile cgsm (appendLine',appendLine,appendEmpty) targetProjectFolder (manager:IManager) sprocs mapSqlSprocParams=
         cgsm.SprocSettingMap
         |> Option.iter (fun ssm ->
             appendEmpty()
@@ -667,9 +662,26 @@ module DataModelToF =
                         member __.Dispose() = manager.EndBlock()
                 }
 
-            generateSprocComponent ga.SqlSprocs ga.MapSqlSprocParams cgsm.TargetNamespace appendLine' ssm fStartSprocFile
-
+            generateSprocComponent sprocs mapSqlSprocParams cgsm.TargetNamespace appendLine' ssm fStartSprocFile
         )
+
+    let generate generatorId (ga:GenerationArguments<_>) (cgsm:CodeGenSettingMap) (manager:IManager, generationEnvironment:StringBuilder, tables:TableIdentifier seq) fSettersCheckInequality =
+
+        log(sprintf "DataModelToF.generate:cgsm:%A" cgsm)
+        let appendLine text =
+            match text with
+            | ValueString text -> generationEnvironment.AppendLine text |> ignore
+            | _ -> generationEnvironment.AppendLine String.Empty |> ignore
+        let appendEmpty() = appendLine String.Empty
+        let appendLine' indentLevels text =
+            let indentation = String.replicate indentLevels "    "
+            generationEnvironment.AppendLine(indentation + text) |> ignore
+        let projects = manager.DteWrapperOpt |> Option.map (fun dte -> dte.GetProjects()) //(Macros.VsMacros.getSP>>snd) // was dte
+        let targetProjectFolder =
+            projects |> Option.map (Seq.find (fun p -> p.GetName() = cgsm.TargetProjectName))
+            |> Option.map (fun tp -> tp.GetFullName() |> Path.GetDirectoryName)
+        writeGenerationMeta (appendLine', appendLine,appendEmpty) manager.TemplateFile projects tables
+        generateSprocMetaFile cgsm (appendLine',appendLine,appendEmpty) targetProjectFolder manager ga.SqlSprocs ga.MapSqlSprocParams
 
         appendEmpty()
         let meta = ga.GetSqlMeta appendLine cgsm tables
@@ -681,7 +693,7 @@ module DataModelToF =
             | Unhappy(_,exn) ->
                 raise <| InvalidOperationException("Failed to get sql data",exn)
             |> (fun sqlTableMeta ->
-                writeColumnInfoToMetaFile cgsm appendLine' sqlTableMeta
+                writeColumnInfoMeta cgsm appendLine' sqlTableMeta
                 match targetProjectFolder with
                 | Some targetProjectFolder -> Path.Combine(targetProjectFolder,sqlTableMeta.TI.Name + ".generated.fs")
                 | None -> sqlTableMeta.TI.Name + ".generated.fs"

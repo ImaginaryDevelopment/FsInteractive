@@ -62,7 +62,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Core\BCore.fsproj">
+    <ProjectReference Include="..\..\Core\BCore.fsproj">
       <Name>BCore</Name>
       <Project>{cec0f091-83a5-4a9c-953a-d615607be7bb}</Project>
       <Private>True</Private>

@@ -84,7 +84,7 @@ let getSqlSprocMeta cn sprocName =
             getParms (cn :?> SqlConnection) sprocName
     )
 
-let mapSprocParams cn (appendLine:int -> string -> unit) (sp:SqlSprocMeta) =
+let mapSprocParams cn (sp:SqlSprocMeta) =
     let ps =
         cn
         |> getSqlSprocMeta
@@ -128,7 +128,7 @@ let mapSprocParams cn (appendLine:int -> string -> unit) (sp:SqlSprocMeta) =
         | x -> failwithf "unaccounted for type found %A" x
 
     match ps with
-    | [] -> ()
+    | [] -> None
     | ps ->
         let filtered =
             ps
@@ -144,7 +144,7 @@ let mapSprocParams cn (appendLine:int -> string -> unit) (sp:SqlSprocMeta) =
                 sprintf "%s: %s" (p.ParameterName |> mapParamName) typeWording)
             |> List.ofSeq
         match memberList with
-        | [] -> ()
+        | [] -> None
         | x ->
             filtered
             |> List.map (fun p -> p.ParameterName, p.Direction)
@@ -152,5 +152,4 @@ let mapSprocParams cn (appendLine:int -> string -> unit) (sp:SqlSprocMeta) =
             x
             |> delimit ";"
             |> sprintf "type %sInput = {%s}" (toPascalCase sp.SpecificName)
-            |> appendLine 1
-        ()
+            |> Some

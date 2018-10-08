@@ -73,12 +73,12 @@
     <Reference Include="VSLangProj, Version=7.0.3300.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\CodeGeneration\CodeGeneration.fsproj">
+    <ProjectReference Include="..\..\CodeGeneration\CodeGeneration.fsproj">
       <Name>CodeGeneration</Name>
       <Project>{f9a8079c-5ea0-41ce-bdcc-234189e657c0}</Project>
       <Private>True</Private>
     </ProjectReference>
-    <ProjectReference Include="..\Core\BCore.fsproj">
+    <ProjectReference Include="..\..\Core\BCore.fsproj">
       <Name>BCore</Name>
       <Project>{cec0f091-83a5-4a9c-953a-d615607be7bb}</Project>
       <Private>True</Private>

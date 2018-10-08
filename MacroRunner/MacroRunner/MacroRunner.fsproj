@@ -159,6 +159,11 @@
     <Reference Include="WindowsBase" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\Core\BCore.fsproj">
+      <Name>BCore</Name>
+      <Project>{cec0f091-83a5-4a9c-953a-d615607be7bb}</Project>
+      <Private>True</Private>
+    </ProjectReference>
     <ProjectReference Include="..\CodeGeneration.Sql\CodeGeneration.Sql.fsproj">
       <Name>CodeGeneration.Sql</Name>
       <Project>{32c1ae21-8a97-41a7-833a-fc1e18d28dd1}</Project>
@@ -167,16 +172,6 @@
     <ProjectReference Include="..\CodeGeneration.VS\CodeGeneration.VS.fsproj">
       <Name>CodeGeneration.VS</Name>
       <Project>{6c2ddc6a-67fb-40e4-9daf-bf079b989171}</Project>
-      <Private>True</Private>
-    </ProjectReference>
-    <ProjectReference Include="..\CodeGeneration\CodeGeneration.fsproj">
-      <Name>CodeGeneration</Name>
-      <Project>{f9a8079c-5ea0-41ce-bdcc-234189e657c0}</Project>
-      <Private>True</Private>
-    </ProjectReference>
-    <ProjectReference Include="..\Core\BCore.fsproj">
-      <Name>BCore</Name>
-      <Project>{cec0f091-83a5-4a9c-953a-d615607be7bb}</Project>
       <Private>True</Private>
     </ProjectReference>
   </ItemGroup>
