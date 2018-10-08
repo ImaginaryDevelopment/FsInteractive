@@ -51,7 +51,7 @@ module DataModelToF =
         /// if a Sql connection will be used to get additional data from the database about a type, the connection string goes here
         CString:string
         /// controls if Option or Nullable should be used in records and classes
-        UseOptionTypes:bool
+        NullableHandling:NullableHandling
         /// a Map of table name to columns that should not be included in generation
         ColumnNolist:Map<string, string Set>
         /// if we are generating sql tables, these are the tables we generated we don't want types generated for
@@ -82,7 +82,7 @@ module DataModelToF =
         /// this tells the generator whether it should include the schema in a type's generation
         /// for instance if you had a table Accounts.Account should Accounts be part of the namespace?
         IncludeNonDboSchemaInNamespace:bool
-        /// not functional yet
+        /// if set GenerateRecords that do not include the primary key
         GenerateValueRecords:bool
         /// Additional Setting options for Sproc name/argument generation
         SprocSettingMap: CodeGenSprocSettingMap option
@@ -90,12 +90,13 @@ module DataModelToF =
         Mutable:Mutability
     }
 
-    let mapNullableType(targetType:string, nullable:bool, measureType:PureMeasure option, useOptions:bool ) =
+    // nullableAndHandling expects a Some _ if the type is nullable
+    let mapNullableType(targetType:string, nullableAndHandling:NullableHandling option, measureType:PureMeasure option) =
         let nullability =
-            match nullable, useOptions with
-            | true,true -> " option"
-            | true,false -> " Nullable"
-            | _ -> String.Empty
+            match nullableAndHandling with
+            | Some UseOptions -> " option"
+            | Some UseNullable -> " Nullable"
+            | None -> String.Empty
         let measureType =
             match measureType with
             | None -> String.Empty
@@ -146,7 +147,7 @@ module DataModelToF =
                     | NStringMax
                     | NStringColumn _ -> "nvarchar"
                     | UniqueIdentifier -> "uniqueidentifier"
-            static member GetNetType (x:SqlTableColumnChoiceItem) useOptions (pm:PureMeasure option) nullable =
+            static member GetNetType (x:SqlTableColumnChoiceItem) nullableAndHandling (pm:PureMeasure option) =
                 let type' = x.SqlType
                 match type'.ToLower() with
                     |"char"
@@ -154,24 +155,24 @@ module DataModelToF =
                     |"nvarchar"
                     |"xml"
                     |"varchar" -> "string"
-                    |"bit" -> mapNullableType("bool", nullable, pm, useOptions)
+                    |"bit" -> mapNullableType("bool", nullableAndHandling, pm)
                     |"date"
                     |"datetime"
                     |"datetime2"
-                    |"smalldatetime" -> mapNullableType("DateTime", nullable, pm, useOptions)
+                    |"smalldatetime" -> mapNullableType("DateTime", nullableAndHandling, pm)
                     |"image" -> "byte[]"
-                    |"uniqueidentifier" -> mapNullableType("Guid",nullable, pm, useOptions)
-                    |"int" -> mapNullableType("int", nullable, pm, useOptions)
-                    |"decimal" -> mapNullableType("decimal", nullable, pm, useOptions)
-                    |"float" -> mapNullableType("float", nullable, pm, useOptions)
+                    |"uniqueidentifier" -> mapNullableType("Guid",nullableAndHandling, pm)
+                    |"int" -> mapNullableType("int", nullableAndHandling, pm)
+                    |"decimal" -> mapNullableType("decimal", nullableAndHandling, pm)
+                    |"float" -> mapNullableType("float", nullableAndHandling, pm)
                     |_ -> if isNull type' then String.Empty else type'
             // do not include nullable or option part of type, no measures either
-            member x.NetBaseType = SqlTableColumnChoiceItem.GetNetType x false None false
-            member x.GetNetFullType useOptions measureText = SqlTableColumnChoiceItem.GetNetType x useOptions measureText x.Nullable
+            member x.NetBaseType = SqlTableColumnChoiceItem.GetNetType x None None
+            member x.GetNetFullType useOptions measureText = SqlTableColumnChoiceItem.GetNetType x (if x.Nullable then Some useOptions else None) measureText
             static member MapSqlType (pm:PureMeasure option) useOptions (x:SqlTableColumnChoiceItem)=
+                let n = if x.Nullable then Some useOptions else None
                 // take the sql type and give back what .net type we're using
                 let type' = x.SqlType
-                let nullable = x.Nullable
                 let result =
                     match type'.ToLower() with
                         |"char"
@@ -179,17 +180,17 @@ module DataModelToF =
                         |"nvarchar"
                         |"xml"
                         |"varchar" -> "string"
-                        |"bit" -> mapNullableType("bool", nullable, pm, useOptions)
+                        |"bit" -> mapNullableType("bool", n, pm)
                         |"date"
                         |"datetime"
                         |"datetime2"
                         | "System.DateTime"
-                        |"smalldatetime" -> mapNullableType("DateTime", nullable, pm, useOptions)
+                        |"smalldatetime" -> mapNullableType("DateTime", n, pm)
                         |"image" -> "byte[]"
-                        |"uniqueidentifier" -> mapNullableType("Guid",nullable, pm, useOptions)
-                        |"int" -> mapNullableType("int", nullable, pm, useOptions)
-                        |"decimal" -> mapNullableType("decimal", nullable, pm, useOptions)
-                        |"float" -> mapNullableType("float", nullable, pm, useOptions)
+                        |"uniqueidentifier" -> mapNullableType("Guid",n, pm)
+                        |"int" -> mapNullableType("int", n, pm)
+                        |"decimal" -> mapNullableType("decimal", n, pm)
+                        |"float" -> mapNullableType("float", n, pm)
                         |_ -> if isNull type' then String.Empty else type'
                 result
 
@@ -400,7 +401,7 @@ module DataModelToF =
         ()
 
     /// generate the helper module
-    let generateHelperModule fMeasure (typeName:string, columns:SqlTableColumnChoice, schemaName:string, tableName:string, appendLine:int -> string -> unit, useOptions:bool ):unit=
+    let generateHelperModule fMeasure (typeName:string, columns:SqlTableColumnChoice, schemaName:string, tableName:string, appendLine:int -> string -> unit, useOptions:NullableHandling):unit=
         let igh = {new IGenerateHelper<SqlTableColumnChoiceItem> with
                        member __.AppendLine indentations text = appendLine indentations text
                        member __.GetFullType = (fun useOptions item -> SqlTableColumnChoiceItem.MapSqlType item.MeasureText useOptions item.Item)
@@ -507,7 +508,7 @@ module DataModelToF =
         |> Seq.iter (sprintf "open %s" >> appendLine)
         appendEmpty()
 
-        let iga = {UseOptions=cgsm.UseOptionTypes;Writeable=false}
+        let iga = {UseOptions=cgsm.NullableHandling;Writeable=false}
         let tn = sqlTableMeta.TypeName
         generateInterface (tn, getMeasureType, sqlTableMeta.Columns, appendLine', iga)
         appendEmpty()
@@ -520,17 +521,17 @@ module DataModelToF =
                     member __.MakeColumnComments = fun  (item:PureColumnInput<SqlTableColumnChoiceItem>) -> generateColumnSqlComment item.Item
                     member __.AppendLine i txt = appendLine' i txt
                     // should include measure and nullable when needed
-                    member x.GetDefaultValueForType c = x.GetFullType cgsm.UseOptionTypes c |> getDefaultValue c.MeasureText
+                    member x.GetDefaultValueForType c = x.GetFullType cgsm.NullableHandling c |> getDefaultValue c.MeasureText
                     member __.GetMeasureForColumnName x = getMeasureType x
             }
 
         let purishColumns = toPurish getMeasureType sqlTableMeta.Columns
 
         if cgsm.GenerateValueRecords then
-            generateRecord genIgr tn cgsm.Mutable cgsm.UseOptionTypes true purishColumns //cgsm.Mutable tn getMeasureType (columns, appendLine', cgsm.UseOptionTypes, true)
+            generateRecord genIgr tn cgsm.Mutable cgsm.NullableHandling true purishColumns //cgsm.Mutable tn getMeasureType (columns, appendLine', cgsm.UseOptionTypes, true)
 
-        generateRecord genIgr tn cgsm.Mutable cgsm.UseOptionTypes false purishColumns
-        generateHelperModule getMeasureType (tn, sqlTableMeta.Columns, sqlTableMeta.TI.Schema, sqlTableMeta.TI.Name, appendLine', cgsm.UseOptionTypes)
+        generateRecord genIgr tn cgsm.Mutable cgsm.NullableHandling false purishColumns
+        generateHelperModule getMeasureType (tn, sqlTableMeta.Columns, sqlTableMeta.TI.Schema, sqlTableMeta.TI.Name, appendLine', cgsm.NullableHandling)
         let columns = toPurish genIgr.GetMeasureForColumnName sqlTableMeta.Columns
         generateClass genIgr.MakeColumnComments (fun c -> c.IsWriteable) (tn, columns,appendLine')
         appendEmpty()
@@ -704,7 +705,7 @@ module DataModelToF =
 
 //    // purpose: make an alias to the 'generate' method that is more C# friendly
 //    // would having C# to construct the type directly with null values in the delegates, then letting this translate only those be a better option?
-    let Generate (fGetSqlMeta,sqlSprocs,fMapSprocParams) generatorId addlNamespaces mutable' (columnNolist:IDictionary<string, string seq>) (manager:IManager, generationEnvironment:StringBuilder, targetProjectName:string, tables, cString:string) useOptions generateValueRecords (measures: string seq) (measureNolist: string seq) includeNonDboSchemaInNamespace targetNamespace sprocSettings (pluralizer:Func<_,_>,singularizer:Func<_,_>) (getMeasureNamespace:Func<_,_>) typeGenerationNolist =
+    let Generate (fGetSqlMeta,sqlSprocs,fMapSprocParams) generatorId addlNamespaces mutable' (columnNolist:IDictionary<string, string seq>) (manager:IManager, generationEnvironment:StringBuilder, targetProjectName:string, tables, cString:string) nullableHandling generateValueRecords (measures: string seq) (measureNolist: string seq) includeNonDboSchemaInNamespace targetNamespace sprocSettings (pluralizer:Func<_,_>,singularizer:Func<_,_>) (getMeasureNamespace:Func<_,_>) typeGenerationNolist =
         let columnNolist =
             columnNolist |> Map.ofDictionary |> Map.toSeq |> Seq.map (fun (k,v) -> KeyValuePair(k, v |> Set.ofSeq))
             |> Map.ofDictionary
@@ -715,7 +716,7 @@ module DataModelToF =
                         TargetNamespace=targetNamespace
                         TypeScriptGenSettingMap = None
                         CString=cString
-                        UseOptionTypes=useOptions
+                        NullableHandling=nullableHandling
                         ColumnNolist = columnNolist
                         Measures=measures |> Set.ofSeq
                         MeasuresNolist= measureNolist |> Set.ofSeq
@@ -880,7 +881,7 @@ module GenerationSample =
                 TargetNamespace="Pm.Schema"
                 TypeScriptGenSettingMap = None
                 CString=connectionString
-                UseOptionTypes=false
+                NullableHandling = NullableHandling.UseNullable
                 ColumnNolist = Map.empty
                 Measures=Set.empty
                 MeasuresNolist= Set.empty

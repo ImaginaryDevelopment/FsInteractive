@@ -1,9 +1,13 @@
 ﻿module CodeGeneration.PureCodeGeneration
+// purpose: Code Generation that is free of concerns outside of the generator.
+// code that has been cleaned of intrusions/abstraction leaks
 open System
 open System.IO
 open global.BReusable
 open global.BReusable.StringHelpers
-
+type GenerationLanguage =
+    | FSharp
+    | CSharp
 type PropertyOptions =
     | NoNotify
     | KeepNotify
@@ -118,8 +122,9 @@ open PureColumnInput
 ///useCliMutable : enables simple serialization see also http://blog.ploeh.dk/2013/10/15/easy-aspnet-web-api-dtos-with-f-climutable-records/
 type Mutability = | Immutable | CliMutable | Mutable
 
-type UseOptions = bool
-type GetFullTypeTextDelegate<'T> = UseOptions -> PureColumnInput<'T> -> string
+type NullableHandling = |UseOptions | UseNullable with
+        static member OptionOfIsNullable (h:NullableHandling) n = if n then Some h else None
+type GetFullTypeTextDelegate<'T> = NullableHandling -> PureColumnInput<'T> -> string
 type MakeColumnCommentsDelegate<'T> = PureColumnInput<'T> -> string
 
 type IGenerateRecords<'T> =
@@ -146,7 +151,7 @@ type IGenerateHelper<'T> =
     //abstract member UseOptions:bool
     //abstract member Mutability:Mutability
 // consider SRTP instead of interface wrapper
-let generateRecord (igr:IGenerateRecords<_>) typeName mutability useOptions generateValueRecord (columns: PureColumnInput<_> list) =
+let generateRecord (igr:IGenerateRecords<_>) typeName mutability nullableHandling generateValueRecord (columns: PureColumnInput<_> list) =
     let inline appendLine i = igr.AppendLine i
 
     // what could be a value record?
@@ -163,8 +168,10 @@ let generateRecord (igr:IGenerateRecords<_>) typeName mutability useOptions gene
     // value record would omit the primary key (and computed columns?)
     let recordTypeName = if generateValueRecord then sprintf "type %sValueRecord" typeName else sprintf "type %sRecord" typeName
     appendLine 0 (generateTypeComment (Seq.length columns))
-    if not useOptions then
+    match nullableHandling with
+    | UseNullable ->
         appendLine 0 "[<NoComparison>]"
+    | _ -> ()
     match mutability with
     | CliMutable ->
         appendLine 0 "[<CLIMutable>]"
@@ -178,7 +185,7 @@ let generateRecord (igr:IGenerateRecords<_>) typeName mutability useOptions gene
         appendLine 2 <| (sprintf "/%s" <| igr.MakeColumnComments x)
         //let mt = igr.GetMeasureForColumnName x.Name
         let mapped =
-            let base' = igr.GetFullType useOptions x //SqlTableColumnChoiceItem.MapSqlType mt igr.UseOptions x
+            let base' = igr.GetFullType nullableHandling x //SqlTableColumnChoiceItem.MapSqlType mt igr.UseOptions x
             match mutability with
             | Mutable -> sprintf "mutable %s" base'
             | _ -> base'
@@ -201,7 +208,7 @@ let generateRecord (igr:IGenerateRecords<_>) typeName mutability useOptions gene
 
     columns
     |> Seq.iter(fun cd ->
-        let mapped = igr.GetFullType useOptions cd //SqlTableColumnChoiceItem.MapSqlType measureText igr.UseOptions cd
+        let mapped = igr.GetFullType nullableHandling cd //SqlTableColumnChoiceItem.MapSqlType measureText igr.UseOptions cd
         let measureText = igr.GetMeasureForColumnName cd.Name
         try
             appendLine 3 (cd.Name + " = " + (igr.GetDefaultValueForType cd))
@@ -246,7 +253,7 @@ let generateFromSrtpMethod appendLine camelType (fMeasure:_ -> PureMeasure optio
 type AppendLineDelegate = int -> string -> unit
 type TypeName = string
 type GetMeasureForColumnNameDelegate = string -> string
-type FOtherHelpersDelegate<'T> = AppendLineDelegate -> UseOptions -> TypeName -> GetMeasureForColumnNameDelegate -> PureColumnInput<'T> list -> unit
+type FOtherHelpersDelegate<'T> = AppendLineDelegate -> NullableHandling -> TypeName -> GetMeasureForColumnNameDelegate -> PureColumnInput<'T> list -> unit
 
 let generateFromFMethod fMapFullType appendLine (* for things like making the type comment use the sql, or both net and sql types together *) fColumnComment columns =
 
@@ -316,7 +323,7 @@ let generateFromFMethod fMapFullType appendLine (* for things like making the ty
     appendLine 1 "let FromF (camelTypeF:Func<string,obj option>) = fromf (Func.invoke1 camelTypeF)"
 
 /// generate the helper module
-let generateHelperModule (x:IGenerateHelper<_>) useOptions rawHelperItems (typeName:string, columns:PureColumnInput<_> list) fOtherHelpers =
+let generateHelperModule (x:IGenerateHelper<_>) nullableHandling rawHelperItems (typeName:string, columns:PureColumnInput<_> list) fOtherHelpers =
     let inline appendLine i = x.AppendLine i
     let moduleName = sprintf "%sHelpers" typeName
     let camelType = toCamelCase typeName
@@ -324,7 +331,7 @@ let generateHelperModule (x:IGenerateHelper<_>) useOptions rawHelperItems (typeN
     appendLine 0 String.Empty
     appendLine 1 "module Meta ="
 
-    //abstract member UseOptions:bool
+    //abstract member nullableHandling :bool
     //abstract member TypeName:string
     //// for things like Schema and table name
     //abstract member RawHelperItems: string list
@@ -337,6 +344,10 @@ let generateHelperModule (x:IGenerateHelper<_>) useOptions rawHelperItems (typeN
     )
 
     appendLine 0 String.Empty
+    let useOptions =
+        match nullableHandling with
+        | UseNullable -> false
+        | UseOptions -> true
     if useOptions && columns |> Seq.exists(fun c -> c.AllowsNull && c.TypeName.Value |> String.equalsI "string" |> not) then
         appendLine 2 <| sprintf "let toDict unwrapToUnsafe x = dict ["
     else appendLine 2 <| sprintf "let toDict x = dict ["
@@ -382,7 +393,7 @@ let generateHelperModule (x:IGenerateHelper<_>) useOptions rawHelperItems (typeN
     appendLine 2 "}"
     // start the fromF series
     appendLine 0 String.Empty
-    generateFromFMethod (x.GetFullType useOptions) appendLine x.MakeColumnComments columns
+    generateFromFMethod (x.GetFullType nullableHandling) appendLine x.MakeColumnComments columns
     generateFromSrtpMethod appendLine camelType x.GetMeasureForColumnName columns
     // for things like :
     //generateCreateSqlInsertTextMethod appendLine useOptions typeName schemaName tableName fMeasure columns
@@ -390,7 +401,7 @@ let generateHelperModule (x:IGenerateHelper<_>) useOptions rawHelperItems (typeN
     appendLine 0 String.Empty
 ()
 
-type InterfaceGeneratorArgs = { Writeable:bool; UseOptions:bool}
+type InterfaceGeneratorArgs = { Writeable:bool; UseOptions:NullableHandling}
 let generateInterface fColumnComment fMap (typeName:string, fMeasure, columns: PureColumnInput<_> list, appendLine:int -> string -> unit, interfaceGeneratorArgs ) =
     appendLine 0 <| sprintf "// typeName:%s writeable:%A useOptions:%A" typeName interfaceGeneratorArgs.Writeable interfaceGeneratorArgs.UseOptions
     appendLine 0 (generateTypeComment columns.Length)
