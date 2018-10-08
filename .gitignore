@@ -17,3 +17,5 @@ MacroRunner/.vs
 /MacroRunner/.paket
 /**/obj/
 /**/Debug/
+
+packages/

@@ -43,7 +43,7 @@
   <Import Project="$(FSharpTargetsPath)" />
   <ItemGroup>
     <Compile Include="AssemblyInfo.fs" />
-    <Compile Include="..\..\BReusable.fs">
+    <Compile Include="..\BReusable.fs">
       <Link>BReusable.fs</Link>
     </Compile>
     <Compile Include="CodeGeneration.fs" />
