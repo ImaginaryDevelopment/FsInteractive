@@ -5,14 +5,14 @@
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <SchemaVersion>2.0</SchemaVersion>
-    <ProjectGuid>32c1ae21-8a97-41a7-833a-fc1e18d28dd1</ProjectGuid>
+    <ProjectGuid>dadfe3c4-47d2-4db3-ac7d-0e848631e9cc</ProjectGuid>
     <OutputType>Library</OutputType>
-    <RootNamespace>CodeGeneration.Sql</RootNamespace>
-    <AssemblyName>CodeGeneration.Sql</AssemblyName>
+    <RootNamespace>BCore.ADO</RootNamespace>
+    <AssemblyName>BCore.ADO</AssemblyName>
     <UseStandardResourceNames>true</UseStandardResourceNames>
     <TargetFrameworkVersion>v4.5.2</TargetFrameworkVersion>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
-    <Name>CodeGeneration.Sql</Name>
+    <Name>BCore.ADO</Name>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -42,11 +42,7 @@
   <Import Project="$(FSharpTargetsPath)" />
   <ItemGroup>
     <Compile Include="AssemblyInfo.fs" />
-    <Compile Include="..\..\SqlMacros.fs">
-      <Link>SqlMacros.fs</Link>
-    </Compile>
-    <Compile Include="SqlMeta.fs" />
-    <Compile Include="Library1.fs" />
+    <Compile Include="AdoHelper.fs" />
     <None Include="Script.fsx" />
     <Content Include="packages.config" />
   </ItemGroup>
@@ -59,22 +55,13 @@
     <Reference Include="System.Core" />
     <Reference Include="System.Data" />
     <Reference Include="System.Numerics" />
+    <Reference Include="System.Transactions" />
     <Reference Include="System.ValueTuple">
       <HintPath>..\packages\System.ValueTuple.4.4.0\lib\netstandard1.0\System.ValueTuple.dll</HintPath>
       <Private>True</Private>
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\BCore.ADO\BCore.ADO.fsproj">
-      <Name>BCore.ADO</Name>
-      <Project>{dadfe3c4-47d2-4db3-ac7d-0e848631e9cc}</Project>
-      <Private>True</Private>
-    </ProjectReference>
-    <ProjectReference Include="..\CodeGeneration\CodeGeneration.fsproj">
-      <Name>CodeGeneration</Name>
-      <Project>{f9a8079c-5ea0-41ce-bdcc-234189e657c0}</Project>
-      <Private>True</Private>
-    </ProjectReference>
     <ProjectReference Include="..\Core\BCore.fsproj">
       <Name>BCore</Name>
       <Project>{cec0f091-83a5-4a9c-953a-d615607be7bb}</Project>

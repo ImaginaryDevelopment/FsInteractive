@@ -8,13 +8,19 @@ open System.Linq
 open System.IO
 open System.Data
 open System.Data.SqlClient
+
 open BReusable
 open BReusable.Reflection
 open BReusable.StringHelpers
 open Macros.SqlMacros
-open Core.CodeGeneration.SqlWrapCore
-open Core.CodeGeneration.SqlWrapCore.ColumnTyping
-open Core.CodeGeneration.DteWrapCore
+open BCore.CodeGeneration.SqlWrapCore
+open BCore.CodeGeneration.SqlWrapCore.ColumnTyping
+open BCore.CodeGeneration.DteWrapCore
+open BCore.ADO.AdoHelper
+
+open CodeGeneration.SqlScriptGeneration
+open CodeGeneration.DataModelToF
+open Macros
 
 
 
@@ -26,10 +32,6 @@ let getParms conn procName =
     SqlCommandBuilder.DeriveParameters cmd
     cmd.Parameters
 
-// SqlGeneration.ttinclude ~ 49
-
-
-
 let makeStrFkey50 name fkey = {ColumnInput.Name=name; DefaultValue=null; ColumnType=ColumnType.StringColumn 50; IsUnique=NotUnique; Nullability = NotNull; FKey = Some (FKeyIdentifier fkey); Comments = List.empty}
 let makeStrRefFkey50 name fkey = {ColumnInput.Name=name; DefaultValue=null; ColumnType=ColumnType.StringColumn 50; IsUnique=NotUnique; Nullability = NotNull; FKey = Some (FKeyWithReference fkey); Comments = List.empty}
 let makeIntFkey name fkey = {Name=name; DefaultValue=null; ColumnType=ColumnType.IntColumn; IsUnique=NotUnique; Nullability = NotNull; FKey=Some fkey; Comments = List.empty}
@@ -39,25 +41,27 @@ let makeNullable50 name =
 type SqlParameterCollection with
     member x.ToSeq() = seq { for p in x -> p }
     static member ToSeq (x: SqlParameterCollection) = x.ToSeq()
+
 let getSqlMeta appendLine cgsm tables =
-    use cn = new SqlConnection(cgsm.CString)
-    cn.Open()
-    sprintf "Connected to %s,%s" cn.DataSource cn.Database
-    |> tee appendLine
-    |> printfn "%s"
-    appendLine String.Empty
-    let fGenerated =
-        function
-        |Unhappy(ti,ex) -> Unhappy(ti,ex)
-        |Happy (ti, typeName, pks,columns,identities) ->
-            let result = Happy {TI=ti; TypeName= typeName; PrimaryKeys=pks; Identities=identities; Columns=SqlTableColumnChoice.SqlTableColumnMeta columns}
-            result
-    let tableData =
-        tables
-        |> Seq.map (getTableGenerationData appendLine cgsm.Singularize cn)
-        |> Seq.map fGenerated
-        |> List.ofSeq
-    tableData
+        use cn = new SqlConnection(cgsm.CString)
+        cn.Open()
+        sprintf "Connected to %s,%s" cn.DataSource cn.Database
+        |> tee appendLine
+        |> printfn "%s"
+        appendLine String.Empty
+        let fGenerated =
+            function
+            |Unhappy(ti,ex) -> Unhappy(ti,ex)
+            |Happy (ti, typeName, tm:TableDataMeta) ->
+                let result = Happy {TI=ti; TypeName= typeName; PrimaryKeys=tm.PrimaryKeys; Identities=tm.Identities; Columns=SqlTableColumnChoice.SqlTableColumnMeta tm.ColumnDescriptions}
+                result
+        let getTableData = SqlMacros.getTableData cn
+        let tableData =
+            tables
+            |> Seq.map (getTableGenerationData appendLine cgsm.Singularize getTableData)
+            |> Seq.map fGenerated
+            |> List.ofSeq
+        tableData
 
 let getSqlSprocs cn =
     let sprocData =
@@ -74,11 +78,11 @@ let getSqlSprocs cn =
                 }
             )
     sprocData
+
 let getSqlSprocMeta cn sprocName =
     Connections.runWithConnection cn (fun cn ->
-            SqlMeta.getParms (cn :?> SqlConnection) sprocName
-        )
-        
+            getParms (cn :?> SqlConnection) sprocName
+    )
 
 let mapSprocParams cn (appendLine:int -> string -> unit) (sp:SqlSprocMeta) =
     let ps =

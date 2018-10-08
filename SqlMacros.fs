@@ -4,7 +4,8 @@ open System.Data
 open BReusable
 open BReusable.StringHelpers
 open System.Diagnostics
-open Core.CodeGeneration.SqlWrapCore
+open BCore.CodeGeneration.SqlWrapCore
+open CodeGeneration.SqlScriptGeneration
 
 type ColumnLength = |Max | Length of int
 type DecimalInfo = {Precision:int; Scale:int}
@@ -82,7 +83,7 @@ module Seq =
         |> Seq.map f
         |> List.ofSeq
 
-let getTableData cn (tableIdentifier:TableIdentifier) =
+let getTableData cn (tableIdentifier:TableIdentifier) : TableDataMeta =
     let cmdText = sprintf "sp_help '%s.%s'" tableIdentifier.Schema tableIdentifier.Name
     use cmd = new System.Data.SqlClient.SqlCommand(cmdText,cn)
     use r = 
@@ -142,7 +143,7 @@ let getTableData cn (tableIdentifier:TableIdentifier) =
                 | _ -> ()
         }
         |> Set.ofSeq
-    pks, columns, identities
+    {PrimaryKeys= pks;ColumnDescriptions= columns;Identities= identities}
 
 open Strict
 

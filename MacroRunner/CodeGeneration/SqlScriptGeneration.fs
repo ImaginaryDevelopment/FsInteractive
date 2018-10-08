@@ -56,8 +56,7 @@ let getTableGenerationData appendLine fSingularizer (fGetTableData:TableIdentifi
     let typeName = fSingularizer ti.Name
     appendLine <| sprintf "Starting table %s as type %s" ti.Name typeName
     try
-    let {PrimaryKeys=pks;ColumnDescriptions=columns; Identities=identities} = fGetTableData ti
-    Rail.Happy( ti, typeName, pks, columns, identities)
+        Rail.Happy( ti, typeName, fGetTableData ti)
     with ex ->
         Rail.Unhappy (ti,ex)
 
