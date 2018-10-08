@@ -1,0 +1,6 @@
+﻿Desired High-level features:
+
+Generate F# class/record/interface without regard to IDE or SQL
+Generate C# class/interface without regard to IDE or SQL
+Generate Sql Table creation script without regard to IDE or SQL
+Generate TypeScript types
