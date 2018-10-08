@@ -466,9 +466,9 @@ module DataModelToF =
                 )
 
             )
-    let getMeasureType cgsm columnName =
-            cgsm.Measures
-            |> Seq.tryFind (fun m -> cgsm.MeasuresNolist |> Seq.contains columnName |> not && containsI m columnName)
+    let getMeasureType measures measuresNoList columnName =
+            measures
+            |> Seq.tryFind (fun m -> measuresNoList |> Seq.contains columnName |> not && containsI m columnName)
             |> Option.map (fun m -> PureMeasure.create m |> Option.getOrFailMsg (sprintf "%s is not a valid measure" m))
 
     let generateFFile (appendLine',appendLine,appendEmpty) generatorId cgsm sqlTableMeta ncOpts =
@@ -487,7 +487,7 @@ module DataModelToF =
         appendLine "open System"
         appendLine "open System.ComponentModel"
         appendEmpty()
-        let inline getMeasureType x = getMeasureType cgsm x
+        let inline getMeasureType x = getMeasureType cgsm.Measures cgsm.MeasuresNolist x
         match cgsm.GetMeasureNamepace with
         | None -> ()
         | Some f ->
@@ -559,6 +559,58 @@ module DataModelToF =
                     Action.invoke2 mapSqlSprocParams (Action<_,_> appendLine) meta
                 {SqlSprocs=sqlSprocs;GetSqlMeta=getSqlMeta; MapSqlSprocParams=mapSqlSprocParams}
 
+    let writeColumnInfoToMetaFile cgsm appendLine' sqlTableMeta =
+        let columns =
+            sqlTableMeta.Columns
+            |> function
+                |SqlTableColumnChoice.SqlTableColumnMeta columns ->
+                    let fIncludeColumn (c:ColumnDescription) : bool = isNull (box cgsm.ColumnNolist) || cgsm.ColumnNolist |> Map.containsKey sqlTableMeta.TI.Name |> not || cgsm.ColumnNolist.[sqlTableMeta.TI.Name] |> Seq.contains c.ColumnName |> not
+                    columns
+                    |> Seq.filter fIncludeColumn
+                    |> Seq.map (fun cd ->
+                        if sqlTableMeta.Identities |> Seq.exists (stringEqualsI cd.ColumnName) then
+                            {cd with IsIdentity = true}
+                        else
+                            cd
+                    )
+                    |> Seq.map (fun cd ->
+                        if sqlTableMeta.PrimaryKeys |> Seq.exists (stringEqualsI cd.ColumnName) then
+                            {cd with IsPrimaryKey = true}
+                        else cd
+                    )
+                    |> List.ofSeq
+                    |> SqlTableColumnChoice.SqlTableColumnMeta
+                |SqlTableColumnChoice.Manual columns ->
+                    columns
+                    |> Seq.filter(fun c -> isNull (box cgsm.ColumnNolist) || cgsm.ColumnNolist |> Map.containsKey c.Name |> not)
+                    |> List.ofSeq
+                    |> SqlTableColumnChoice.Manual
+
+        //if sqlTableMeta.TI.Name = "Account" then
+        //    Debugger.Launch() |> ignore
+
+        let inline getMeasureType x = getMeasureType cgsm.Measures cgsm.MeasuresNolist x
+
+        let columns =
+            columns
+            |> function
+            | SqlTableColumnMeta items -> items|> List.sortBy(fun cd -> cd.ColumnName) |> SqlTableColumnMeta
+            | SqlTableColumnChoice.Manual items -> items |> List.sortBy(fun x -> x.Name) |> SqlTableColumnChoice.Manual
+        columns
+        |> function
+            | SqlTableColumnMeta items ->
+                items |> Seq.map (fun cd -> cd.ColumnName)
+            | SqlTableColumnChoice.Manual items ->
+                items |> Seq.map (fun c -> c.Name )
+            |> Seq.map (fun name ->
+                match getMeasureType name with
+                | Some pm -> sprintf "<%s>" pm.Value
+                | _ -> String.Empty
+                |> sprintf "%s%s" name
+            )
+            |> Seq.iter (appendLine' 1)
+
+
     let generate generatorId (ga:GenerationArguments<_>) (cgsm:CodeGenSettingMap) (manager:IManager, generationEnvironment:StringBuilder, tables:TableIdentifier seq) fSettersCheckInequality =
 
         log(sprintf "DataModelToF.generate:cgsm:%A" cgsm)
@@ -629,63 +681,11 @@ module DataModelToF =
             | Unhappy(_,exn) ->
                 raise <| InvalidOperationException("Failed to get sql data",exn)
             |> (fun sqlTableMeta ->
-
-                let startNewFile path = manager.StartNewFile path
-                let columns =
-                    sqlTableMeta.Columns
-                    |> function
-                        |SqlTableColumnChoice.SqlTableColumnMeta columns ->
-                            let fIncludeColumn (c:ColumnDescription) : bool = isNull (box cgsm.ColumnNolist) || cgsm.ColumnNolist |> Map.containsKey sqlTableMeta.TI.Name |> not || cgsm.ColumnNolist.[sqlTableMeta.TI.Name] |> Seq.contains c.ColumnName |> not
-                            columns
-                            |> Seq.filter fIncludeColumn
-                            |> Seq.map (fun cd ->
-                                if sqlTableMeta.Identities |> Seq.exists (stringEqualsI cd.ColumnName) then
-                                    {cd with IsIdentity = true}
-                                else
-                                    cd
-                            )
-                            |> Seq.map (fun cd ->
-                                if sqlTableMeta.PrimaryKeys |> Seq.exists (stringEqualsI cd.ColumnName) then
-                                    {cd with IsPrimaryKey = true}
-                                else cd
-                            )
-                            |> List.ofSeq
-                            |> SqlTableColumnChoice.SqlTableColumnMeta
-                        |SqlTableColumnChoice.Manual columns ->
-                            columns
-                            |> Seq.filter(fun c -> isNull (box cgsm.ColumnNolist) || cgsm.ColumnNolist |> Map.containsKey c.Name |> not)
-                            |> List.ofSeq
-                            |> SqlTableColumnChoice.Manual
-
-                //if sqlTableMeta.TI.Name = "Account" then
-                //    Debugger.Launch() |> ignore
-
-                let getMeasureType = getMeasureType cgsm
-
-                let columns =
-                    columns
-                    |> function
-                    | SqlTableColumnMeta items -> items|> List.sortBy(fun cd -> cd.ColumnName) |> SqlTableColumnMeta
-                    | SqlTableColumnChoice.Manual items -> items |> List.sortBy(fun x -> x.Name) |> SqlTableColumnChoice.Manual
-                columns
-                |> function
-                    | SqlTableColumnMeta items ->
-                        items |> Seq.map (fun cd -> cd.ColumnName)
-                    | SqlTableColumnChoice.Manual items ->
-                        items |> Seq.map (fun c -> c.Name )
-                    |> Seq.map (fun name ->
-                        match getMeasureType name with
-                        | Some pm -> sprintf "<%s>" pm.Value
-                        | _ -> String.Empty
-                        |> sprintf "%s%s" name
-                    )
-                    |> Seq.iter (appendLine' 1)
-
-
+                writeColumnInfoToMetaFile cgsm appendLine' sqlTableMeta
                 match targetProjectFolder with
                 | Some targetProjectFolder -> Path.Combine(targetProjectFolder,sqlTableMeta.TI.Name + ".generated.fs")
                 | None -> sqlTableMeta.TI.Name + ".generated.fs"
-                |> startNewFile
+                |> manager.StartNewFile
 
                 let ncOpts = fSettersCheckInequality sqlTableMeta.TI
                 generateFFile (appendLine', appendLine, appendEmpty) generatorId cgsm sqlTableMeta ncOpts
