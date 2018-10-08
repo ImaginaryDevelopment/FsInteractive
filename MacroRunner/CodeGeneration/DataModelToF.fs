@@ -34,34 +34,59 @@ module DataModelToF =
         GenerateSprocInputRecords: bool
     }
     type TypeScriptGenSettingMap = {
+        /// the Name of the Project : compared against the DteWrapper if present to find the project's folder
         TargetProjectName:string
         ColumnNolist:Map<string, string Set>
         TargetFolderOpt: string option
     }
+    // we need to break this up into DUs around which generation features are desired
     [<NoComparison;NoEquality>]
     type CodeGenSettingMap = {
+        /// the Name of the Project : compared against the DteWrapper if present to find the project's folder
         TargetProjectName:string
+        /// what namespace each generated file should generate into
         TargetNamespace: string
+        /// if TypeScript definitions are desired, provide settings here
         TypeScriptGenSettingMap:TypeScriptGenSettingMap option
+        /// if a Sql connection will be used to get additional data from the database about a type, the connection string goes here
         CString:string
+        /// controls if Option or Nullable should be used in records and classes
         UseOptionTypes:bool
+        /// a Map of table name to columns that should not be included in generation
         ColumnNolist:Map<string, string Set>
-        // if we are generating sql tables, these are the tables we generated we don't want types generated for
-        // for instance, we don't really need a type to hold a fkey+fkey table like paymentId to ReversalPaymentId
+        /// if we are generating sql tables, these are the tables we generated we don't want types generated for
+        /// for instance, we don't really need a type to hold a fkey+fkey table like paymentId to ReversalPaymentId
         TypeGenerationNolist: string Set
+        /// a list of column 'names' that should become measures
+        /// for example if Set["PatientId"] any type that has a column name containing PatientId that column/property will produce/consume the measure
         Measures: string Set
+        /// a block list of column/property names that match a measure, but should not be included
         MeasuresNolist: string Set
-        ///Needs to include any namespace that defines:
+        /// this is the list of any extra namespaces you want included
+        /// needs to include any namespace that defines:
         /// - Func.invoke1 ( module Func = let invoke1 (x:System.Func<_,_>) y = x.Invoke y)
         AdditionalNamespaces: string Set
+        /// if provided is used to determine the namespace that should be opened for a particular measure
+        /// so if Schema.PatientId was a measure then it would return Schema if given PatientId
         GetMeasureNamepace: (string -> string) option
+        //Pluralize and Singularize can be provided by 
+        //  - System.Data.Entity.Design.dll
+        //  - Macros.VsMacros.createPluralizer()
+        /// this method should take a singular noun or type name, and return a pluralized version
+        /// for example: "Patient" -> "Patients"
         Pluralize: string -> string
+        /// this method should take a plural noun or type name, and return a singularized version
+        /// for example: "Patients" -> "Patient"
         Singularize: string -> string
 
+        /// this tells the generator whether it should include the schema in a type's generation
+        /// for instance if you had a table Accounts.Account should Accounts be part of the namespace?
         IncludeNonDboSchemaInNamespace:bool
-        // not functional yet, right?
+        /// not functional yet
         GenerateValueRecords:bool
+        /// Additional Setting options for Sproc name/argument generation
         SprocSettingMap: CodeGenSprocSettingMap option
+        /// controls whether generated records are mutable
         Mutable:Mutability
     }
 
@@ -445,7 +470,7 @@ module DataModelToF =
             |> Seq.tryFind (fun m -> cgsm.MeasuresNolist |> Seq.contains columnName |> not && containsI m columnName)
             |> Option.map (fun m -> PureMeasure.create m |> Option.getOrFailMsg (sprintf "%s is not a valid measure" m))
 
-    let generateFFile (appendLine',appendLine,appendEmpty) generatorId cgsm sqlTableMeta columns ncOpts =
+    let generateFFile (appendLine',appendLine,appendEmpty) generatorId cgsm sqlTableMeta ncOpts =
         (
             let subNamespaceName = cgsm.Pluralize sqlTableMeta.TypeName
             match sqlTableMeta.TI.Schema, cgsm.IncludeNonDboSchemaInNamespace with
@@ -465,7 +490,7 @@ module DataModelToF =
         match cgsm.GetMeasureNamepace with
         | None -> ()
         | Some f ->
-            columns
+            sqlTableMeta.Columns
             |> function
                 | SqlTableColumnChoice.SqlTableColumnMeta items ->
                     items |> Seq.map (fun cd -> cd.ColumnName)
@@ -484,10 +509,10 @@ module DataModelToF =
 
         let iga = {UseOptions=cgsm.UseOptionTypes;Writeable=false}
         let tn = sqlTableMeta.TypeName
-        generateInterface (tn, getMeasureType, columns, appendLine', iga)
+        generateInterface (tn, getMeasureType, sqlTableMeta.Columns, appendLine', iga)
         appendEmpty()
 
-        generateInterface (tn, getMeasureType,columns, appendLine', {iga with Writeable=true})
+        generateInterface (tn, getMeasureType,sqlTableMeta.Columns, appendLine', {iga with Writeable=true})
         let genIgr =
             {   new IGenerateRecords<SqlTableColumnChoiceItem> with
                     //type GetBaseTypeTextDelegate<'T> = MeasureText -> UseOptions -> PureColumnInput<'T> -> string
@@ -499,14 +524,14 @@ module DataModelToF =
                     member __.GetMeasureForColumnName x = getMeasureType x
             }
 
-        let purishColumns = toPurish getMeasureType columns
+        let purishColumns = toPurish getMeasureType sqlTableMeta.Columns
 
         if cgsm.GenerateValueRecords then
             generateRecord genIgr tn cgsm.Mutable cgsm.UseOptionTypes true purishColumns //cgsm.Mutable tn getMeasureType (columns, appendLine', cgsm.UseOptionTypes, true)
 
         generateRecord genIgr tn cgsm.Mutable cgsm.UseOptionTypes false purishColumns
-        generateHelperModule getMeasureType (tn, columns, sqlTableMeta.TI.Schema, sqlTableMeta.TI.Name, appendLine', cgsm.UseOptionTypes)
-        let columns = toPurish genIgr.GetMeasureForColumnName columns
+        generateHelperModule getMeasureType (tn, sqlTableMeta.Columns, sqlTableMeta.TI.Schema, sqlTableMeta.TI.Name, appendLine', cgsm.UseOptionTypes)
+        let columns = toPurish genIgr.GetMeasureForColumnName sqlTableMeta.Columns
         generateClass genIgr.MakeColumnComments (fun c -> c.IsWriteable) (tn, columns,appendLine')
         appendEmpty()
         //generateINotifyClass getMeasureType (tn, columns, appendLine')
@@ -532,6 +557,7 @@ module DataModelToF =
                 let inline mapSqlSprocParams appendLine meta =
                     Action.invoke2 mapSqlSprocParams (Action<_,_> appendLine) meta
                 {SqlSprocs=sqlSprocs;GetSqlMeta=getSqlMeta; MapSqlSprocParams=mapSqlSprocParams}
+
     let generate generatorId (ga:GenerationArguments<_>) (cgsm:CodeGenSettingMap) (manager:IManager, generationEnvironment:StringBuilder, tables:TableIdentifier seq) fSettersCheckInequality =
 
         log(sprintf "DataModelToF.generate:cgsm:%A" cgsm)
@@ -541,7 +567,7 @@ module DataModelToF =
             | _ -> generationEnvironment.AppendLine String.Empty |> ignore
         let appendEmpty() = appendLine String.Empty
         let appendLine' indentLevels text =
-            let indentation = List.replicate indentLevels "    " (* Enumerable.Repeat("    ",indentLevels) *) |> delimit String.Empty
+            let indentation = String.replicate indentLevels "    "
             generationEnvironment.AppendLine(indentation + text) |> ignore
         appendEmpty()
         appendLine <| sprintf "TemplateFile: %s" manager.TemplateFile
@@ -661,7 +687,7 @@ module DataModelToF =
                 |> startNewFile
 
                 let ncOpts = fSettersCheckInequality sqlTableMeta.TI
-                generateFFile (appendLine', appendLine, appendEmpty) generatorId cgsm sqlTableMeta columns ncOpts
+                generateFFile (appendLine', appendLine, appendEmpty) generatorId cgsm sqlTableMeta ncOpts
 
                 manager.EndBlock()
             )
