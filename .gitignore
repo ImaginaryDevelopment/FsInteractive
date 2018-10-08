@@ -19,3 +19,4 @@ MacroRunner/.vs
 /**/Debug/
 
 packages/
+*.suo
