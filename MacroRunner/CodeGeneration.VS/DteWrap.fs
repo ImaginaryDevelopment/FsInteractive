@@ -29,14 +29,6 @@ module DteWrap =
         }
 
 
-    type ProjectWrapper with
-        static member FromProject (p:EnvDTE.Project) =
-            {   GetProjectItems= fun () -> iProjectItemsCollection p.ProjectItems
-                GetFullName= fun () -> p.FullName
-                GetName= fun () -> p.Name
-                GetKind= fun () -> p.Kind
-            }
-
     let tryGetKind logOpt (p:ProjectWrapper) =
         try
             p.GetKind() |> Some
@@ -48,6 +40,12 @@ module DteWrap =
             logOpt
             |> Option.iter (fun f ->f <| sprintf "Failed to read project Kind:%A" nameOpt)
             None
+
+    type ProjectWrapper with
+        static member FromProject (p:EnvDTE.Project) =
+            {GetProjectItems=(fun () -> p.ProjectItems |> iProjectItemsCollection);GetFullName = (fun () -> p.FullName); GetName=(fun () -> p.Name);GetKind=
+                fun () -> p.Kind}
+
 
     let unloadedProject = "{67294A52-A4F0-11D2-AA88-00C04F688DDE}"
 

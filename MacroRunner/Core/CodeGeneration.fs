@@ -19,14 +19,29 @@ module DteWrapCore =
         abstract member get_FileNames:int16 -> string
         abstract member ProjectItems:IProjectItemsCollection with get
 
-    // leaking: GetProjectItems
+    // records can't implement interfaces?
+    //[<NoComparison;NoEquality>]
+    //type ProjectWrapper(getProjectItems, getFullName, getName, getKind) =
+
+    //    member __.GetProjectItems: unit -> IProjectItemsCollection = getProjectItems // was EnvDTE.ProjectItems
+    //    member __.GetFullName: unit -> string = getFullName
+    //    member __.GetName: unit -> string = getName
+    //    member __.GetKind: unit -> string = getKind
+    //    interface IProject with
+    //        member x.Name with get() = x.GetName() |> Option.ofObj
+    //        member x.FullName with get () = x.GetFullName() |> Option.ofObj
     [<NoComparison;NoEquality>]
-    type ProjectWrapper = {
-        GetProjectItems: unit -> IProjectItemsCollection // EnvDTE.ProjectItems
-        GetFullName: unit -> string
-        GetName: unit -> string
-        GetKind: unit -> string
-    }
+    type ProjectWrapper =
+        {
+            GetProjectItems: unit -> IProjectItemsCollection // was EnvDTE.ProjectItems
+            GetFullName: unit -> string
+            GetName: unit -> string
+            GetKind: unit -> string
+        }
+        interface IProject with
+            member x.Name with get() = x.GetName() |> Option.ofObj
+            member x.FullName with get () = x.GetFullName() |> Option.ofObj
+
 
     [<NoComparison;NoEquality>]
     type SourceControlWrapper = {
