@@ -1,12 +1,14 @@
 ﻿module SqlGeneratorTests
 open System
-open global.Expecto
-open Microsoft.VisualStudio.TextTemplating
-open System.Text
-open Macros.SqlMacros
-open CodeGeneration.SqlMeta
 open System.Diagnostics
 open System.IO
+open System.Text
+
+open global.Expecto
+open Microsoft.VisualStudio.TextTemplating
+open Macros.SqlMacros
+open CodeGeneration.SqlMeta
+open CodeGeneration.VS.MultipleOutputHelper
 
 let projects = [
         "PracticeManagement.Foundation"
@@ -25,7 +27,8 @@ let projects = [
         "Miscellaneous Files"
     ]
 module SqlGeneratorReferenceData =
-    open CodeGeneration.SqlMeta.ColumnTyping
+    open BCore.CodeGeneration.SqlWrapCore
+    open BCore.CodeGeneration.SqlWrapCore.ColumnTyping
 
     let refData = [
             {ReferenceData.FKeyId = {Table={Schema="dbo";Name="GuarantorTypes"};Column="GuarantorTypeId"}; GenerateReferenceTable = false; ValuesWithComment =
@@ -102,10 +105,10 @@ let testSqlGenerator =
             // translate SqlGenerator.tt to call into SqlMeta
             let sb = StringBuilder()
             //    let manager = MacroRunner.MultipleOutputHelper.Managers.Manager.Create(tHost, sb)
-            let manager = MacroRunner.MultipleOutputHelper.Managers.Manager(Some "HelloTesting.fake.tt",sb,allowDebugOutput)
+            let manager = Managers.Manager(Some "HelloTesting.fake.tt",sb,allowDebugOutput)
             //    let targetProjectName = "ApplicationDatabase"
             //    let targetInsertRelativePath = @"Scripts\Post-Deployment\TableInserts\Accounting1.5\AccountingInserts.sql"
-            generateTablesAndReferenceTables(manager,sb, None, SqlGeneratorReferenceData.toGen |> Seq.take 1, allowDebugOutput)
+            CodeGeneration.GenerateAllTheThings.generateTablesAndReferenceTables(manager,sb, None, SqlGeneratorReferenceData.toGen |> Seq.take 1, allowDebugOutput)
             let output = sb |> string
             output
 

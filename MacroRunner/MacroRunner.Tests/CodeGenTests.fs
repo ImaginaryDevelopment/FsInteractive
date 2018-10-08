@@ -74,6 +74,7 @@ module PureCodeGeneration =
 module CodeGeneration =
     open DataModelToF
     open System.Diagnostics
+    open CodeGeneration.SqlScriptGeneration
 
     [<Tests>]
     let ``generateINotifyClass Foo generates a FooN type``=
