@@ -515,7 +515,7 @@ module DataModelToF =
     ()
     type GenerationArguments<'exn when 'exn :> exn> =
         {
-            MetaFallback:(TableIdentifier-> 'exn->SqlTableMeta) option
+            //MetaFallback:(GenMapTableItem seq -> TableIdentifier-> 'exn->SqlTableMeta) option
             // this takes an appendline with indentation level already closed over
             GetSqlMeta:(string->unit) -> CodeGenSettingMap -> TableIdentifier seq -> Rail<SqlTableMeta,TableIdentifier * 'exn> list
             SqlSprocs: SqlSprocMeta seq
@@ -523,8 +523,7 @@ module DataModelToF =
         }
         with
             // CSharp creation syntax
-            static member Create (metaFallbackOpt, getSqlMeta, sqlSprocs, mapSqlSprocParams) =
-                let metaFallbackOpt = if isNull metaFallbackOpt then None else Some <| Func.invoke2 metaFallbackOpt
+            static member Create (getSqlMeta, sqlSprocs, mapSqlSprocParams) =
                 let guardArg name x = if x |> isNull then invalidArg name "must not be null"
                 guardArg "getSqlMeta" getSqlMeta
                 guardArg "mapSqlSprocParams" mapSqlSprocParams
@@ -532,8 +531,8 @@ module DataModelToF =
                     Func.invoke3 getSqlMeta (Action<_> appendLine) cgsm tis
                 let inline mapSqlSprocParams appendLine meta =
                     Action.invoke2 mapSqlSprocParams (Action<_,_> appendLine) meta
-                {MetaFallback=metaFallbackOpt;SqlSprocs=sqlSprocs;GetSqlMeta=getSqlMeta; MapSqlSprocParams=mapSqlSprocParams}
-    let generate generatorId (ga:GenerationArguments<_>) (cgsm:CodeGenSettingMap) (manager:IManager, generationEnvironment:StringBuilder, tables:TableIdentifier seq) fSettersCheckInequality =
+                {SqlSprocs=sqlSprocs;GetSqlMeta=getSqlMeta; MapSqlSprocParams=mapSqlSprocParams}
+    let generate generatorId fMetaFallbackOpt (ga:GenerationArguments<_>) (cgsm:CodeGenSettingMap) (manager:IManager, generationEnvironment:StringBuilder, tables:TableIdentifier seq) fSettersCheckInequality =
 
         log(sprintf "DataModelToF.generate:cgsm:%A" cgsm)
         let appendLine text =
@@ -597,7 +596,7 @@ module DataModelToF =
         let meta = ga.GetSqlMeta appendLine cgsm tables
         meta
         |> List.collect( fun result ->
-            match result, ga.MetaFallback with
+            match result, fMetaFallbackOpt with
             | Happy (sqlTableMeta), _ ->
                 sqlTableMeta
             | Unhappy (ti:TableIdentifier,exn), Some f ->
@@ -703,8 +702,8 @@ module DataModelToF =
                         Singularize= singularizer.Invoke
                         TypeGenerationNolist = typeGenerationNolist |> Set.ofSeq
                         GetMeasureNamepace= Option.ofObj getMeasureNamespace |> Option.map (fun f -> f.Invoke) }
-        let ga = GenerationArguments<_>.Create(metaFallbackOpt=fFallback,getSqlMeta=fGetSqlMeta, sqlSprocs= sqlSprocs,mapSqlSprocParams=fMapSprocParams)
-        generate generatorId
+        let ga = GenerationArguments<_>.Create(getSqlMeta=fGetSqlMeta, sqlSprocs= sqlSprocs,mapSqlSprocParams=fMapSprocParams)
+        generate generatorId fFallback
             ga
             cgsm
             (manager, generationEnvironment, tables)
@@ -878,7 +877,7 @@ module GenerationSample =
                     {SettersCheckInequality = true; AllowPropertyChangeOverride = false}
                 else
                     {SettersCheckInequality = false; AllowPropertyChangeOverride = false}
-            DataModelToF.generate generatorId ga cgsm (manager, sb, tablesToGen) fGetNotifyOptions
+            DataModelToF.generate generatorId fFallback ga cgsm (manager, sb, tablesToGen) fGetNotifyOptions
 
 
         manager.GeneratedFileNames

@@ -163,6 +163,17 @@ module SqlWrapCore =
                 | _ -> false
     type TableGenerationInfo = {Id:TableIdentifier; Columns: ColumnInput list}
 
+    [<NoComparison>]
+    type GenMapTableItem =
+        | DataModelOnly of TableIdentifier
+        | Detailed of TableGenerationInfo
+        with
+            static member GetTI =
+                function
+                    |DataModelOnly ti -> ti
+                    |Detailed x -> x.Id
+
+
  
     //type SqlGenerationArguments = 
 // should hold options for all generation combination possibilities

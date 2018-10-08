@@ -48,16 +48,6 @@ type TableInput() =
 [<NoComparison>]
 type SqlGenerationConfig = { TargetSqlProjectName: string; SqlItems: TableInput list; InsertionConfig: InsertsGenerationConfig option}
 
-[<NoComparison>]
-type GenMapTableItem =
-    | DataModelOnly of TableIdentifier
-    | Detailed of TableGenerationInfo
-    with
-        static member GetTI =
-            function
-                |DataModelOnly ti -> ti
-                |Detailed x -> x.Id
-
 // although InsertsGenerationConfig doesn't apply to TableGenerationInfo, let them be grouped for convenience
 //type SqlGenerationism =
 //    | Focused of InsertsGenerationConfig * (GenerationTarget list)
@@ -68,22 +58,7 @@ type IGenWrapper =
     abstract member GetTargetSqlProjectFolder: string -> IProject
 
 
-let generateCode generatorId cgsm manager (fGetSqlMeta,sqlSprocs,fMapSprocParams) sb mappedTables fSettersCheckInequality =
-    let metaFallback (ti:TableIdentifier) (_exn:exn) =
-        mappedTables
-        |> Seq.find(function | Detailed details -> details.Id = ti | DataModelOnly dmTI -> dmTI = ti)
-        |> function
-            |Detailed details ->
-                // this is what should be happening on the main path too
-                {   SqlTableMeta.TI = details.Id
-                    TypeName=cgsm.Singularize details.Id.Name
-                    PrimaryKeys=details.Columns |> Seq.choose (fun c -> if c.IsPrimaryKey then Some c.Name else None) |> Set.ofSeq
-                    Identities= details.Columns |> Seq.choose (fun c -> if c.IsIdentity then Some c.Name else None) |> Set.ofSeq
-                    Columns= SqlTableColumnChoice.Manual details.Columns
-                }
-            | DataModelOnly _dmInput ->
-                invalidOp "Could not get sql meta"
-    let ga = {MetaFallback = Some metaFallback;GetSqlMeta=fGetSqlMeta; SqlSprocs=sqlSprocs;MapSqlSprocParams=fMapSprocParams;  }
+let generateCode generatorId cgsm manager ga sb mappedTables fSettersCheckInequality =
     let meta =
         DataModelToF.generate generatorId
             ga
@@ -163,8 +138,23 @@ let generateTablesAndReferenceTables(manager:IManager, generationEnvironment:Sys
         )
     )
 
+let metaFallback cgsm mappedTables (ti:TableIdentifier) (_exn:exn) =
+    mappedTables
+    |> Seq.find(function | Detailed details -> details.Id = ti | DataModelOnly dmTI -> dmTI = ti)
+    |> function
+        |Detailed details ->
+            // this is what should be happening on the main path too
+            {   SqlTableMeta.TI = details.Id
+                TypeName=cgsm.Singularize details.Id.Name
+                PrimaryKeys=details.Columns |> Seq.choose (fun c -> if c.IsPrimaryKey then Some c.Name else None) |> Set.ofSeq
+                Identities= details.Columns |> Seq.choose (fun c -> if c.IsIdentity then Some c.Name else None) |> Set.ofSeq
+                Columns= SqlTableColumnChoice.Manual details.Columns
+            }
+        | DataModelOnly _dmInput ->
+            invalidOp "Could not get sql meta"
+
 /// generatorId something to identify the generator with, in the .tt days it was the DefaultProjectNamespace the .tt was running from.
-let runGeneration generatorId debug (sb: System.Text.StringBuilder) (dte: IGenWrapper) manager (cgsm: CodeGeneration.DataModelToF.CodeGenSettingMap) toGen (dataModelOnlyItems: TableIdentifier list) (fGetSqlMeta,fGetSqlSprocs,fMapSprocParams) =
+let runGeneration generatorId debug (sb: System.Text.StringBuilder) (dte: IGenWrapper) manager (cgsm: CodeGeneration.DataModelToF.CodeGenSettingMap) toGen (dataModelOnlyItems: TableIdentifier list) ga =
 
     let projects = dte.GetProjects()
     let appendLine text (sb:System.Text.StringBuilder) =
@@ -231,7 +221,7 @@ let runGeneration generatorId debug (sb: System.Text.StringBuilder) (dte: IGenWr
         )
     )
     |> List.ofSeq
-    |> generateCode generatorId cgsm manager (fGetSqlMeta,fGetSqlSprocs,fMapSprocParams) sb
+    |> generateCode generatorId cgsm manager ga sb
 
 let sb = System.Text.StringBuilder()
 let appendLine text (sb:System.Text.StringBuilder) =
