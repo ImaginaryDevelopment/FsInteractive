@@ -58,6 +58,7 @@
     <Compile Include="GenerateJS.fs" />
     <Compile Include="Conversion.fs" />
     <Compile Include="DataModelToF.fs" />
+    <Compile Include="DataModelToC.fs" />
     <Compile Include="GenerateFromTypes.fs" />
     <Compile Include="GenerateAllTheThings.fs" />
     <None Include="ConvertINotifyClassToFSharp.fsx" />
