@@ -24,6 +24,8 @@
     <WarningLevel>5</WarningLevel>
     <DocumentationFile>
     </DocumentationFile>
+    <NoWarn>0052;1178</NoWarn>
+    <OtherFlags>--warnon:1182 --warnaserror-:1182</OtherFlags>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
