@@ -31,6 +31,7 @@ type ClassDeclaration = { Attributes: string list; Name:string; BaseClass :strin
     member x.GetAttributeText() = x.Attributes |> Seq.map (fun ta -> sprintf "[<%s>]" ta) |> delimit "\r\n"
     member x.FieldText spacing = x.Fields |> Seq.map (fun f -> spacing + f) |> delimit "\r\n"
 
+// the measure name without any added syntax
 type PureMeasure private (text) =
     static member IsValidMeasureOpt (x:string) =
         match x with
@@ -46,21 +47,24 @@ type PureMeasure private (text) =
         else None
     member __.Value = text
 
+// A primitive .net column type, no Nullable,Option, or generics involved
+// should not include <>
 type PureColumnTypeName private(text) =
-    // should be .Net types?
     // should PureColumnTypeName include measures?
     static member IsValidTypeName (x:string) =
         match x with
+        // handle `` involved names ( doesn't account for ``hello ` world `` )
+        | RMatch "``[^`]+``" _ -> true
         | StartsWith "Nullable<"
         | Contains "?"
         // is this ok for `` type names?
         | Contains " "
         | IsTrue (endsWith " Nullable") _
+        | IsTrue (endsWith " option") _
         | IsAnyOf ["bit"; "varchar"; "char"; "nvarchar"; "nchar";"datetime";"xml";"datetime2"] _
             -> false
         | _ -> true
 
-    // should not include <>
 
     static member Create(typeText) =
         if PureColumnTypeName.IsValidTypeName typeText then
@@ -112,12 +116,6 @@ type PureColumnInput<'T> =
     abstract member TypeName:PureColumnTypeName
     abstract member AllowsNull:bool
     abstract member MeasureText: PureMeasure option
-
-[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
-module PureColumnInput =
-
-    ()
-open PureColumnInput
 
 ///useCliMutable : enables simple serialization see also http://blog.ploeh.dk/2013/10/15/easy-aspnet-web-api-dtos-with-f-climutable-records/
 type Mutability = | Immutable | CliMutable | Mutable
