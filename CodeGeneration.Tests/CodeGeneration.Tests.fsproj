@@ -49,6 +49,7 @@
     <Compile Include="HelloWorldTests.fs" />
     <Compile Include="PureCodeGenerationTests.fs" />
     <Compile Include="DataModelToFTests.fs" />
+    <Compile Include="DataModelToCTests.fs" />
     <Compile Include="Program.fs" />
     <None Include="App.config" />
     <Content Include="packages.config" />

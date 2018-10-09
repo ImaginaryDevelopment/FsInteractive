@@ -26,12 +26,13 @@ module Impl = // generators without the indenter/delimiter
         |> sprintf "public class %s%s" typeName
     let generateProperty isPublic prop =
         [
-        yield 1, sprintf "// %s" prop.Comment
-        yield 1,
-            if prop.IsWritable then
-                "{ get; set; }"
-            else "{ get; }"
-            |> sprintf "%s%s %s %s" (if isPublic then "public " else String.Empty) prop.Type prop.Name
+            if isValueString prop.Comment then
+                yield 1, sprintf "// %s" prop.Comment
+            yield 1,
+                if prop.IsWritable then
+                    "{ get; set; }"
+                else "{ get; }"
+                |> sprintf "%s%s %s %s" (if isPublic then "public " else String.Empty) prop.Type prop.Name
         ]
 
     let generateBase (indenter:int*string -> string) =
@@ -55,6 +56,7 @@ module Impl = // generators without the indenter/delimiter
                     if isReadOnly && prop.IsWritable then {prop with IsWritable = false} else prop
                 )
                 |> List.collect(generateProperty usePublicProps)
+            yield 0,"}"
         ]
         |> generateBase indenter
 
