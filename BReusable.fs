@@ -297,6 +297,11 @@ module StringPatterns =
         function
         | x when isValueString x -> ValueString x
         | x -> NonValueString x
+    let (|MultiLine|_|) x =
+        match splitLines x with
+        | [| |] -> None
+        | lines -> Some lines
+
     let (|NullOrEmpty|_|) x =
         if String.IsNullOrEmpty x then
             Some()
