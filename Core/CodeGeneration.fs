@@ -94,20 +94,29 @@ module SqlWrapCore =
         |FKeyWithReference of ReferenceData
 
     module ColumnTyping =
-        type Precision private(p) =
+        type Precision (p) =
+            do
+                if Precision.Validate p = false then
+                    invalidArg "p" "Invalid Precision"
             member __.P = p
+            static member Validate p =
+                1uy <= p && p <= 38uy
             static member Default = Precision(18uy)
             static member Create p =
                 if 1uy <= p && p <= 38uy then
                     Precision(p)
                     |> Some
                 else None
-        type Scale private (s) =
+        type Scale (s) =
+            do
+                if Scale.Validate s = false then
+                    invalidArg "s" "Invalid Scale"
             member __.S = s
+            static member Validate s = 0uy <= s && s <= 38uy
             static member Default = Scale(0uy)
-            static member Create p =
-                if 0uy <= p && p <= 38uy then
-                    Scale(p)
+            static member Create s =
+                if Scale.Validate s then
+                    Scale(s)
                     |> Some
                 else None
         type ColumnPS = {Precision:Precision; Scale: Scale}

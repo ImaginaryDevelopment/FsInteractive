@@ -88,7 +88,8 @@ module DataModelToF =
         SprocSettingMap: CodeGenSprocSettingMap option
         /// controls whether generated records are mutable
         Mutable:Mutability
-    }
+    } with
+        static member CreateGetMeasureNamespace f = f |> Option.ofObj |> Option.map (Func.invoke1)
 
     // nullableAndHandling expects a Some _ if the type is nullable
     let mapNullableType(targetType:string, nullableAndHandling:NullableHandling option, measureType:PureMeasure option) =

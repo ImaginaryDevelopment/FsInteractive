@@ -49,6 +49,7 @@
       <Link>BReusable.fs</Link>
     </Compile>
     <Compile Include="CodeGeneration.fs" />
+    <Compile Include="CHelpers.fs" />
     <Content Include="Purpose.txt" />
     <None Include="Script.fsx" />
     <Content Include="packages.config" />

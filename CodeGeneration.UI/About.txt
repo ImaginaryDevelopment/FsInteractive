@@ -1,0 +1,4 @@
+﻿purpose: provide a UI for working with the code gen.
+design: build in stages, starting with only taking in code or json model of code and generating output to the screen or clipboard
+
+current: allow json pasting of types created in linqpad
