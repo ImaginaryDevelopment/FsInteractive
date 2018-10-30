@@ -20,3 +20,5 @@ MacroRunner/.vs
 
 packages/
 *.suo
+
+\.vs/
